@@ -1,0 +1,9 @@
+.idea/
+.playwright-mcp/
+target/
+*.log
+backend/target/
+print-agent/target/
+node_modules/
+web/dist/
+web/build/

@@ -1,0 +1,89 @@
+USE shoe_factory_assistant;
+
+CREATE TABLE IF NOT EXISTS source_file (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    file_no VARCHAR(64) NOT NULL COMMENT '文件编号',
+    original_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
+    file_ext VARCHAR(16) NOT NULL COMMENT '文件扩展名',
+    file_type VARCHAR(32) NOT NULL COMMENT '文件类型: EXCEL/IMAGE',
+    mime_type VARCHAR(128) DEFAULT NULL COMMENT 'MIME 类型',
+    file_size BIGINT NOT NULL DEFAULT 0 COMMENT '原始文件大小',
+    original_path VARCHAR(512) NOT NULL COMMENT '原始文件本地路径',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_source_file_no (file_no),
+    KEY idx_source_file_type (file_type),
+    KEY idx_source_file_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单原稿文件表';
+
+CREATE TABLE IF NOT EXISTS order_record (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    order_no VARCHAR(128) DEFAULT NULL COMMENT '订单号',
+    customer_name VARCHAR(128) DEFAULT NULL COMMENT '客户',
+    style_no VARCHAR(128) DEFAULT NULL COMMENT '款号',
+    color VARCHAR(128) DEFAULT NULL COMMENT '颜色',
+    quantity INT DEFAULT NULL COMMENT '数量',
+    carton_count INT DEFAULT NULL COMMENT '箱数',
+    delivery_date DATE DEFAULT NULL COMMENT '交期',
+    recognition_status VARCHAR(32) NOT NULL COMMENT '识别状态: RECOGNIZED/PENDING_MANUAL/FAILED',
+    source_file_id BIGINT NOT NULL COMMENT '原稿文件 ID',
+    source_sheet_name VARCHAR(128) DEFAULT NULL COMMENT '识别来源 sheet',
+    error_message VARCHAR(1024) DEFAULT NULL COMMENT '识别错误信息',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    KEY idx_order_record_order_no (order_no),
+    KEY idx_order_record_style_no (style_no),
+    KEY idx_order_record_customer (customer_name),
+    KEY idx_order_record_delivery_date (delivery_date),
+    KEY idx_order_record_status (recognition_status),
+    KEY idx_order_record_source_file_id (source_file_id),
+    CONSTRAINT fk_order_record_source_file_id FOREIGN KEY (source_file_id) REFERENCES source_file (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单记录表';
+
+CREATE TABLE IF NOT EXISTS print_preview (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    preview_no VARCHAR(64) NOT NULL COMMENT '预览编号',
+    order_id BIGINT NOT NULL COMMENT '订单 ID',
+    source_file_id BIGINT NOT NULL COMMENT '原稿文件 ID',
+    print_type VARCHAR(32) NOT NULL COMMENT '打印类型: ORDER/PACKING',
+    pdf_path VARCHAR(512) NOT NULL COMMENT 'PDF 本地路径',
+    pdf_size BIGINT DEFAULT NULL COMMENT 'PDF 文件大小',
+    preview_url VARCHAR(512) NOT NULL COMMENT 'PDF 预览地址',
+    status VARCHAR(32) NOT NULL DEFAULT 'READY' COMMENT '状态: READY/FAILED',
+    error_message VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_print_preview_no (preview_no),
+    KEY idx_print_preview_order_id (order_id),
+    KEY idx_print_preview_source_file_id (source_file_id),
+    KEY idx_print_preview_type (print_type),
+    CONSTRAINT fk_print_preview_order_id FOREIGN KEY (order_id) REFERENCES order_record (id),
+    CONSTRAINT fk_print_preview_source_file_id FOREIGN KEY (source_file_id) REFERENCES source_file (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='打印预览表';
+
+CREATE TABLE IF NOT EXISTS print_task (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    task_no VARCHAR(64) NOT NULL COMMENT '打印任务编号',
+    order_id BIGINT NOT NULL COMMENT '订单 ID',
+    preview_id BIGINT NOT NULL COMMENT '打印预览 ID',
+    print_type VARCHAR(32) NOT NULL COMMENT '打印类型: ORDER/PACKING',
+    printer_name VARCHAR(128) DEFAULT NULL COMMENT '目标打印机名称',
+    copies INT NOT NULL DEFAULT 1 COMMENT '打印份数',
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '任务状态: PENDING/PRINTING/SUCCESS/FAILED/CANCELED',
+    priority INT NOT NULL DEFAULT 0 COMMENT '优先级，数字越大越优先',
+    error_message VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',
+    picked_at DATETIME DEFAULT NULL COMMENT '本地打印助手领取时间',
+    printed_at DATETIME DEFAULT NULL COMMENT '打印完成时间',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_print_task_no (task_no),
+    KEY idx_print_task_status_priority (status, priority, created_at),
+    KEY idx_print_task_order_id (order_id),
+    KEY idx_print_task_preview_id (preview_id),
+    CONSTRAINT fk_print_task_order_id FOREIGN KEY (order_id) REFERENCES order_record (id),
+    CONSTRAINT fk_print_task_preview_id FOREIGN KEY (preview_id) REFERENCES print_preview (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='打印任务表';
