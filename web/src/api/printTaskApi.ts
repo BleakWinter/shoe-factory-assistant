@@ -1,23 +1,18 @@
 import request from "../utils/request";
 import type { PrintTask, PrintTaskStatus } from "../types/order";
 
-export interface CreatePrintTaskPayload {
-  previewId: number;
-  copies: number;
-  printerName?: string;
-  priority?: number;
+function normalizeList<T>(data: T[] | { records?: T[]; list?: T[] }): T[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  return data.records || data.list || [];
 }
 
-export async function createPrintTask(payload: CreatePrintTaskPayload) {
-  const { data } = await request.post<PrintTask>("/print-tasks", payload);
-  return data;
-}
-
-export async function fetchPendingTasks(limit = 50) {
-  const { data } = await request.get<PrintTask[]>("/print-tasks/pending", {
-    params: { limit },
-  });
-  return data;
+export async function fetchPrintTasks() {
+  const { data } = await request.get<
+    PrintTask[] | { records?: PrintTask[]; list?: PrintTask[] }
+  >("/print-tasks");
+  return normalizeList(data);
 }
 
 export async function updatePrintTaskStatus(

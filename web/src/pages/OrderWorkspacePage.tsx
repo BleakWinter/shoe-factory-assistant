@@ -1,23 +1,19 @@
 import {
   InboxOutlined,
-  PrinterOutlined,
   ReloadOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import {
+  Alert,
   App,
   Button,
   DatePicker,
   Form,
+  Image,
   Input,
-  InputNumber,
-  Modal,
-  Radio,
-  Select,
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
   Upload,
 } from "antd";
@@ -26,87 +22,104 @@ import type { UploadProps } from "antd";
 import type { Dayjs } from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  fetchOrders,
-  generatePrintPreview,
-  toPreviewUrl,
-  uploadOrderSource,
+  fetchOrderLines,
+  toAssetUrl,
+  uploadOrderFile,
 } from "../api/orderApi";
-import { createPrintTask } from "../api/printTaskApi";
-import PdfPreview from "../components/PdfPreview";
-import type {
-  OrderQueryParams,
-  OrderRecord,
-  PrintPreview,
-  PrintType,
-  RecognitionStatus,
-} from "../types/order";
+import type { OrderImportStatus, OrderLine, OrderLineQueryParams } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
   orderNo?: string;
   styleNo?: string;
   customerName?: string;
+  lastNo?: string;
   deliveryDate?: Dayjs;
-  recognitionStatus?: RecognitionStatus;
 }
 
-const recognitionOptions = [
-  { label: "已识别", value: "RECOGNIZED" },
-  { label: "待补充", value: "PENDING_MANUAL" },
-  { label: "识别失败", value: "FAILED" },
-];
+const allowedExtensions = ["xlsx", "xls"];
 
-const printTypeOptions = [
-  { label: "打印订单", value: "ORDER" },
-  { label: "打印装箱单", value: "PACKING" },
-];
+function isAllowedFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return Boolean(extension && allowedExtensions.includes(extension));
+}
+
+function renderImportStatus(status?: OrderImportStatus, errorMessage?: string) {
+  if (status === "FAILED") {
+    return <Tag color="red">{errorMessage || "导入失败"}</Tag>;
+  }
+  if (status === "PARTIAL") {
+    return <Tag color="gold">部分识别</Tag>;
+  }
+  return <Tag color="green">已导入</Tag>;
+}
+
+function renderSizeQuantities(value?: Record<string, number>) {
+  const entries = Object.entries(value || {}).filter(([, count]) => Number(count) > 0);
+  if (entries.length === 0) {
+    return "-";
+  }
+
+  return (
+    <div className="size-grid">
+      {entries.map(([size, count]) => (
+        <span key={size}>
+          {size}: {count}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function OrderWorkspacePage() {
   const { message } = App.useApp();
   const [form] = Form.useForm<FilterValues>();
-  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [lines, setLines] = useState<OrderLine[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [query, setQuery] = useState<OrderQueryParams>({ page: 1, size: 20 });
+  const [query, setQuery] = useState<OrderLineQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
-  const [selectedOrder, setSelectedOrder] = useState<OrderRecord>();
-  const [printType, setPrintType] = useState<PrintType>("ORDER");
-  const [preview, setPreview] = useState<PrintPreview>();
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [copies, setCopies] = useState(1);
-  const [printerName, setPrinterName] = useState("");
-  const [creatingTask, setCreatingTask] = useState(false);
 
-  const loadOrders = useCallback(async (params: OrderQueryParams) => {
+  const loadLines = useCallback(async (params: OrderLineQueryParams) => {
     setLoading(true);
     try {
-      const page = await fetchOrders(params);
-      setOrders(page.records);
+      const page = await fetchOrderLines(params);
+      setLines(page.records);
       setTotal(page.total);
     } catch (error) {
-      setOrders([]);
+      setLines([]);
       setTotal(0);
-      message.error(error instanceof Error ? error.message : "订单列表加载失败");
+      message.error(error instanceof Error ? error.message : "订单表加载失败");
     } finally {
       setLoading(false);
     }
   }, [message]);
 
   useEffect(() => {
-    void loadOrders(query);
-  }, [loadOrders, query]);
+    void loadLines(query);
+  }, [loadLines, query]);
 
   const uploadProps: UploadProps = {
-    accept: ".xlsx,.xls,.png,.jpg,.jpeg,.webp",
+    accept: ".xlsx,.xls",
     multiple: false,
     showUploadList: false,
+    disabled: uploading,
+    beforeUpload(file) {
+      if (!isAllowedFile(file)) {
+        message.error("订单文件请上传 xlsx 或 xls");
+        return Upload.LIST_IGNORE;
+      }
+      return true;
+    },
     customRequest: async (options) => {
       setUploading(true);
       try {
         const file = options.file as File;
-        const order = await uploadOrderSource(file);
-        options.onSuccess?.(order);
-        message.success("订单原稿已上传");
+        const result = await uploadOrderFile(file);
+        options.onSuccess?.(result);
+        message.success(
+          `订单已导入，${result.lineCount || 0} 行明细已进入订单表，打印任务已加入打印列表`,
+        );
         setQuery((prev) => ({ ...prev, page: 1 }));
       } catch (error) {
         const err = error instanceof Error ? error : new Error("上传失败");
@@ -123,8 +136,8 @@ export default function OrderWorkspacePage() {
       orderNo: values.orderNo,
       styleNo: values.styleNo,
       customerName: values.customerName,
+      lastNo: values.lastNo,
       deliveryDate: values.deliveryDate?.format("YYYY-MM-DD"),
-      recognitionStatus: values.recognitionStatus,
       page: 1,
       size: query.size ?? 20,
     });
@@ -135,162 +148,166 @@ export default function OrderWorkspacePage() {
     setQuery({ page: 1, size: query.size ?? 20 });
   };
 
-  const openPrintModal = (order: OrderRecord) => {
-    setSelectedOrder(order);
-    setPrintType("ORDER");
-    setPreview(undefined);
-    setCopies(1);
-    setPrinterName("");
-  };
-
-  const closePrintModal = () => {
-    setSelectedOrder(undefined);
-    setPreview(undefined);
-  };
-
-  const handleGeneratePreview = async () => {
-    if (!selectedOrder) {
-      return;
-    }
-    setPreviewLoading(true);
-    try {
-      const result = await generatePrintPreview(selectedOrder.id, printType);
-      setPreview(result);
-      message.success("PDF 预览已生成");
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "生成预览失败");
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  const handleConfirmPrint = async () => {
-    if (!preview) {
-      return;
-    }
-    setCreatingTask(true);
-    try {
-      await createPrintTask({
-        previewId: preview.id,
-        copies,
-        printerName: printerName || undefined,
-      });
-      message.success("打印任务已创建");
-      closePrintModal();
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "创建打印任务失败");
-    } finally {
-      setCreatingTask(false);
-    }
-  };
-
-  const columns = useMemo<ColumnsType<OrderRecord>>(
+  const columns = useMemo<ColumnsType<OrderLine>>(
     () => [
+      {
+        title: "图片",
+        dataIndex: "imageUrl",
+        width: 86,
+        fixed: "left",
+        render: (value: string) =>
+          value ? (
+            <Image
+              src={toAssetUrl(value)}
+              width={58}
+              height={44}
+              className="order-image"
+              preview={{ mask: "查看" }}
+            />
+          ) : (
+            <Tag>无图</Tag>
+          ),
+      },
       {
         title: "订单号",
         dataIndex: "orderNo",
-        width: 150,
+        width: 130,
+        fixed: "left",
         render: formatEmpty,
       },
       {
         title: "客户",
         dataIndex: "customerName",
-        width: 130,
+        width: 120,
+        render: formatEmpty,
+      },
+      {
+        title: "发票编号",
+        dataIndex: "invoiceNo",
+        width: 110,
         render: formatEmpty,
       },
       {
         title: "款号",
         dataIndex: "styleNo",
-        width: 130,
+        width: 120,
         render: formatEmpty,
       },
       {
-        title: "颜色",
-        dataIndex: "color",
+        title: "楦头号",
+        dataIndex: "lastNo",
         width: 110,
         render: formatEmpty,
       },
       {
-        title: "数量",
+        title: "开发编号",
+        dataIndex: "developmentNo",
+        width: 120,
+        render: formatEmpty,
+      },
+      {
+        title: "客人订单号",
+        dataIndex: "customerOrderNo",
+        width: 130,
+        render: formatEmpty,
+      },
+      {
+        title: "仓库号/店铺号",
+        dataIndex: "warehouseNo",
+        width: 140,
+        render: formatEmpty,
+      },
+      {
+        title: "出货时间",
+        dataIndex: "deliveryDate",
+        width: 120,
+        render: formatEmpty,
+      },
+      {
+        title: "PO#",
+        dataIndex: "poNo",
+        width: 110,
+        render: formatEmpty,
+      },
+      {
+        title: "客人型体号",
+        dataIndex: "customerStyleNo",
+        width: 130,
+        render: formatEmpty,
+      },
+      {
+        title: "英文颜色",
+        dataIndex: "englishColor",
+        width: 130,
+        render: formatEmpty,
+      },
+      {
+        title: "英文材质",
+        dataIndex: "englishMaterial",
+        width: 130,
+        render: formatEmpty,
+      },
+      {
+        title: "面料",
+        dataIndex: "upperMaterial",
+        width: 220,
+        render: formatEmpty,
+      },
+      {
+        title: "里料/垫脚",
+        dataIndex: "liningMaterial",
+        width: 180,
+        render: formatEmpty,
+      },
+      {
+        title: "饰扣/鞋带",
+        dataIndex: "accessory",
+        width: 150,
+        render: formatEmpty,
+      },
+      {
+        title: "包中底/水台",
+        dataIndex: "insolePlatform",
+        width: 160,
+        render: formatEmpty,
+      },
+      {
+        title: "大底",
+        dataIndex: "outsole",
+        width: 220,
+        render: formatEmpty,
+      },
+      {
+        title: "商标",
+        dataIndex: "trademark",
+        width: 100,
+        render: formatEmpty,
+      },
+      {
+        title: "双数",
         dataIndex: "quantity",
         width: 90,
         align: "right",
         render: formatEmpty,
       },
       {
-        title: "箱数",
-        dataIndex: "cartonCount",
-        width: 90,
-        align: "right",
-        render: formatEmpty,
+        title: "尺码数量",
+        dataIndex: "sizeQuantities",
+        width: 220,
+        render: renderSizeQuantities,
       },
       {
-        title: "交期",
-        dataIndex: "deliveryDate",
+        title: "导入状态",
+        dataIndex: "importStatus",
         width: 120,
-        render: formatEmpty,
-      },
-      {
-        title: "识别状态",
-        dataIndex: "recognitionStatus",
-        width: 110,
-        render: (status: RecognitionStatus, record) => (
-          <Tooltip title={record.errorMessage}>
-            {renderRecognitionStatus(status)}
-          </Tooltip>
-        ),
-      },
-      {
-        title: "原稿",
-        dataIndex: "sourceFileName",
-        minWidth: 180,
-        render: (value: string, record) => (
-          <Space size={8}>
-            <Tag color={record.sourceFileType === "EXCEL" ? "green" : "gold"}>
-              {record.sourceFileType}
-            </Tag>
-            <Typography.Text ellipsis className="source-file-name">
-              {formatEmpty(value)}
-            </Typography.Text>
-          </Space>
-        ),
+        render: (status: OrderImportStatus, record) =>
+          renderImportStatus(status, record.errorMessage),
       },
       {
         title: "上传时间",
         dataIndex: "createdAt",
         width: 170,
         render: formatDateTime,
-      },
-      {
-        title: "操作",
-        key: "actions",
-        fixed: "right",
-        width: 110,
-        render: (_, record) => {
-          const disabled =
-            record.sourceFileType !== "EXCEL" ||
-            record.recognitionStatus === "FAILED";
-          const title =
-            record.sourceFileType !== "EXCEL"
-              ? "图片订单暂不支持自动生成打印预览"
-              : record.recognitionStatus === "FAILED"
-                ? "识别失败后不能生成打印预览"
-                : "";
-          return (
-            <Tooltip title={title}>
-              <span>
-                <Button
-                  type="primary"
-                  icon={<PrinterOutlined />}
-                  disabled={disabled}
-                  onClick={() => openPrintModal(record)}
-                >
-                  打印
-                </Button>
-              </span>
-            </Tooltip>
-          );
-        },
       },
     ],
     [],
@@ -301,16 +318,16 @@ export default function OrderWorkspacePage() {
     pageSize: query.size,
     total,
     showSizeChanger: true,
-    showTotal: (count) => `共 ${count} 条`,
+    showTotal: (count) => `共 ${count} 行`,
   };
 
   return (
     <div className="workspace">
       <div className="toolbar-band">
         <div>
-          <Typography.Title level={3}>订单工作台</Typography.Title>
+          <Typography.Title level={3}>订单表</Typography.Title>
           <Typography.Text type="secondary">
-            上传订单原稿后进入订单列表，打印时再生成对应 PDF。
+            一个订单文件可以拆成很多行明细，图片、款号、楦头号和材料都放在这里。
           </Typography.Text>
         </div>
         <Upload {...uploadProps}>
@@ -320,10 +337,17 @@ export default function OrderWorkspacePage() {
             loading={uploading}
             icon={<InboxOutlined />}
           >
-            上传原稿
+            上传订单 Excel
           </Button>
         </Upload>
       </div>
+
+      <Alert
+        type="info"
+        showIcon
+        className="page-alert"
+        message="上传订单后，订单明细进入订单表；打印列表只生成这个订单的一条打印任务。"
+      />
 
       <div className="page-panel">
         <Form
@@ -341,16 +365,11 @@ export default function OrderWorkspacePage() {
           <Form.Item name="customerName" label="客户">
             <Input allowClear placeholder="客户" />
           </Form.Item>
-          <Form.Item name="deliveryDate" label="交期">
-            <DatePicker allowClear />
+          <Form.Item name="lastNo" label="楦头号">
+            <Input allowClear placeholder="楦头号" />
           </Form.Item>
-          <Form.Item name="recognitionStatus" label="状态">
-            <Select
-              allowClear
-              placeholder="识别状态"
-              options={recognitionOptions}
-              className="status-select"
-            />
+          <Form.Item name="deliveryDate" label="出货时间">
+            <DatePicker allowClear />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -360,7 +379,7 @@ export default function OrderWorkspacePage() {
               <Button onClick={resetFilters}>重置</Button>
               <Button
                 icon={<ReloadOutlined />}
-                onClick={() => void loadOrders(query)}
+                onClick={() => void loadLines(query)}
               >
                 刷新
               </Button>
@@ -372,9 +391,9 @@ export default function OrderWorkspacePage() {
           rowKey="id"
           loading={loading}
           columns={columns}
-          dataSource={orders}
+          dataSource={lines}
           pagination={pagination}
-          scroll={{ x: 1360 }}
+          scroll={{ x: 3100 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({
@@ -385,74 +404,6 @@ export default function OrderWorkspacePage() {
           }}
         />
       </div>
-
-      <Modal
-        title={selectedOrder ? `打印：${formatEmpty(selectedOrder.orderNo)}` : "打印"}
-        open={Boolean(selectedOrder)}
-        onCancel={closePrintModal}
-        width={980}
-        footer={[
-          <Button key="close" onClick={closePrintModal}>
-            关闭
-          </Button>,
-          <Button
-            key="preview"
-            onClick={handleGeneratePreview}
-            loading={previewLoading}
-            icon={<PrinterOutlined />}
-          >
-            生成预览
-          </Button>,
-          <Button
-            key="print"
-            type="primary"
-            disabled={!preview}
-            loading={creatingTask}
-            onClick={handleConfirmPrint}
-          >
-            确认打印
-          </Button>,
-        ]}
-      >
-        <div className="print-modal-body">
-          <Space wrap size={16} className="print-options">
-            <Radio.Group
-              optionType="button"
-              buttonStyle="solid"
-              value={printType}
-              options={printTypeOptions}
-              onChange={(event) => {
-                setPrintType(event.target.value);
-                setPreview(undefined);
-              }}
-            />
-            <InputNumber
-              min={1}
-              max={99}
-              value={copies}
-              onChange={(value) => setCopies(value ?? 1)}
-              addonBefore="份数"
-            />
-            <Input
-              value={printerName}
-              onChange={(event) => setPrinterName(event.target.value)}
-              placeholder="打印机"
-              className="printer-input"
-            />
-          </Space>
-          <PdfPreview url={toPreviewUrl(preview?.previewUrl)} />
-        </div>
-      </Modal>
     </div>
   );
-}
-
-function renderRecognitionStatus(status: RecognitionStatus) {
-  if (status === "RECOGNIZED") {
-    return <Tag color="green">已识别</Tag>;
-  }
-  if (status === "PENDING_MANUAL") {
-    return <Tag color="gold">待补充</Tag>;
-  }
-  return <Tag color="red">识别失败</Tag>;
 }

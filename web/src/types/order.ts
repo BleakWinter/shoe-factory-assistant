@@ -12,9 +12,7 @@ export interface PageResponse<T> {
   size: number;
 }
 
-export type RecognitionStatus = "RECOGNIZED" | "PENDING_MANUAL" | "FAILED";
-export type SourceFileType = "EXCEL" | "IMAGE";
-export type PrintType = "ORDER" | "PACKING";
+export type OrderImportStatus = "IMPORTED" | "PARTIAL" | "FAILED";
 export type PrintTaskStatus =
   | "PENDING"
   | "PRINTING"
@@ -22,45 +20,58 @@ export type PrintTaskStatus =
   | "FAILED"
   | "CANCELED";
 
-export interface OrderRecord {
-  id: number;
-  orderNo?: string;
-  customerName?: string;
-  styleNo?: string;
-  color?: string;
-  quantity?: number;
-  cartonCount?: number;
-  deliveryDate?: string;
-  recognitionStatus: RecognitionStatus;
-  errorMessage?: string;
-  sourceFileId: number;
-  sourceFileName?: string;
-  sourceFileType: SourceFileType;
-  sourceSheetName?: string;
-  createdAt?: string;
-}
-
-export interface OrderQueryParams {
-  orderNo?: string;
-  styleNo?: string;
-  customerName?: string;
-  deliveryDate?: string;
-  recognitionStatus?: RecognitionStatus;
-  page?: number;
-  size?: number;
-}
-
-export interface PrintPreview {
-  id: number;
-  previewNo: string;
+export interface OrderUploadResult {
   orderId: number;
   orderNo?: string;
-  printType: PrintType;
-  previewUrl: string;
-  pdfSize?: number;
-  status: "READY" | "FAILED";
+  customerName?: string;
+  lineCount?: number;
+  totalPairs?: number;
+  printTaskId?: number;
+  printTaskNo?: string;
+}
+
+export interface OrderLine {
+  id: number;
+  orderId: number;
+  orderNo?: string;
+  invoiceNo?: string;
+  customerName?: string;
+  orderDate?: string;
+  deliveryDate?: string;
+  imageUrl?: string;
+  lastNo?: string;
+  styleNo?: string;
+  developmentNo?: string;
+  customerOrderNo?: string;
+  warehouseNo?: string;
+  poNo?: string;
+  customerStyleNo?: string;
+  englishColor?: string;
+  englishMaterial?: string;
+  upperMaterial?: string;
+  liningMaterial?: string;
+  accessory?: string;
+  insolePlatform?: string;
+  outsole?: string;
+  trademark?: string;
+  quantity?: number;
+  sizeQuantities?: Record<string, number>;
+  remark?: string;
+  importStatus?: OrderImportStatus;
   errorMessage?: string;
+  sourceSheetName?: string;
+  rowIndex?: number;
   createdAt?: string;
+}
+
+export interface OrderLineQueryParams {
+  orderNo?: string;
+  styleNo?: string;
+  customerName?: string;
+  lastNo?: string;
+  deliveryDate?: string;
+  page?: number;
+  size?: number;
 }
 
 export interface PrintTask {
@@ -68,15 +79,11 @@ export interface PrintTask {
   taskNo: string;
   orderId: number;
   orderNo?: string;
-  previewId: number;
-  previewUrl?: string;
-  printType: PrintType;
-  printerName?: string;
-  copies: number;
+  customerName?: string;
+  styleNos?: string[];
+  totalPairs?: number;
   status: PrintTaskStatus;
-  priority: number;
+  previewUrl?: string;
   errorMessage?: string;
-  pickedAt?: string;
-  printedAt?: string;
   createdAt?: string;
 }

@@ -11,8 +11,8 @@ npm run dev
 
 默认地址：
 
-- 本机访问: `http://localhost:5173/`
-- API 代理: `http://localhost:5173/api` -> `http://localhost:8080/api`
+- 本机访问：`http://localhost:5173/`
+- API 代理：`http://localhost:5173/api` -> `http://localhost:8080/api`
 
 ## 构建
 
@@ -22,15 +22,12 @@ npm run build
 
 ## 页面
 
-- `/orders`: 订单工作台，包含原稿上传、订单过滤、打印类型选择、PDF 预览和确认打印。
-- `/tasks`: 待打印任务列表。
+- `/orders`：订单表。上传 Excel 订单文件后，把文件里的每一行订单明细列出来，包含图片、款号、楦头号、材料、大底、尺码数量等。
+- `/tasks`：打印列表。上传订单后按订单生成一条打印任务，只显示订单号、客户、订单里的款号、总双数和状态。
 
-## 接口
+## 接口约定
 
 - `POST /api/orders/upload`
-- `GET /api/orders`
-- `POST /api/orders/{id}/print-previews`
-- `GET /api/print-previews/{id}/preview`
-- `POST /api/print-tasks`
-- `GET /api/print-tasks/pending`
+- `GET /api/orders/lines`
+- `GET /api/print-tasks`
 - `PATCH /api/print-tasks/{id}/status`

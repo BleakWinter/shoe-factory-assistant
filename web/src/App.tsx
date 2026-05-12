@@ -1,6 +1,6 @@
 import {
   FileDoneOutlined,
-  InboxOutlined,
+  TableOutlined,
 } from "@ant-design/icons";
 import { Button, Layout, Space, Typography } from "antd";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
@@ -8,8 +8,8 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 const { Header, Content } = Layout;
 
 const navItems = [
-  { path: "/orders", label: "订单工作台", icon: <InboxOutlined /> },
-  { path: "/tasks", label: "打印任务", icon: <FileDoneOutlined /> },
+  { path: "/orders", label: "订单表", icon: <TableOutlined /> },
+  { path: "/tasks", label: "打印列表", icon: <FileDoneOutlined /> },
 ];
 
 export default function App() {
@@ -19,13 +19,13 @@ export default function App() {
     <Layout className="app-shell">
       <Header className="app-header">
         <div className="brand">
-          <div className="brand-mark">印</div>
+          <div className="brand-mark">单</div>
           <div>
             <Typography.Title level={4} className="brand-title">
-              鞋厂订单与打印助手
+              鞋厂订单助手
             </Typography.Title>
             <Typography.Text className="brand-subtitle">
-              订单原稿、识别结果、打印预览和任务队列
+              订单明细归订单表，打印任务归打印列表
             </Typography.Text>
           </div>
         </div>
