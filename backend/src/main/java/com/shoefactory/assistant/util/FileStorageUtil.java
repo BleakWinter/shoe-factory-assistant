@@ -21,12 +21,21 @@ public class FileStorageUtil {
     private static final DateTimeFormatter DATE_DIR_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final Path rootPath;
+    private final Path orderArchiveRootPath;
+    private final Path orderImageArchiveRootPath;
+    private final Path printImageSwapPath;
     private final FileStorageProperties properties;
 
     public FileStorageUtil(FileStorageProperties properties) {
         this.properties = properties;
         this.rootPath = Paths.get(properties.getRootPath()).toAbsolutePath().normalize();
+        this.orderArchiveRootPath = archiveRootPath(properties);
+        this.orderImageArchiveRootPath = imageArchiveRootPath(properties);
+        this.printImageSwapPath = printImageSwapPath(properties);
         createDirectories(this.rootPath);
+        createDirectories(this.orderArchiveRootPath);
+        createDirectories(this.orderImageArchiveRootPath);
+        createDirectories(this.printImageSwapPath);
     }
 
     public StoredFile saveOriginal(MultipartFile file, String fileNo) {
@@ -35,13 +44,16 @@ public class FileStorageUtil {
         }
         String originalName = cleanOriginalName(file.getOriginalFilename());
         String extension = extractExtension(originalName);
-        Path directory = rootPath.resolve("original")
-                .resolve(LocalDate.now().format(DATE_DIR_FORMATTER))
+        LocalDate today = LocalDate.now();
+        Path directory = orderArchiveRootPath
+                .resolve(String.valueOf(today.getYear()))
+                .resolve(cleanDirectoryName(properties.getOrderArchiveCustomer()))
+                .resolve(today.getMonthValue() + "月")
                 .toAbsolutePath()
                 .normalize();
         createDirectories(directory);
-        Path target = directory.resolve(fileNo + "." + extension).normalize();
-        ensureInRoot(target);
+        Path target = uniqueOriginalPath(directory, originalName, fileNo, extension);
+        ensureAllowedPath(target);
         try {
             file.transferTo(target);
         } catch (IOException ex) {
@@ -58,7 +70,7 @@ public class FileStorageUtil {
                 .normalize();
         createDirectories(directory);
         Path target = directory.resolve(fileNo + safeSuffix + ".pdf").normalize();
-        ensureInRoot(target);
+        ensureAllowedPath(target);
         return target;
     }
 
@@ -70,18 +82,21 @@ public class FileStorageUtil {
         return prefix + "/" + fileId + "/preview";
     }
 
-    public Path saveOrderLineImage(byte[] content, String fileNo, int rowIndex, String extension) {
+    public Path saveOrderLineImage(byte[] content, String fileNo, String orderNo, int rowIndex, String extension) {
         if (content == null || content.length == 0) {
             return null;
         }
         String safeExtension = extension == null || extension.isBlank() ? "png" : extension.toLowerCase(Locale.ROOT);
-        Path directory = rootPath.resolve("images")
-                .resolve(LocalDate.now().format(DATE_DIR_FORMATTER))
+        LocalDate today = LocalDate.now();
+        Path directory = orderImageArchiveRootPath
+                .resolve(String.valueOf(today.getYear()))
+                .resolve(today.getMonthValue() + "月")
+                .resolve(cleanDirectoryName(orderNo == null || orderNo.isBlank() ? fileNo : orderNo))
                 .toAbsolutePath()
                 .normalize();
         createDirectories(directory);
         Path target = directory.resolve(fileNo + "-r" + rowIndex + "." + safeExtension).normalize();
-        ensureInRoot(target);
+        ensureAllowedPath(target);
         try {
             Files.write(target, content);
             return target;
@@ -95,7 +110,7 @@ public class FileStorageUtil {
             throw new BusinessException("文件路径为空");
         }
         Path path = Paths.get(pathValue).toAbsolutePath().normalize();
-        ensureInRoot(path);
+        ensureAllowedPath(path);
         return path;
     }
 
@@ -130,6 +145,39 @@ public class FileStorageUtil {
         return prefix + millis + random;
     }
 
+    private Path archiveRootPath(FileStorageProperties properties) {
+        String archiveRoot = properties.getOrderArchiveRootPath();
+        if (archiveRoot == null || archiveRoot.isBlank()) {
+            return rootPath.resolve("original").toAbsolutePath().normalize();
+        }
+        return Paths.get(archiveRoot).toAbsolutePath().normalize();
+    }
+
+    private Path imageArchiveRootPath(FileStorageProperties properties) {
+        String imageArchiveRoot = properties.getOrderImageArchiveRootPath();
+        if (imageArchiveRoot == null || imageArchiveRoot.isBlank()) {
+            return rootPath.resolve("images").toAbsolutePath().normalize();
+        }
+        return Paths.get(imageArchiveRoot).toAbsolutePath().normalize();
+    }
+
+    private Path printImageSwapPath(FileStorageProperties properties) {
+        String swapPath = properties.getPrintImageSwapPath();
+        if (swapPath == null || swapPath.isBlank()) {
+            return orderImageArchiveRootPath.resolve("swap").toAbsolutePath().normalize();
+        }
+        return Paths.get(swapPath).toAbsolutePath().normalize();
+    }
+
+    private Path uniqueOriginalPath(Path directory, String originalName, String fileNo, String extension) {
+        Path target = directory.resolve(originalName).normalize();
+        if (!Files.exists(target)) {
+            return target;
+        }
+        String baseName = originalName.substring(0, originalName.length() - extension.length() - 1);
+        return directory.resolve(baseName + "-" + fileNo + "." + extension).normalize();
+    }
+
     private String cleanOriginalName(String originalFilename) {
         String filename = StringUtils.cleanPath(originalFilename == null ? "file" : originalFilename);
         filename = filename.replace("\\", "/");
@@ -143,8 +191,17 @@ public class FileStorageUtil {
         return filename;
     }
 
-    private void ensureInRoot(Path path) {
-        if (!path.toAbsolutePath().normalize().startsWith(rootPath)) {
+    private String cleanDirectoryName(String value) {
+        String cleanName = cleanOriginalName(value == null || value.isBlank() ? "达维" : value);
+        return cleanName.replace(":", "").replace("*", "").replace("?", "");
+    }
+
+    private void ensureAllowedPath(Path path) {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(rootPath)
+                && !normalized.startsWith(orderArchiveRootPath)
+                && !normalized.startsWith(orderImageArchiveRootPath)
+                && !normalized.startsWith(printImageSwapPath)) {
             throw new BusinessException("非法文件路径: " + path);
         }
     }

@@ -165,6 +165,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 Path imagePath = fileStorageUtil.saveOrderLineImage(
                         picture.bytes(),
                         sourceFile.getFileNo(),
+                        order.getOrderNo(),
                         rowIndex + 1,
                         picture.extension()
                 );
