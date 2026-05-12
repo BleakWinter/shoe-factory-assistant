@@ -62,6 +62,51 @@ public class FileStorageUtil {
         return new StoredFile(originalName, extension, file.getContentType(), file.getSize(), target);
     }
 
+    public Path archiveOriginalPath(String originalName, String fileNo, LocalDate date) {
+        String safeOriginalName = cleanOriginalName(originalName);
+        String extension = extractExtension(safeOriginalName);
+        LocalDate archiveDate = date == null ? LocalDate.now() : date;
+        Path directory = orderArchiveRootPath
+                .resolve(String.valueOf(archiveDate.getYear()))
+                .resolve(cleanDirectoryName(properties.getOrderArchiveCustomer()))
+                .resolve(archiveDate.getMonthValue() + "月")
+                .toAbsolutePath()
+                .normalize();
+        createDirectories(directory);
+        Path target = uniqueOriginalPath(directory, safeOriginalName, fileNo, extension);
+        ensureAllowedPath(target);
+        return target;
+    }
+
+    public Path archiveOrderLineImagePath(String sourceFileName, String fileNo, String orderNo, int rowIndex, LocalDate date) {
+        String extension = extensionOrDefault(sourceFileName, "png");
+        LocalDate archiveDate = date == null ? LocalDate.now() : date;
+        Path directory = orderImageArchiveRootPath
+                .resolve(String.valueOf(archiveDate.getYear()))
+                .resolve(archiveDate.getMonthValue() + "月")
+                .resolve(cleanDirectoryName(orderNo == null || orderNo.isBlank() ? fileNo : orderNo))
+                .toAbsolutePath()
+                .normalize();
+        createDirectories(directory);
+        Path target = directory.resolve(fileNo + "-r" + rowIndex + "." + extension).normalize();
+        ensureAllowedPath(target);
+        return target;
+    }
+
+    public void moveFile(Path source, Path target) {
+        if (source == null || target == null || source.equals(target) || !Files.exists(source)) {
+            return;
+        }
+        ensureAllowedPath(source);
+        ensureAllowedPath(target);
+        createDirectories(target.getParent());
+        try {
+            Files.move(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            throw new BusinessException("移动文件失败: " + source + " -> " + target, ex);
+        }
+    }
+
     public Path allocatePreviewPdfPath(String fileNo, String suffix) {
         String safeSuffix = suffix == null || suffix.isBlank() ? "" : "-" + suffix.toLowerCase(Locale.ROOT);
         Path directory = rootPath.resolve("preview")
@@ -114,6 +159,14 @@ public class FileStorageUtil {
         return path;
     }
 
+    public boolean isArchivedOriginalPath(Path path) {
+        return path != null && path.toAbsolutePath().normalize().startsWith(orderArchiveRootPath);
+    }
+
+    public boolean isArchivedOrderImagePath(Path path) {
+        return path != null && path.toAbsolutePath().normalize().startsWith(orderImageArchiveRootPath);
+    }
+
     public void copyPdf(Path source, Path target) {
         createDirectories(target.getParent());
         try {
@@ -130,6 +183,14 @@ public class FileStorageUtil {
             throw new BusinessException("文件缺少扩展名");
         }
         return cleanName.substring(index + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private String extensionOrDefault(String filename, String fallback) {
+        try {
+            return extractExtension(filename);
+        } catch (BusinessException ex) {
+            return fallback;
+        }
     }
 
     public void ensureExists(Path path) {

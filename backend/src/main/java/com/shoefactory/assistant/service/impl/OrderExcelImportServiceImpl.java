@@ -62,7 +62,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     private static final int COL_OUTSOLE = 19;
     private static final int COL_TRADEMARK = 20;
     private static final int COL_SIZE_START = 21;
-    private static final int COL_SIZE_END = 37;
     private static final int COL_QUANTITY = 38;
     private static final int COL_CARTON_COUNT = 39;
     private static final int COL_TOTAL_QUANTITY = 40;
@@ -82,9 +81,11 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             if (sheet == null) {
                 throw new BusinessException("Excel 中未找到“订单”sheet");
             }
-            Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet);
-            OrderRecord order = buildOrderRecord(sheet, sourceFile);
-            List<OrderLine> lines = buildLines(sheet, sourceFile, order, picturesByRow);
+            Row header = sheet.getRow(HEADER_ROW_INDEX);
+            TableColumns columns = TableColumns.from(header);
+            Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet, columns.image());
+            OrderRecord order = buildOrderRecord(sheet, sourceFile, columns);
+            List<OrderLine> lines = buildLines(sheet, sourceFile, order, picturesByRow, columns);
             if (lines.isEmpty()) {
                 throw new BusinessException("订单 sheet 未解析到明细行");
             }
@@ -96,7 +97,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         }
     }
 
-    private OrderRecord buildOrderRecord(Sheet sheet, SourceFile sourceFile) {
+    private OrderRecord buildOrderRecord(Sheet sheet, SourceFile sourceFile, TableColumns columns) {
         LocalDateTime now = LocalDateTime.now();
         OrderRecord order = new OrderRecord();
         order.setSourceFileId(sourceFile.getId());
@@ -107,8 +108,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         order.setRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.name());
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
-        order.setQuantity(integerValue(sheet, 13, COL_TOTAL_QUANTITY));
-        order.setCartonCount(integerValue(sheet, 13, COL_CARTON_COUNT));
+        Row totalRow = findTotalRow(sheet, columns);
+        order.setQuantity(totalRow == null ? null : integerValue(totalRow, columns.totalQuantity()));
+        order.setCartonCount(totalRow == null ? null : integerValue(totalRow, columns.cartonCount()));
         return order;
     }
 
@@ -116,44 +118,46 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             Sheet sheet,
             SourceFile sourceFile,
             OrderRecord order,
-            Map<Integer, PictureInfo> picturesByRow
+            Map<Integer, PictureInfo> picturesByRow,
+            TableColumns columns
     ) {
         List<OrderLine> lines = new ArrayList<>();
         Row header = sheet.getRow(HEADER_ROW_INDEX);
         LocalDateTime now = LocalDateTime.now();
         for (int rowIndex = FIRST_DATA_ROW_INDEX; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
-            if (row == null || isTotalRow(row)) {
+            if (row == null || isTotalRow(row, columns)) {
                 break;
             }
-            if (isBlankRow(row)) {
+            if (isBlankRow(row, columns)) {
                 continue;
             }
             OrderLine line = new OrderLine();
             line.setSourceFileId(sourceFile.getId());
             line.setOrderNo(order.getOrderNo());
             line.setInvoiceNo(blankToNull(text(sheet, 3, 6)));
-            line.setCustomerName(blankToNull(text(row, COL_CUSTOMER)));
-            line.setOrderDate(dateValue(sheet.getRow(1) == null ? null : sheet.getRow(1).getCell(15)));
-            line.setDeliveryDate(dateValue(row.getCell(COL_DELIVERY_DATE)));
-            line.setLastNo(blankToNull(text(row, COL_LAST_NO)));
-            line.setStyleNo(blankToNull(text(row, COL_LAST_NO)));
-            line.setDevelopmentNo(blankToNull(text(row, COL_DEVELOPMENT_NO)));
-            line.setCustomerOrderNo(blankToNull(text(row, COL_CUSTOMER_ORDER_NO)));
-            line.setPoNo(blankToNull(text(row, COL_PO)));
-            line.setCustomerStyleNo(blankToNull(text(row, COL_CUSTOMER_STYLE_NO)));
-            line.setEnglishColor(blankToNull(text(row, COL_ENGLISH_COLOR)));
-            line.setEnglishMaterial(blankToNull(text(row, COL_ENGLISH_MATERIAL)));
-            line.setUpperMaterial(blankToNull(text(row, COL_UPPER_MATERIAL)));
-            line.setLiningMaterial(blankToNull(text(row, COL_LINING_MATERIAL)));
-            line.setAccessory(blankToNull(text(row, COL_ACCESSORY)));
-            line.setInsolePlatform(blankToNull(text(row, COL_INSOLE_PLATFORM)));
-            line.setOutsole(blankToNull(text(row, COL_OUTSOLE)));
-            line.setTrademark(blankToNull(text(row, COL_TRADEMARK)));
-            line.setQuantity(integerValue(row, COL_QUANTITY));
-            line.setCartonCount(integerValue(row, COL_CARTON_COUNT));
-            line.setTotalQuantity(integerValue(row, COL_TOTAL_QUANTITY));
-            line.setSizeQuantitiesJson(toJson(readSizeQuantities(header, row)));
+            line.setCustomerName(blankToNull(text(row, columns.customer())));
+            line.setOrderDate(dateValue(cell(sheet.getRow(1), 15)));
+            line.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
+            line.setLastNo(blankToNull(text(row, columns.lastNo())));
+            line.setStyleNo(blankToNull(text(row, columns.lastNo())));
+            line.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
+            line.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
+            line.setPoNo(blankToNull(text(row, columns.po())));
+            line.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
+            line.setEnglishColor(blankToNull(text(row, columns.englishColor())));
+            line.setEnglishMaterial(blankToNull(text(row, columns.englishMaterial())));
+            line.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
+            line.setLiningMaterial(blankToNull(text(row, columns.liningMaterial())));
+            line.setAccessory(blankToNull(text(row, columns.accessory())));
+            line.setInsolePlatform(blankToNull(text(row, columns.insolePlatform())));
+            line.setOutsole(blankToNull(text(row, columns.outsole())));
+            line.setTrademark(blankToNull(text(row, columns.trademark())));
+            line.setQuantity(integerValue(row, columns.quantity()));
+            line.setCartonCount(integerValue(row, columns.cartonCount()));
+            line.setTotalQuantity(integerValue(row, columns.totalQuantity()));
+            line.setSizeQuantitiesJson(toJson(readSizeQuantities(header, row, columns)));
+            line.setShipmentStatus("NOT_SHIPPED");
             line.setImportStatus("IMPORTED");
             line.setSourceSheetName(sheet.getSheetName());
             line.setRowIndex(rowIndex + 1);
@@ -176,12 +180,12 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return lines;
     }
 
-    private Map<String, Integer> readSizeQuantities(Row header, Row row) {
+    private Map<String, Integer> readSizeQuantities(Row header, Row row, TableColumns columns) {
         Map<String, Integer> result = new LinkedHashMap<>();
         if (header == null) {
             return result;
         }
-        for (int col = COL_SIZE_START; col <= COL_SIZE_END; col++) {
+        for (int col = columns.sizeStart(); col <= columns.sizeEnd(); col++) {
             String size = text(header, col);
             Integer quantity = integerValue(row, col);
             if (size == null || size.isBlank() || quantity == null || quantity <= 0) {
@@ -192,7 +196,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return result;
     }
 
-    private Map<Integer, PictureInfo> extractPicturesByRow(Sheet sheet) {
+    private Map<Integer, PictureInfo> extractPicturesByRow(Sheet sheet, int imageColumn) {
         Map<Integer, PictureInfo> result = new LinkedHashMap<>();
         if (!(sheet instanceof XSSFSheet xssfSheet)) {
             return result;
@@ -207,7 +211,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                     .toList()) {
                 int row = picture.getPreferredSize().getFrom().getRow() + 1;
                 int col = picture.getPreferredSize().getFrom().getCol();
-                if (col != COL_IMAGE || row < FIRST_DATA_ROW_INDEX + 1) {
+                if (col != imageColumn || row < FIRST_DATA_ROW_INDEX + 1) {
                     continue;
                 }
                 XSSFPictureData pictureData = picture.getPictureData();
@@ -218,21 +222,39 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return result;
     }
 
-    private boolean isTotalRow(Row row) {
-        String styleNo = text(row, COL_LAST_NO);
-        String developmentNo = text(row, COL_DEVELOPMENT_NO);
-        String totalLabel = text(row, COL_TRADEMARK);
-        return (styleNo.isBlank() && developmentNo.isBlank() && integerValue(row, COL_TOTAL_QUANTITY) != null)
+    private Row findTotalRow(Sheet sheet, TableColumns columns) {
+        for (int rowIndex = FIRST_DATA_ROW_INDEX; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row != null && isTotalRow(row, columns)) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    private boolean isTotalRow(Row row, TableColumns columns) {
+        String styleNo = text(row, columns.lastNo());
+        String developmentNo = text(row, columns.developmentNo());
+        String totalLabel = rowText(row, columns.firstDataColumn(), columns.dataEnd());
+        return (styleNo.isBlank() && developmentNo.isBlank() && integerValue(row, columns.totalQuantity()) != null)
                 || totalLabel.contains("合计");
     }
 
-    private boolean isBlankRow(Row row) {
-        for (int col = COL_LAST_NO; col <= COL_TOTAL_QUANTITY; col++) {
+    private boolean isBlankRow(Row row, TableColumns columns) {
+        for (int col = columns.firstDataColumn(); col <= columns.dataEnd(); col++) {
             if (!text(row, col).isBlank()) {
                 return false;
             }
         }
         return true;
+    }
+
+    private String rowText(Row row, int startColumn, int endColumn) {
+        StringBuilder builder = new StringBuilder();
+        for (int col = Math.max(0, startColumn); col <= endColumn; col++) {
+            builder.append(text(row, col));
+        }
+        return builder.toString();
     }
 
     private String text(Sheet sheet, int rowIndex, int colIndex) {
@@ -241,12 +263,22 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     private String text(Row row, int colIndex) {
+        if (row == null || colIndex < 0) {
+            return "";
+        }
         Cell cell = row.getCell(colIndex);
         if (cell == null) {
             return "";
         }
         String value = formatter.formatCellValue(cell);
         return value == null ? "" : value.trim();
+    }
+
+    private Cell cell(Row row, int colIndex) {
+        if (row == null || colIndex < 0) {
+            return null;
+        }
+        return row.getCell(colIndex);
     }
 
     private Integer integerValue(Sheet sheet, int rowIndex, int colIndex) {
@@ -324,6 +356,129 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String normalizeHeader(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("\u00A0", "")
+                .replaceAll("\\s+", "")
+                .replace("：", ":")
+                .replace("／", "/")
+                .trim();
+    }
+
+    private static int findColumn(Row header, int fallback, String... aliases) {
+        if (header == null) {
+            return fallback;
+        }
+        int first = Math.max(0, header.getFirstCellNum());
+        int last = Math.max(first, header.getLastCellNum() - 1);
+        for (int col = first; col <= last; col++) {
+            Cell cell = header.getCell(col);
+            if (cell == null) {
+                continue;
+            }
+            String name = normalizeHeader(new DataFormatter(Locale.CHINA).formatCellValue(cell));
+            for (String alias : aliases) {
+                String normalizedAlias = normalizeHeader(alias);
+                if (name.equals(normalizedAlias)) {
+                    return col;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static int firstPositive(int... columns) {
+        int result = Integer.MAX_VALUE;
+        for (int column : columns) {
+            if (column >= 0 && column < result) {
+                result = column;
+            }
+        }
+        return result == Integer.MAX_VALUE ? -1 : result;
+    }
+
+    private record TableColumns(
+            int image,
+            int lastNo,
+            int developmentNo,
+            int customer,
+            int customerOrderNo,
+            int deliveryDate,
+            int po,
+            int customerStyleNo,
+            int englishColor,
+            int englishMaterial,
+            int upperMaterial,
+            int liningMaterial,
+            int accessory,
+            int insolePlatform,
+            int outsole,
+            int trademark,
+            int quantity,
+            int cartonCount,
+            int totalQuantity,
+            int sizeStart,
+            int sizeEnd,
+            int dataEnd
+    ) {
+        static TableColumns from(Row header) {
+            int image = findColumn(header, COL_IMAGE, "图片");
+            int lastNo = findColumn(header, COL_LAST_NO, "楦头", "楦头号");
+            int developmentNo = findColumn(header, COL_DEVELOPMENT_NO, "开发编号", "开发号");
+            int customer = findColumn(header, COL_CUSTOMER, "客人", "客户");
+            int customerOrderNo = findColumn(header, COL_CUSTOMER_ORDER_NO, "客人订单号", "客户订单号");
+            int deliveryDate = findColumn(header, COL_DELIVERY_DATE, "出货时间", "出货日期");
+            int po = findColumn(header, COL_PO, "PO", "PONO", "PO号");
+            int customerStyleNo = findColumn(header, COL_CUSTOMER_STYLE_NO, "客人型体号", "客户型体号");
+            int englishColor = findColumn(header, COL_ENGLISH_COLOR, "英文颜色");
+            int englishMaterial = findColumn(header, COL_ENGLISH_MATERIAL, "英文材质");
+            int upperMaterial = findColumn(header, COL_UPPER_MATERIAL, "面料");
+            int liningMaterial = findColumn(header, COL_LINING_MATERIAL, "里料/垫脚", "里料", "垫脚");
+            int accessory = findColumn(header, COL_ACCESSORY, "饰扣/鞋带", "饰扣", "鞋带");
+            int insolePlatform = findColumn(header, COL_INSOLE_PLATFORM, "中底/包中底", "中底", "包中底");
+            int outsole = findColumn(header, COL_OUTSOLE, "大底");
+            int trademark = findColumn(header, COL_TRADEMARK, "商标");
+            int quantity = findColumn(header, COL_QUANTITY, "双数", "数量");
+            int cartonCount = findColumn(header, COL_CARTON_COUNT, "箱数");
+            int totalQuantity = findColumn(header, COL_TOTAL_QUANTITY, "总数量", "总数");
+            int firstSummary = firstPositive(quantity, cartonCount, totalQuantity);
+            int sizeStart = Math.max(COL_SIZE_START, trademark + 1);
+            int sizeEnd = firstSummary > sizeStart ? firstSummary - 1 : Math.max(sizeStart - 1, header == null ? COL_QUANTITY - 1 : header.getLastCellNum() - 1);
+            int dataEnd = Math.max(totalQuantity, Math.max(cartonCount, Math.max(quantity, sizeEnd)));
+            return new TableColumns(
+                    image,
+                    lastNo,
+                    developmentNo,
+                    customer,
+                    customerOrderNo,
+                    deliveryDate,
+                    po,
+                    customerStyleNo,
+                    englishColor,
+                    englishMaterial,
+                    upperMaterial,
+                    liningMaterial,
+                    accessory,
+                    insolePlatform,
+                    outsole,
+                    trademark,
+                    quantity,
+                    cartonCount,
+                    totalQuantity,
+                    sizeStart,
+                    sizeEnd,
+                    dataEnd
+            );
+        }
+
+        int firstDataColumn() {
+            return Math.min(lastNo, developmentNo);
+        }
     }
 
     private record PictureInfo(byte[] bytes, String extension) {

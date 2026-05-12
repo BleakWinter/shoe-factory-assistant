@@ -42,6 +42,7 @@ public class OrderLineResponse {
     private Integer cartonCount;
     private Integer totalQuantity;
     private Map<String, Integer> sizeQuantities;
+    private String shipmentStatus;
     private String importStatus;
     private String errorMessage;
     private String sourceSheetName;
@@ -77,6 +78,7 @@ public class OrderLineResponse {
         response.setCartonCount(line.getCartonCount());
         response.setTotalQuantity(line.getTotalQuantity());
         response.setSizeQuantities(parseSizeQuantities(line.getSizeQuantitiesJson()));
+        response.setShipmentStatus(line.getShipmentStatus());
         response.setImportStatus(line.getImportStatus());
         response.setErrorMessage(line.getErrorMessage());
         response.setSourceSheetName(line.getSourceSheetName());
@@ -150,6 +152,8 @@ public class OrderLineResponse {
     public void setTotalQuantity(Integer totalQuantity) { this.totalQuantity = totalQuantity; }
     public Map<String, Integer> getSizeQuantities() { return sizeQuantities; }
     public void setSizeQuantities(Map<String, Integer> sizeQuantities) { this.sizeQuantities = sizeQuantities; }
+    public String getShipmentStatus() { return shipmentStatus; }
+    public void setShipmentStatus(String shipmentStatus) { this.shipmentStatus = shipmentStatus; }
     public String getImportStatus() { return importStatus; }
     public void setImportStatus(String importStatus) { this.importStatus = importStatus; }
     public String getErrorMessage() { return errorMessage; }

@@ -145,7 +145,7 @@ export default function PrintTaskListPage() {
         render: formatEmpty,
       },
       {
-        title: "订单里的款号",
+        title: "开发编号",
         dataIndex: "styleNos",
         minWidth: 260,
         render: renderStyleNos,

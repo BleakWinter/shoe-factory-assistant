@@ -39,7 +39,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
             Files.createDirectories(targetPdf.getParent());
             tempDir = Files.createTempDirectory("shoe-excel-pdf-");
             Path conversionInput = prepareSingleSheetExcel(sourceExcel, tempDir, sheetName);
-            Path generatedPdf = runLibreOffice(conversionInput, tempDir);
+            Path generatedPdf = runConverter(conversionInput, tempDir);
             Files.copy(generatedPdf, targetPdf, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             return targetPdf;
         } catch (IOException ex) {
@@ -86,7 +86,8 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         String normalizedExpected = normalizeSheetName(sheetName);
         for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
             String current = workbook.getSheetName(i);
-            if (normalizeSheetName(current).contains(normalizedExpected)) {
+            String normalizedCurrent = normalizeSheetName(current);
+            if (normalizedCurrent.contains(normalizedExpected) || normalizedExpected.contains(normalizedCurrent)) {
                 return Optional.of(i);
             }
         }
@@ -94,7 +95,17 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
     }
 
     private String normalizeSheetName(String value) {
-        return value == null ? "" : value.replace(" ", "").trim();
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace(" ", "")
+                .replace("\u00A0", "")
+                .replace("\u3000", "")
+                .replace("\n", "")
+                .replace("\r", "")
+                .replace("\t", "")
+                .trim();
     }
 
     private void configurePrintSettings(Workbook workbook, Sheet sheet) {
@@ -161,6 +172,14 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         return true;
     }
 
+    private Path runConverter(Path input, Path outputDir) {
+        try {
+            return runLibreOffice(input, outputDir);
+        } catch (BusinessException ex) {
+            return runExcelExport(input, outputDir, ex);
+        }
+    }
+
     private Path runLibreOffice(Path input, Path outputDir) {
         String command = stripSurroundingQuotes(properties.getLibreOfficeCommand());
         ProcessBuilder builder = new ProcessBuilder(
@@ -193,6 +212,55 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         }
     }
 
+    private Path runExcelExport(Path input, Path outputDir, BusinessException libreOfficeError) {
+        Path outputPdf = outputDir.resolve(stripExtension(input.getFileName().toString()) + ".pdf");
+        String script = """
+                $ErrorActionPreference = 'Stop';
+                $excel = New-Object -ComObject Excel.Application;
+                $excel.Visible = $false;
+                $excel.DisplayAlerts = $false;
+                try {
+                  $workbook = $excel.Workbooks.Open('%s');
+                  $workbook.ExportAsFixedFormat(0, '%s');
+                  $workbook.Close($false);
+                } finally {
+                  $excel.Quit();
+                  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null;
+                }
+                """.formatted(escapePowerShell(input), escapePowerShell(outputPdf));
+        ProcessBuilder builder = new ProcessBuilder(
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script
+        );
+        builder.redirectErrorStream(true);
+        try {
+            Process process = builder.start();
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> readProcessOutput(process.getInputStream()));
+            boolean finished = process.waitFor(properties.getLibreOfficeTimeoutSeconds(), TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new BusinessException("Excel 导出 PDF 超时");
+            }
+            String output = outputFuture.get(5, TimeUnit.SECONDS);
+            if (process.exitValue() != 0) {
+                throw new BusinessException("Excel 导出 PDF 失败: " + output);
+            }
+            if (!Files.exists(outputPdf)) {
+                throw new BusinessException("Excel 未生成 PDF 文件: " + output);
+            }
+            return outputPdf;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException("执行 LibreOffice 失败，且 Excel 导出 PDF 也失败。LibreOffice 错误: "
+                    + libreOfficeError.getMessage(), ex);
+        }
+    }
+
     private Optional<Path> findGeneratedPdf(Path outputDir) throws IOException {
         try (Stream<Path> paths = Files.list(outputDir)) {
             return paths
@@ -215,6 +283,15 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
             throw new BusinessException("Excel 文件缺少扩展名");
         }
         return filename.substring(index + 1);
+    }
+
+    private String stripExtension(String filename) {
+        int index = filename.lastIndexOf('.');
+        return index < 0 ? filename : filename.substring(0, index);
+    }
+
+    private String escapePowerShell(Path path) {
+        return path.toAbsolutePath().normalize().toString().replace("'", "''");
     }
 
     private String stripSurroundingQuotes(String value) {

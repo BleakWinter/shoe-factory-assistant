@@ -201,10 +201,10 @@ public class PrintTaskServiceImpl implements PrintTaskService {
         }
         return orderLineMapper.selectList(new LambdaQueryWrapper<OrderLine>()
                         .eq(OrderLine::getOrderId, orderId)
-                        .isNotNull(OrderLine::getStyleNo)
+                        .isNotNull(OrderLine::getDevelopmentNo)
                         .orderByAsc(OrderLine::getRowIndex))
                 .stream()
-                .map(OrderLine::getStyleNo)
+                .map(OrderLine::getDevelopmentNo)
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
                 .toList();

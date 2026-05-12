@@ -100,8 +100,8 @@ public class OrderServiceImpl implements OrderService {
     public PageResponse<OrderLineResponse> listOrderLines(
             String orderNo,
             String styleNo,
-            String customerName,
             String lastNo,
+            String shipmentStatus,
             LocalDate deliveryDate,
             long page,
             long size
@@ -110,8 +110,8 @@ public class OrderServiceImpl implements OrderService {
         LambdaQueryWrapper<OrderLine> wrapper = new LambdaQueryWrapper<OrderLine>()
                 .like(hasText(orderNo), OrderLine::getOrderNo, orderNo)
                 .like(hasText(styleNo), OrderLine::getDevelopmentNo, styleNo)
-                .like(hasText(customerName), OrderLine::getCustomerName, customerName)
                 .like(hasText(lastNo), OrderLine::getLastNo, lastNo)
+                .eq(hasText(shipmentStatus), OrderLine::getShipmentStatus, shipmentStatus)
                 .eq(deliveryDate != null, OrderLine::getDeliveryDate, deliveryDate)
                 .orderByDesc(OrderLine::getCreatedAt)
                 .orderByAsc(OrderLine::getRowIndex);

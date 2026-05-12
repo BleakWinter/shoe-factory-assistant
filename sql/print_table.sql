@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS order_line (
     carton_count INT DEFAULT NULL COMMENT '箱数',
     total_quantity INT DEFAULT NULL COMMENT '总数量',
     size_quantities_json JSON DEFAULT NULL COMMENT '尺码数量',
+    shipment_status VARCHAR(32) NOT NULL DEFAULT 'NOT_SHIPPED' COMMENT '出货状态: NOT_SHIPPED/SHIPPED',
     import_status VARCHAR(32) NOT NULL DEFAULT 'IMPORTED' COMMENT '导入状态',
     error_message VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',
     source_sheet_name VARCHAR(128) DEFAULT NULL COMMENT '来源 sheet',
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS order_line (
     KEY idx_order_line_style_no (style_no),
     KEY idx_order_line_customer (customer_name),
     KEY idx_order_line_last_no (last_no),
+    KEY idx_order_line_shipment_status (shipment_status),
     KEY idx_order_line_delivery_date (delivery_date),
     CONSTRAINT fk_order_line_order_id FOREIGN KEY (order_id) REFERENCES order_record (id),
     CONSTRAINT fk_order_line_source_file_id FOREIGN KEY (source_file_id) REFERENCES source_file (id)

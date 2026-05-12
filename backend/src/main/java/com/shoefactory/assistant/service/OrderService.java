@@ -16,8 +16,8 @@ public interface OrderService {
     PageResponse<OrderLineResponse> listOrderLines(
             String orderNo,
             String styleNo,
-            String customerName,
             String lastNo,
+            String shipmentStatus,
             LocalDate deliveryDate,
             long page,
             long size

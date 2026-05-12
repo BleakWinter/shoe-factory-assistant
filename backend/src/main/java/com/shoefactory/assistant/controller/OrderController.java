@@ -54,8 +54,8 @@ public class OrderController {
     public ApiResponse<PageResponse<OrderLineResponse>> listOrderLines(
             @RequestParam(required = false) String orderNo,
             @RequestParam(required = false) String styleNo,
-            @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String lastNo,
+            @RequestParam(required = false) String shipmentStatus,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate deliveryDate,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size
@@ -63,8 +63,8 @@ public class OrderController {
         return ApiResponse.ok(orderService.listOrderLines(
                 orderNo,
                 styleNo,
-                customerName,
                 lastNo,
+                shipmentStatus,
                 deliveryDate,
                 page,
                 size

@@ -13,6 +13,7 @@ export interface PageResponse<T> {
 }
 
 export type OrderImportStatus = "IMPORTED" | "PARTIAL" | "FAILED";
+export type ShipmentStatus = "NOT_SHIPPED" | "SHIPPED";
 export type PrintTaskStatus =
   | "PENDING"
   | "PRINTING"
@@ -58,6 +59,7 @@ export interface OrderLine {
   cartonCount?: number;
   totalQuantity?: number;
   sizeQuantities?: Record<string, number>;
+  shipmentStatus?: ShipmentStatus;
   remark?: string;
   importStatus?: OrderImportStatus;
   errorMessage?: string;
@@ -69,8 +71,8 @@ export interface OrderLine {
 export interface OrderLineQueryParams {
   orderNo?: string;
   styleNo?: string;
-  customerName?: string;
   lastNo?: string;
+  shipmentStatus?: ShipmentStatus;
   deliveryDate?: string;
   page?: number;
   size?: number;

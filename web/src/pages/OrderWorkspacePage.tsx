@@ -2,11 +2,11 @@ import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
-  Cascader,
   DatePicker,
   Form,
   Image,
   Input,
+  Select,
   Space,
   Table,
   Tag,
@@ -16,21 +16,20 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOrderLines, toAssetUrl } from "../api/orderApi";
-import type { OrderImportStatus, OrderLine, OrderLineQueryParams } from "../types/order";
+import type { OrderImportStatus, OrderLine, OrderLineQueryParams, ShipmentStatus } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
   orderNo?: string;
-  styleNoPath?: string[];
-  customerName?: string;
+  styleNo?: string;
   lastNo?: string;
+  shipmentStatus?: ShipmentStatus;
   deliveryDate?: Dayjs;
 }
 
 interface StyleOption {
   label: string;
   value: string;
-  children?: StyleOption[];
 }
 
 function renderImportStatus(status?: OrderImportStatus, errorMessage?: string) {
@@ -69,27 +68,20 @@ function styleGroupOf(styleNo?: string) {
 }
 
 function buildStyleOptions(lines: OrderLine[]): StyleOption[] {
-  const groups = new Map<string, Set<string>>();
+  const styles = new Set<string>();
   lines.forEach((line) => {
     const fullStyle = line.developmentNo?.trim();
-    const group = styleGroupOf(fullStyle);
-    if (!fullStyle || !group) {
+    if (!fullStyle) {
       return;
     }
-    if (!groups.has(group)) {
-      groups.set(group, new Set());
-    }
-    groups.get(group)?.add(fullStyle);
+    styles.add(fullStyle);
   });
 
-  return Array.from(groups.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([group, values]) => ({
-      label: group,
-      value: group,
-      children: Array.from(values)
-        .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ label: value, value })),
+  return Array.from(styles)
+    .sort((a, b) => a.localeCompare(b))
+    .map((value) => ({
+      label: `${styleGroupOf(value)} / ${value}`,
+      value,
     }));
 }
 
@@ -123,12 +115,11 @@ export default function OrderWorkspacePage() {
   const styleOptions = useMemo(() => buildStyleOptions(lines), [lines]);
 
   const submitFilters = (values: FilterValues) => {
-    const selectedStyle = values.styleNoPath?.[values.styleNoPath.length - 1];
     setQuery({
       orderNo: values.orderNo,
-      styleNo: selectedStyle,
-      customerName: values.customerName,
+      styleNo: values.styleNo,
       lastNo: values.lastNo,
+      shipmentStatus: values.shipmentStatus,
       deliveryDate: values.deliveryDate?.format("YYYY-MM-DD"),
       page: 1,
       size: query.size ?? 20,
@@ -142,6 +133,13 @@ export default function OrderWorkspacePage() {
 
   const columns = useMemo<ColumnsType<OrderLine>>(
     () => [
+      {
+        title: "订单流水号",
+        dataIndex: "orderNo",
+        width: 130,
+        fixed: "left",
+        render: formatEmpty,
+      },
       {
         title: "图片",
         dataIndex: "imageUrl",
@@ -225,21 +223,29 @@ export default function OrderWorkspacePage() {
           <Form.Item name="orderNo" label="订单流水号">
             <Input allowClear placeholder="订单流水号" />
           </Form.Item>
-          <Form.Item name="styleNoPath" label="款号">
-            <Cascader
+          <Form.Item name="styleNo" label="款号">
+            <Select
               allowClear
-              changeOnSelect
               className="style-cascader"
               options={styleOptions}
               placeholder="选择款号"
               showSearch
+              optionFilterProp="label"
             />
           </Form.Item>
           <Form.Item name="lastNo" label="楦头">
             <Input allowClear placeholder="楦头" />
           </Form.Item>
-          <Form.Item name="customerName" label="客人">
-            <Input allowClear placeholder="客人" />
+          <Form.Item name="shipmentStatus" label="出货状态">
+            <Select
+              allowClear
+              className="status-select"
+              placeholder="全部"
+              options={[
+                { label: "未出货", value: "NOT_SHIPPED" },
+                { label: "已出货", value: "SHIPPED" },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="deliveryDate" label="出货时间">
             <DatePicker allowClear />
@@ -263,7 +269,7 @@ export default function OrderWorkspacePage() {
           columns={columns}
           dataSource={lines}
           pagination={pagination}
-          scroll={{ x: 3320 }}
+          scroll={{ x: 3450 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({

@@ -39,6 +39,7 @@ public class OrderLine {
     private Integer cartonCount;
     private Integer totalQuantity;
     private String sizeQuantitiesJson;
+    private String shipmentStatus;
     private String importStatus;
     private String errorMessage;
     private String sourceSheetName;
@@ -268,6 +269,14 @@ public class OrderLine {
 
     public void setSizeQuantitiesJson(String sizeQuantitiesJson) {
         this.sizeQuantitiesJson = sizeQuantitiesJson;
+    }
+
+    public String getShipmentStatus() {
+        return shipmentStatus;
+    }
+
+    public void setShipmentStatus(String shipmentStatus) {
+        this.shipmentStatus = shipmentStatus;
     }
 
     public String getImportStatus() {
