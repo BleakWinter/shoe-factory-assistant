@@ -38,13 +38,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private static final String ORDER_SHEET_NAME = "订单";
-    private static final int HEADER_ROW_INDEX = 4;
-    private static final int FIRST_DATA_ROW_INDEX = 5;
+    private static final int FALLBACK_HEADER_ROW_INDEX = 4;
+    private static final int MAX_HEADER_SCAN_ROWS = 30;
     private static final int COL_IMAGE = 5;
     private static final int COL_LAST_NO = 6;
     private static final int COL_DEVELOPMENT_NO = 7;
@@ -65,6 +67,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     private static final int COL_QUANTITY = 38;
     private static final int COL_CARTON_COUNT = 39;
     private static final int COL_TOTAL_QUANTITY = 40;
+    private static final Pattern LEADING_ORDER_NO_PATTERN = Pattern.compile("^(\\d{4,})");
 
     private final DataFormatter formatter = new DataFormatter(Locale.CHINA);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -81,11 +84,15 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             if (sheet == null) {
                 throw new BusinessException("Excel 中未找到“订单”sheet");
             }
-            Row header = sheet.getRow(HEADER_ROW_INDEX);
+            Row header = findHeaderRow(sheet);
+            if (header == null) {
+                throw new BusinessException("订单 sheet 未找到明细表头行");
+            }
             TableColumns columns = TableColumns.from(header);
-            Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet, columns.image());
+            int firstDataRowIndex = header.getRowNum() + 1;
+            Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet, columns.image(), firstDataRowIndex);
             OrderRecord order = buildOrderRecord(sheet, sourceFile, columns);
-            List<OrderLine> lines = buildLines(sheet, sourceFile, order, picturesByRow, columns);
+            List<OrderLine> lines = buildLines(sheet, sourceFile, order, picturesByRow, columns, firstDataRowIndex);
             if (lines.isEmpty()) {
                 throw new BusinessException("订单 sheet 未解析到明细行");
             }
@@ -101,7 +108,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         LocalDateTime now = LocalDateTime.now();
         OrderRecord order = new OrderRecord();
         order.setSourceFileId(sourceFile.getId());
-        order.setOrderNo(blankToNull(text(sheet, 1, 32)));
+        order.setOrderNo(blankToNull(resolveOrderNo(sheet, sourceFile)));
         order.setCustomerName(blankToNull(text(sheet, 1, 6)));
         order.setDeliveryDate(dateValue(sheet.getRow(3) == null ? null : sheet.getRow(3).getCell(15)));
         order.setSourceSheetName(sheet.getSheetName());
@@ -114,22 +121,129 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return order;
     }
 
+    private Row findHeaderRow(Sheet sheet) {
+        Row fallback = sheet.getRow(FALLBACK_HEADER_ROW_INDEX);
+        Row bestRow = null;
+        int bestScore = 0;
+        int lastScanRow = Math.min(sheet.getLastRowNum(), MAX_HEADER_SCAN_ROWS - 1);
+        for (int rowIndex = 0; rowIndex <= lastScanRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            int score = headerScore(row);
+            if (score > bestScore) {
+                bestScore = score;
+                bestRow = row;
+            }
+        }
+        return bestScore >= 4 ? bestRow : fallback;
+    }
+
+    private int headerScore(Row row) {
+        if (row == null) {
+            return 0;
+        }
+        int score = 0;
+        score += hasHeader(row, "图片") ? 2 : 0;
+        score += hasHeader(row, "楦头", "楦头号") ? 2 : 0;
+        score += hasHeader(row, "开发编号", "开发号") ? 2 : 0;
+        score += hasHeader(row, "客人", "客户") ? 1 : 0;
+        score += hasHeader(row, "客人订单号", "客户订单号") ? 1 : 0;
+        score += hasHeader(row, "PO", "PONO", "PO号", "PO号码") ? 1 : 0;
+        score += hasHeader(row, "大底") ? 1 : 0;
+        score += hasHeader(row, "双数", "数量") ? 1 : 0;
+        return score;
+    }
+
+    private boolean hasHeader(Row row, String... aliases) {
+        if (row == null) {
+            return false;
+        }
+        int first = Math.max(0, row.getFirstCellNum());
+        int last = Math.max(first, row.getLastCellNum() - 1);
+        for (int col = first; col <= last; col++) {
+            String value = normalizeHeader(text(row, col));
+            for (String alias : aliases) {
+                if (value.equals(normalizeHeader(alias))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private String resolveOrderNo(Sheet sheet, SourceFile sourceFile) {
+        String labeledOrderNo = findValueAfterLabel(sheet, "订单流水号", 0, 8);
+        if (!labeledOrderNo.isBlank()) {
+            return labeledOrderNo;
+        }
+
+        String fixedOrderNo = text(sheet, 1, 32);
+        if (!fixedOrderNo.isBlank()) {
+            return fixedOrderNo;
+        }
+
+        String invoiceNo = findValueAfterLabel(sheet, "发票编号", 0, 8);
+        if (!invoiceNo.isBlank()) {
+            return invoiceNo;
+        }
+
+        String fixedInvoiceNo = text(sheet, 3, 6);
+        if (!fixedInvoiceNo.isBlank()) {
+            return fixedInvoiceNo;
+        }
+
+        return leadingOrderNoFromFileName(sourceFile.getOriginalName());
+    }
+
+    private String findValueAfterLabel(Sheet sheet, String label, int startRow, int endRow) {
+        String normalizedLabel = normalizeHeader(label);
+        for (int rowIndex = startRow; rowIndex <= Math.min(endRow, sheet.getLastRowNum()); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            int first = Math.max(0, row.getFirstCellNum());
+            int last = Math.max(first, row.getLastCellNum() - 1);
+            for (int col = first; col <= last; col++) {
+                String cellText = normalizeHeader(text(row, col)).replace(":", "");
+                if (!cellText.contains(normalizedLabel)) {
+                    continue;
+                }
+                for (int offset = 1; offset <= 6 && col + offset <= last; offset++) {
+                    String value = text(row, col + offset);
+                    if (!value.isBlank()) {
+                        return value;
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    private String leadingOrderNoFromFileName(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        Matcher matcher = LEADING_ORDER_NO_PATTERN.matcher(fileName.trim());
+        return matcher.find() ? matcher.group(1) : "";
+    }
+
     private List<OrderLine> buildLines(
             Sheet sheet,
             SourceFile sourceFile,
             OrderRecord order,
             Map<Integer, PictureInfo> picturesByRow,
-            TableColumns columns
+            TableColumns columns,
+            int firstDataRowIndex
     ) {
         List<OrderLine> lines = new ArrayList<>();
-        Row header = sheet.getRow(HEADER_ROW_INDEX);
+        Row header = sheet.getRow(columns.headerRowIndex());
         LocalDateTime now = LocalDateTime.now();
-        for (int rowIndex = FIRST_DATA_ROW_INDEX; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+        for (int rowIndex = firstDataRowIndex; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row == null || isTotalRow(row, columns)) {
                 break;
             }
-            if (isBlankRow(row, columns)) {
+            if (isBlankRow(row, columns) || isRepeatedHeaderRow(row, columns)) {
                 continue;
             }
             OrderLine line = new OrderLine();
@@ -196,7 +310,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return result;
     }
 
-    private Map<Integer, PictureInfo> extractPicturesByRow(Sheet sheet, int imageColumn) {
+    private Map<Integer, PictureInfo> extractPicturesByRow(Sheet sheet, int imageColumn, int firstDataRowIndex) {
         Map<Integer, PictureInfo> result = new LinkedHashMap<>();
         if (!(sheet instanceof XSSFSheet xssfSheet)) {
             return result;
@@ -211,7 +325,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                     .toList()) {
                 int row = picture.getPreferredSize().getFrom().getRow() + 1;
                 int col = picture.getPreferredSize().getFrom().getCol();
-                if (col != imageColumn || row < FIRST_DATA_ROW_INDEX + 1) {
+                if (col != imageColumn || row < firstDataRowIndex + 1) {
                     continue;
                 }
                 XSSFPictureData pictureData = picture.getPictureData();
@@ -223,7 +337,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     private Row findTotalRow(Sheet sheet, TableColumns columns) {
-        for (int rowIndex = FIRST_DATA_ROW_INDEX; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+        for (int rowIndex = columns.headerRowIndex() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row != null && isTotalRow(row, columns)) {
                 return row;
@@ -247,6 +361,12 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             }
         }
         return true;
+    }
+
+    private boolean isRepeatedHeaderRow(Row row, TableColumns columns) {
+        return normalizeHeader(text(row, columns.image())).equals("图片")
+                || normalizeHeader(text(row, columns.lastNo())).equals("楦头")
+                || normalizeHeader(text(row, columns.developmentNo())).equals("开发编号");
     }
 
     private String rowText(Row row, int startColumn, int endColumn) {
@@ -424,7 +544,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int totalQuantity,
             int sizeStart,
             int sizeEnd,
-            int dataEnd
+            int dataEnd,
+            int headerRowIndex
     ) {
         static TableColumns from(Row header) {
             int image = findColumn(header, COL_IMAGE, "图片");
@@ -472,7 +593,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                     totalQuantity,
                     sizeStart,
                     sizeEnd,
-                    dataEnd
+                    dataEnd,
+                    header == null ? FALLBACK_HEADER_ROW_INDEX : header.getRowNum()
             );
         }
 
