@@ -1,5 +1,5 @@
 import request from "../utils/request";
-import type { PrintTask, PrintTaskStatus } from "../types/order";
+import type { PrintPreview, PrintTask, PrintTaskStatus } from "../types/order";
 
 function normalizeList<T>(data: T[] | { records?: T[]; list?: T[] }): T[] {
   if (Array.isArray(data)) {
@@ -23,6 +23,16 @@ export async function updatePrintTaskStatus(
   const { data } = await request.patch<PrintTask>(`/print-tasks/${id}/status`, {
     status,
     errorMessage,
+  });
+  return data;
+}
+
+export async function generatePrintTaskPreview(
+  id: number,
+  printType: "ORDER" | "PACKING",
+) {
+  const { data } = await request.post<PrintPreview>(`/print-tasks/${id}/preview`, {
+    printType,
   });
   return data;
 }

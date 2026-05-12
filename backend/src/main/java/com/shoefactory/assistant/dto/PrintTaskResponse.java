@@ -5,6 +5,7 @@ import com.shoefactory.assistant.entity.PrintPreview;
 import com.shoefactory.assistant.entity.PrintTask;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class PrintTaskResponse {
 
@@ -12,6 +13,9 @@ public class PrintTaskResponse {
     private String taskNo;
     private Long orderId;
     private String orderNo;
+    private String customerName;
+    private List<String> styleNos;
+    private Integer totalPairs;
     private Long previewId;
     private String previewUrl;
     private String printType;
@@ -41,10 +45,18 @@ public class PrintTaskResponse {
         response.setCreatedAt(task.getCreatedAt());
         if (order != null) {
             response.setOrderNo(order.getOrderNo());
+            response.setCustomerName(order.getCustomerName());
+            response.setTotalPairs(order.getQuantity());
         }
         if (preview != null) {
             response.setPreviewUrl(preview.getPreviewUrl());
         }
+        return response;
+    }
+
+    public static PrintTaskResponse from(PrintTask task, OrderRecord order, PrintPreview preview, List<String> styleNos) {
+        PrintTaskResponse response = from(task, order, preview);
+        response.setStyleNos(styleNos);
         return response;
     }
 
@@ -78,6 +90,30 @@ public class PrintTaskResponse {
 
     public void setOrderNo(String orderNo) {
         this.orderNo = orderNo;
+    }
+
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
+    public List<String> getStyleNos() {
+        return styleNos;
+    }
+
+    public void setStyleNos(List<String> styleNos) {
+        this.styleNos = styleNos;
+    }
+
+    public Integer getTotalPairs() {
+        return totalPairs;
+    }
+
+    public void setTotalPairs(Integer totalPairs) {
+        this.totalPairs = totalPairs;
     }
 
     public Long getPreviewId() {

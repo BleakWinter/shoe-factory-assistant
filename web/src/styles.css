@@ -128,6 +128,10 @@ a {
   width: 130px;
 }
 
+.style-cascader {
+  min-width: 190px;
+}
+
 .data-table {
   border: 1px solid #e5eaf1;
   border-radius: 8px;
@@ -254,6 +258,8 @@ a {
 
   .filter-form .ant-form-item,
   .filter-form .ant-picker,
+  .filter-form .ant-cascader,
+  .filter-form .ant-select-selector,
   .filter-form .ant-select,
   .filter-form .ant-input,
   .filter-form button {

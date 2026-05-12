@@ -1,12 +1,8 @@
+import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
-  InboxOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
-import {
-  Alert,
   App,
   Button,
+  Cascader,
   DatePicker,
   Form,
   Image,
@@ -15,33 +11,26 @@ import {
   Table,
   Tag,
   Typography,
-  Upload,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import type { UploadProps } from "antd";
 import type { Dayjs } from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  fetchOrderLines,
-  toAssetUrl,
-  uploadOrderFile,
-} from "../api/orderApi";
+import { fetchOrderLines, toAssetUrl } from "../api/orderApi";
 import type { OrderImportStatus, OrderLine, OrderLineQueryParams } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
   orderNo?: string;
-  styleNo?: string;
+  styleNoPath?: string[];
   customerName?: string;
   lastNo?: string;
   deliveryDate?: Dayjs;
 }
 
-const allowedExtensions = ["xlsx", "xls"];
-
-function isAllowedFile(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  return Boolean(extension && allowedExtensions.includes(extension));
+interface StyleOption {
+  label: string;
+  value: string;
+  children?: StyleOption[];
 }
 
 function renderImportStatus(status?: OrderImportStatus, errorMessage?: string) {
@@ -71,12 +60,44 @@ function renderSizeQuantities(value?: Record<string, number>) {
   );
 }
 
+function styleGroupOf(styleNo?: string) {
+  if (!styleNo) {
+    return "";
+  }
+  const parts = styleNo.trim().split("-").filter(Boolean);
+  return parts.length >= 2 ? `${parts[0]}-${parts[1]}` : styleNo.trim();
+}
+
+function buildStyleOptions(lines: OrderLine[]): StyleOption[] {
+  const groups = new Map<string, Set<string>>();
+  lines.forEach((line) => {
+    const fullStyle = line.developmentNo?.trim();
+    const group = styleGroupOf(fullStyle);
+    if (!fullStyle || !group) {
+      return;
+    }
+    if (!groups.has(group)) {
+      groups.set(group, new Set());
+    }
+    groups.get(group)?.add(fullStyle);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([group, values]) => ({
+      label: group,
+      value: group,
+      children: Array.from(values)
+        .sort((a, b) => a.localeCompare(b))
+        .map((value) => ({ label: value, value })),
+    }));
+}
+
 export default function OrderWorkspacePage() {
   const { message } = App.useApp();
   const [form] = Form.useForm<FilterValues>();
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState<OrderLineQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
 
@@ -89,7 +110,7 @@ export default function OrderWorkspacePage() {
     } catch (error) {
       setLines([]);
       setTotal(0);
-      message.error(error instanceof Error ? error.message : "订单表加载失败");
+      message.error(error instanceof Error ? error.message : "订单明细加载失败");
     } finally {
       setLoading(false);
     }
@@ -99,42 +120,13 @@ export default function OrderWorkspacePage() {
     void loadLines(query);
   }, [loadLines, query]);
 
-  const uploadProps: UploadProps = {
-    accept: ".xlsx,.xls",
-    multiple: false,
-    showUploadList: false,
-    disabled: uploading,
-    beforeUpload(file) {
-      if (!isAllowedFile(file)) {
-        message.error("订单文件请上传 xlsx 或 xls");
-        return Upload.LIST_IGNORE;
-      }
-      return true;
-    },
-    customRequest: async (options) => {
-      setUploading(true);
-      try {
-        const file = options.file as File;
-        const result = await uploadOrderFile(file);
-        options.onSuccess?.(result);
-        message.success(
-          `订单已导入，${result.lineCount || 0} 行明细已进入订单表，打印任务已加入打印列表`,
-        );
-        setQuery((prev) => ({ ...prev, page: 1 }));
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error("上传失败");
-        options.onError?.(err);
-        message.error(err.message);
-      } finally {
-        setUploading(false);
-      }
-    },
-  };
+  const styleOptions = useMemo(() => buildStyleOptions(lines), [lines]);
 
   const submitFilters = (values: FilterValues) => {
+    const selectedStyle = values.styleNoPath?.[values.styleNoPath.length - 1];
     setQuery({
       orderNo: values.orderNo,
-      styleNo: values.styleNo,
+      styleNo: selectedStyle,
       customerName: values.customerName,
       lastNo: values.lastNo,
       deliveryDate: values.deliveryDate?.format("YYYY-MM-DD"),
@@ -168,134 +160,30 @@ export default function OrderWorkspacePage() {
             <Tag>无图</Tag>
           ),
       },
-      {
-        title: "订单号",
-        dataIndex: "orderNo",
-        width: 130,
-        fixed: "left",
-        render: formatEmpty,
-      },
-      {
-        title: "客户",
-        dataIndex: "customerName",
-        width: 120,
-        render: formatEmpty,
-      },
-      {
-        title: "发票编号",
-        dataIndex: "invoiceNo",
-        width: 110,
-        render: formatEmpty,
-      },
-      {
-        title: "款号",
-        dataIndex: "styleNo",
-        width: 120,
-        render: formatEmpty,
-      },
-      {
-        title: "楦头号",
-        dataIndex: "lastNo",
-        width: 110,
-        render: formatEmpty,
-      },
-      {
-        title: "开发编号",
-        dataIndex: "developmentNo",
-        width: 120,
-        render: formatEmpty,
-      },
-      {
-        title: "客人订单号",
-        dataIndex: "customerOrderNo",
-        width: 130,
-        render: formatEmpty,
-      },
-      {
-        title: "仓库号/店铺号",
-        dataIndex: "warehouseNo",
-        width: 140,
-        render: formatEmpty,
-      },
-      {
-        title: "出货时间",
-        dataIndex: "deliveryDate",
-        width: 120,
-        render: formatEmpty,
-      },
-      {
-        title: "PO#",
-        dataIndex: "poNo",
-        width: 110,
-        render: formatEmpty,
-      },
-      {
-        title: "客人型体号",
-        dataIndex: "customerStyleNo",
-        width: 130,
-        render: formatEmpty,
-      },
-      {
-        title: "英文颜色",
-        dataIndex: "englishColor",
-        width: 130,
-        render: formatEmpty,
-      },
-      {
-        title: "英文材质",
-        dataIndex: "englishMaterial",
-        width: 130,
-        render: formatEmpty,
-      },
-      {
-        title: "面料",
-        dataIndex: "upperMaterial",
-        width: 220,
-        render: formatEmpty,
-      },
-      {
-        title: "里料/垫脚",
-        dataIndex: "liningMaterial",
-        width: 180,
-        render: formatEmpty,
-      },
-      {
-        title: "饰扣/鞋带",
-        dataIndex: "accessory",
-        width: 150,
-        render: formatEmpty,
-      },
-      {
-        title: "包中底/水台",
-        dataIndex: "insolePlatform",
-        width: 160,
-        render: formatEmpty,
-      },
-      {
-        title: "大底",
-        dataIndex: "outsole",
-        width: 220,
-        render: formatEmpty,
-      },
-      {
-        title: "商标",
-        dataIndex: "trademark",
-        width: 100,
-        render: formatEmpty,
-      },
-      {
-        title: "双数",
-        dataIndex: "quantity",
-        width: 90,
-        align: "right",
-        render: formatEmpty,
-      },
+      { title: "楦头", dataIndex: "lastNo", width: 110, fixed: "left", render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNo", width: 130, render: formatEmpty },
+      { title: "客人", dataIndex: "customerName", width: 150, render: formatEmpty },
+      { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
+      { title: "出货时间", dataIndex: "deliveryDate", width: 120, render: formatEmpty },
+      { title: "PO", dataIndex: "poNo", width: 110, render: formatEmpty },
+      { title: "客人型体号", dataIndex: "customerStyleNo", width: 130, render: formatEmpty },
+      { title: "英文颜色", dataIndex: "englishColor", width: 160, render: formatEmpty },
+      { title: "英文材质", dataIndex: "englishMaterial", width: 130, render: formatEmpty },
+      { title: "面料", dataIndex: "upperMaterial", width: 260, render: formatEmpty },
+      { title: "里料/垫脚", dataIndex: "liningMaterial", width: 220, render: formatEmpty },
+      { title: "饰扣/鞋带", dataIndex: "accessory", width: 140, render: formatEmpty },
+      { title: "中底/包中底", dataIndex: "insolePlatform", width: 150, render: formatEmpty },
+      { title: "大底", dataIndex: "outsole", width: 260, render: formatEmpty },
+      { title: "商标", dataIndex: "trademark", width: 150, render: formatEmpty },
       {
         title: "尺码数量",
         dataIndex: "sizeQuantities",
-        width: 220,
+        width: 240,
         render: renderSizeQuantities,
       },
+      { title: "双数", dataIndex: "quantity", width: 90, align: "right", render: formatEmpty },
+      { title: "箱数", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
+      { title: "总数量", dataIndex: "totalQuantity", width: 100, align: "right", render: formatEmpty },
       {
         title: "导入状态",
         dataIndex: "importStatus",
@@ -303,12 +191,7 @@ export default function OrderWorkspacePage() {
         render: (status: OrderImportStatus, record) =>
           renderImportStatus(status, record.errorMessage),
       },
-      {
-        title: "上传时间",
-        dataIndex: "createdAt",
-        width: 170,
-        render: formatDateTime,
-      },
+      { title: "上传时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
     ],
     [],
   );
@@ -325,29 +208,12 @@ export default function OrderWorkspacePage() {
     <div className="workspace">
       <div className="toolbar-band">
         <div>
-          <Typography.Title level={3}>订单表</Typography.Title>
+          <Typography.Title level={3}>订单列表</Typography.Title>
           <Typography.Text type="secondary">
-            一个订单文件可以拆成很多行明细，图片、款号、楦头号和材料都放在这里。
+            这里看 Excel 里解析出来的订单明细，上传入口放在打印列表里。
           </Typography.Text>
         </div>
-        <Upload {...uploadProps}>
-          <Button
-            type="primary"
-            size="large"
-            loading={uploading}
-            icon={<InboxOutlined />}
-          >
-            上传订单 Excel
-          </Button>
-        </Upload>
       </div>
-
-      <Alert
-        type="info"
-        showIcon
-        className="page-alert"
-        message="上传订单后，订单明细进入订单表；打印列表只生成这个订单的一条打印任务。"
-      />
 
       <div className="page-panel">
         <Form
@@ -356,17 +222,24 @@ export default function OrderWorkspacePage() {
           className="filter-form"
           onFinish={submitFilters}
         >
-          <Form.Item name="orderNo" label="订单号">
-            <Input allowClear placeholder="订单号" />
+          <Form.Item name="orderNo" label="订单流水号">
+            <Input allowClear placeholder="订单流水号" />
           </Form.Item>
-          <Form.Item name="styleNo" label="款号">
-            <Input allowClear placeholder="款号" />
+          <Form.Item name="styleNoPath" label="款号">
+            <Cascader
+              allowClear
+              changeOnSelect
+              className="style-cascader"
+              options={styleOptions}
+              placeholder="选择款号"
+              showSearch
+            />
           </Form.Item>
-          <Form.Item name="customerName" label="客户">
-            <Input allowClear placeholder="客户" />
+          <Form.Item name="lastNo" label="楦头">
+            <Input allowClear placeholder="楦头" />
           </Form.Item>
-          <Form.Item name="lastNo" label="楦头号">
-            <Input allowClear placeholder="楦头号" />
+          <Form.Item name="customerName" label="客人">
+            <Input allowClear placeholder="客人" />
           </Form.Item>
           <Form.Item name="deliveryDate" label="出货时间">
             <DatePicker allowClear />
@@ -377,10 +250,7 @@ export default function OrderWorkspacePage() {
                 查询
               </Button>
               <Button onClick={resetFilters}>重置</Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={() => void loadLines(query)}
-              >
+              <Button icon={<ReloadOutlined />} onClick={() => void loadLines(query)}>
                 刷新
               </Button>
             </Space>
@@ -393,7 +263,7 @@ export default function OrderWorkspacePage() {
           columns={columns}
           dataSource={lines}
           pagination={pagination}
-          scroll={{ x: 3100 }}
+          scroll={{ x: 3320 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({

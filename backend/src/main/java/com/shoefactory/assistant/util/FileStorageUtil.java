@@ -70,6 +70,26 @@ public class FileStorageUtil {
         return prefix + "/" + fileId + "/preview";
     }
 
+    public Path saveOrderLineImage(byte[] content, String fileNo, int rowIndex, String extension) {
+        if (content == null || content.length == 0) {
+            return null;
+        }
+        String safeExtension = extension == null || extension.isBlank() ? "png" : extension.toLowerCase(Locale.ROOT);
+        Path directory = rootPath.resolve("images")
+                .resolve(LocalDate.now().format(DATE_DIR_FORMATTER))
+                .toAbsolutePath()
+                .normalize();
+        createDirectories(directory);
+        Path target = directory.resolve(fileNo + "-r" + rowIndex + "." + safeExtension).normalize();
+        ensureInRoot(target);
+        try {
+            Files.write(target, content);
+            return target;
+        } catch (IOException ex) {
+            throw new BusinessException("保存订单图片失败", ex);
+        }
+    }
+
     public Path resolvePath(String pathValue) {
         if (pathValue == null || pathValue.isBlank()) {
             throw new BusinessException("文件路径为空");

@@ -1,9 +1,12 @@
 package com.shoefactory.assistant.controller;
 
 import com.shoefactory.assistant.common.ApiResponse;
+import com.shoefactory.assistant.dto.PrintPreviewResponse;
 import com.shoefactory.assistant.dto.PrintTaskCreateRequest;
+import com.shoefactory.assistant.dto.PrintTaskPreviewRequest;
 import com.shoefactory.assistant.dto.PrintTaskResponse;
 import com.shoefactory.assistant.dto.PrintTaskStatusUpdateRequest;
+import com.shoefactory.assistant.enums.PrintType;
 import com.shoefactory.assistant.service.PrintTaskService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,11 +35,24 @@ public class PrintTaskController {
         return ApiResponse.ok(printTaskService.createTask(request));
     }
 
+    @GetMapping
+    public ApiResponse<List<PrintTaskResponse>> listTasks() {
+        return ApiResponse.ok(printTaskService.listTasks());
+    }
+
     @GetMapping("/pending")
     public ApiResponse<List<PrintTaskResponse>> listPendingTasks(
             @RequestParam(name = "limit", defaultValue = "20") int limit
     ) {
         return ApiResponse.ok(printTaskService.listPendingTasks(limit));
+    }
+
+    @PostMapping("/{id}/preview")
+    public ApiResponse<PrintPreviewResponse> generatePreview(
+            @PathVariable Long id,
+            @Valid @RequestBody PrintTaskPreviewRequest request
+    ) {
+        return ApiResponse.ok(printTaskService.generateTaskPreview(id, PrintType.parse(request.getPrintType())));
     }
 
     @PatchMapping("/{id}/status")

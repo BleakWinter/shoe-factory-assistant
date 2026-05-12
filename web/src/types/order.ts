@@ -55,6 +55,8 @@ export interface OrderLine {
   outsole?: string;
   trademark?: string;
   quantity?: number;
+  cartonCount?: number;
+  totalQuantity?: number;
   sizeQuantities?: Record<string, number>;
   remark?: string;
   importStatus?: OrderImportStatus;
@@ -84,6 +86,18 @@ export interface PrintTask {
   totalPairs?: number;
   status: PrintTaskStatus;
   previewUrl?: string;
+  errorMessage?: string;
+  createdAt?: string;
+}
+
+export interface PrintPreview {
+  id: number;
+  previewNo: string;
+  orderId: number;
+  orderNo?: string;
+  printType: "ORDER" | "PACKING";
+  previewUrl: string;
+  status: "READY" | "FAILED";
   errorMessage?: string;
   createdAt?: string;
 }
