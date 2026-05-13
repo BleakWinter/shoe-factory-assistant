@@ -111,6 +111,60 @@ CREATE TABLE IF NOT EXISTS `order_record_detail` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细表';
 
 
+CREATE TABLE IF NOT EXISTS `order_packing_detail` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+
+  `order_id` bigint NOT NULL COMMENT '订单主表ID',
+  `line_no` int DEFAULT NULL COMMENT '明细行号',
+
+  `style_image_path` varchar(512) DEFAULT NULL COMMENT '图片本地路径',
+  `company_style_no` varchar(128) DEFAULT NULL COMMENT '公司款号',
+  `customer_name` varchar(128) DEFAULT NULL COMMENT '客人',
+  `customer_order_no` varchar(255) DEFAULT NULL COMMENT '客人订单号',
+  `warehouse_store_no` varchar(128) DEFAULT NULL COMMENT '仓库号/店铺号',
+  `po_no` varchar(128) DEFAULT NULL COMMENT 'PO号',
+  `customer_style_no` varchar(128) DEFAULT NULL COMMENT 'STYLE/客人款号',
+  `customer_color` varchar(255) DEFAULT NULL COMMENT 'COLOR/客人颜色',
+  `material` varchar(255) DEFAULT NULL COMMENT 'MATERIAL/面料材质',
+  `item_number` varchar(128) DEFAULT NULL COMMENT 'ITEM NUMBER/项目编号',
+  `trademark` varchar(255) DEFAULT NULL COMMENT '商标',
+  `size_quantities_json` json DEFAULT NULL COMMENT '尺码数量JSON，例如 {"6.5/36":10}',
+
+  `pairs` int NOT NULL DEFAULT 0 COMMENT 'PRS',
+  `carton_count` int NOT NULL DEFAULT 0 COMMENT 'CTNS',
+  `total_pairs` int NOT NULL DEFAULT 0 COMMENT 'TTL PRS',
+  `carton_start` varchar(128) DEFAULT NULL COMMENT 'CTN START/开始箱号',
+  `carton_end` varchar(128) DEFAULT NULL COMMENT 'CTN END/结束箱号',
+
+  `length_value` varchar(64) DEFAULT NULL COMMENT 'L',
+  `width_value` varchar(64) DEFAULT NULL COMMENT 'W',
+  `height_value` varchar(64) DEFAULT NULL COMMENT 'H',
+  `net_weight` varchar(64) DEFAULT NULL COMMENT 'NW(KGS)/净重',
+  `gross_weight` varchar(64) DEFAULT NULL COMMENT 'GW(KGS)/毛重',
+  `measurement` varchar(64) DEFAULT NULL COMMENT 'MEA',
+  `total_net_weight` varchar(64) DEFAULT NULL COMMENT 'TOTAL NW/总净重',
+  `total_gross_weight` varchar(64) DEFAULT NULL COMMENT 'TOTAL GW/总毛重',
+  `total_cbm` varchar(64) DEFAULT NULL COMMENT 'TOTAL CBM/总体积',
+  `gender` varchar(64) DEFAULT NULL COMMENT 'GENDER/鞋类',
+  `product_type` varchar(128) DEFAULT NULL COMMENT 'PRODUCT TYPE/产品类型',
+  `upper_material` varchar(255) DEFAULT NULL COMMENT 'UPPER MATERIAL/鞋帮材质',
+  `sole_material` varchar(255) DEFAULT NULL COMMENT 'SOLE MATERIAL/鞋底材质',
+
+  `source_sheet_name` varchar(128) DEFAULT NULL COMMENT '来源sheet',
+  `row_index` int DEFAULT NULL COMMENT 'Excel行号',
+  `remark` varchar(1024) DEFAULT NULL COMMENT '备注',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+
+  KEY `idx_packing_order_id` (`order_id`),
+  KEY `idx_packing_company_style_no` (`company_style_no`),
+  KEY `idx_packing_carton_range` (`carton_start`, `carton_end`),
+  KEY `idx_packing_row_index` (`order_id`, `row_index`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='装箱单明细表';
+
+
 CREATE TABLE IF NOT EXISTS `order_detail_process` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
 

@@ -79,6 +79,23 @@ public class PrintTaskServiceImpl implements PrintTaskService {
 
     @Override
     @Transactional
+    public PrintTaskResponse markTaskPrinted(Long id, PrintType printType) {
+        OrderRecord order = orderRecordMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException("订单不存在: " + id);
+        }
+        if (printType == PrintType.ORDER) {
+            order.setOrderPrinted(true);
+        } else {
+            order.setPackingPrinted(true);
+        }
+        order.setUpdatedAt(LocalDateTime.now());
+        orderRecordMapper.updateById(order);
+        return PrintTaskResponse.fromOrder(order);
+    }
+
+    @Override
+    @Transactional
     public PrintTaskResponse updateTaskStatus(Long id, PrintTaskStatusUpdateRequest request) {
         OrderRecord order = orderRecordMapper.selectById(id);
         if (order == null) {

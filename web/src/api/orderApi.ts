@@ -1,5 +1,6 @@
 import request from "../utils/request";
 import type {
+  OrderPackingDetail,
   OrderRecord,
   OrderRecordDetail,
   OrderRecordQueryParams,
@@ -52,6 +53,11 @@ export async function fetchOrders(params: OrderRecordQueryParams) {
 export async function fetchOrderDetails(orderId: number) {
   // 明细接口会连同 order_detail_process 一起返回。
   const { data } = await request.get<OrderRecordDetail[]>(`/orders/${orderId}/details`);
+  return data || [];
+}
+
+export async function fetchOrderPackingDetails(orderId: number) {
+  const { data } = await request.get<OrderPackingDetail[]>(`/orders/${orderId}/packing-details`);
   return data || [];
 }
 

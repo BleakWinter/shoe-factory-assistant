@@ -69,6 +69,15 @@ public class PrintTaskController {
         return ApiResponse.ok(printTaskService.regenerateTaskPreview(id, PrintType.parse(request.getPrintType())));
     }
 
+    @PatchMapping("/{id}/printed")
+    public ApiResponse<PrintTaskResponse> markPrinted(
+            @PathVariable Long id,
+            @Valid @RequestBody PrintTaskPreviewRequest request
+    ) {
+        // 页面手动确认某一种单据已经打印，ORDER 和 PACKING 分开标记。
+        return ApiResponse.ok(printTaskService.markTaskPrinted(id, PrintType.parse(request.getPrintType())));
+    }
+
     @PatchMapping("/{id}/status")
     public ApiResponse<PrintTaskResponse> updateStatus(
             @PathVariable Long id,

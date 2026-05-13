@@ -3,6 +3,7 @@ package com.shoefactory.assistant.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.common.BusinessException;
+import com.shoefactory.assistant.entity.OrderPackingDetail;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.enums.OrderExcelColumn;
@@ -76,8 +77,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 throw new BusinessException("订单 sheet 未解析到明细行");
             }
             order.setDevelopmentNos(joinDevelopmentNos(details));
-            fillTotalsIfMissing(order, details);
-            return new OrderImportResult(order, details);
+            fillTotalsFromDetails(order, details);
+            List<OrderPackingDetail> packingDetails = buildPackingDetails(workbook, fileNo, order);
+            return new OrderImportResult(order, details, packingDetails);
         } catch (BusinessException ex) {
             throw ex;
         } catch (IOException ex) {
@@ -277,6 +279,173 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return details;
     }
 
+    private List<OrderPackingDetail> buildPackingDetails(Workbook workbook, String fileNo, OrderRecord order) {
+        Sheet packingSheet = findPackingSheet(workbook);
+        if (packingSheet == null) {
+            return List.of();
+        }
+        Row header = findPackingHeaderRow(packingSheet);
+        if (header == null) {
+            return List.of();
+        }
+        PackingColumns columns = PackingColumns.from(header);
+        int firstDataRowIndex = header.getRowNum() + 1;
+        Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(packingSheet, columns.image(), firstDataRowIndex);
+        List<OrderPackingDetail> details = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+        for (int rowIndex = firstDataRowIndex; rowIndex <= packingSheet.getLastRowNum(); rowIndex++) {
+            Row row = packingSheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            if (isPackingTotalRow(row, columns)) {
+                break;
+            }
+            if (isPackingBlankRow(row, columns) || isPackingRepeatedHeaderRow(row, columns)) {
+                continue;
+            }
+            OrderPackingDetail detail = new OrderPackingDetail();
+            detail.setLineNo(details.size() + 1);
+            detail.setCompanyStyleNo(blankToNull(text(row, columns.companyStyleNo())));
+            detail.setCustomerName(blankToNull(text(row, columns.customer())));
+            detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
+            detail.setWarehouseStoreNo(blankToNull(text(row, columns.warehouseStoreNo())));
+            detail.setPoNo(blankToNull(text(row, columns.po())));
+            detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
+            detail.setCustomerColor(blankToNull(text(row, columns.customerColor())));
+            detail.setMaterial(blankToNull(text(row, columns.material())));
+            detail.setItemNumber(blankToNull(text(row, columns.itemNumber())));
+            detail.setTrademark(blankToNull(text(row, columns.trademark())));
+            detail.setSizeQuantitiesJson(toJson(readPackingSizeQuantities(header, row, columns)));
+            detail.setPairs(nullToZero(integerValue(row, columns.pairs())));
+            detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
+            detail.setTotalPairs(nullToZero(integerValue(row, columns.totalPairs())));
+            detail.setCartonStart(blankToNull(text(row, columns.cartonStart())));
+            detail.setCartonEnd(blankToNull(text(row, columns.cartonEnd())));
+            detail.setLengthValue(blankToNull(text(row, columns.lengthValue())));
+            detail.setWidthValue(blankToNull(text(row, columns.widthValue())));
+            detail.setHeightValue(blankToNull(text(row, columns.heightValue())));
+            detail.setNetWeight(blankToNull(text(row, columns.netWeight())));
+            detail.setGrossWeight(blankToNull(text(row, columns.grossWeight())));
+            detail.setMeasurement(blankToNull(text(row, columns.measurement())));
+            detail.setTotalNetWeight(blankToNull(text(row, columns.totalNetWeight())));
+            detail.setTotalGrossWeight(blankToNull(text(row, columns.totalGrossWeight())));
+            detail.setTotalCbm(blankToNull(text(row, columns.totalCbm())));
+            detail.setGender(blankToNull(text(row, columns.gender())));
+            detail.setProductType(blankToNull(text(row, columns.productType())));
+            detail.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
+            detail.setSoleMaterial(blankToNull(text(row, columns.soleMaterial())));
+            detail.setSourceSheetName(packingSheet.getSheetName());
+            detail.setRowIndex(rowIndex + 1);
+            detail.setCreatedAt(now);
+            detail.setUpdatedAt(now);
+
+            PictureInfo picture = picturesByRow.get(rowIndex + 1);
+            if (picture != null) {
+                Path imagePath = fileStorageUtil.saveOrderDetailImage(
+                        picture.bytes(),
+                        fileNo + "-packing",
+                        order.getOrderNo(),
+                        rowIndex + 1,
+                        picture.extension()
+                );
+                detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
+            }
+            details.add(detail);
+        }
+        return details;
+    }
+
+    private Sheet findPackingSheet(Workbook workbook) {
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            if (normalizeHeader(sheet.getSheetName()).contains("装箱单")) {
+                return sheet;
+            }
+        }
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            if (normalizeHeader(sheet.getSheetName()).contains("箱")) {
+                return sheet;
+            }
+        }
+        return null;
+    }
+
+    private Row findPackingHeaderRow(Sheet sheet) {
+        Row bestRow = null;
+        int bestScore = 0;
+        int lastScanRow = Math.min(sheet.getLastRowNum(), OrderExcelTemplate.DEFAULT.getMaxHeaderScanRows() - 1);
+        for (int rowIndex = 0; rowIndex <= lastScanRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            int score = packingHeaderScore(row);
+            if (score > bestScore) {
+                bestScore = score;
+                bestRow = row;
+            }
+        }
+        return bestScore >= 4 ? bestRow : null;
+    }
+
+    private int packingHeaderScore(Row row) {
+        if (row == null) {
+            return 0;
+        }
+        int score = 0;
+        if (findColumnContains(row, "图片") >= 0) {
+            score += 1;
+        }
+        if (findColumnContains(row, "公司款号") >= 0) {
+            score += 2;
+        }
+        if (findColumnContains(row, "PRS") >= 0) {
+            score += 1;
+        }
+        if (findColumnContains(row, "CTNS") >= 0) {
+            score += 1;
+        }
+        if (findColumnContains(row, "CTNEND", "结束箱号") >= 0) {
+            score += 2;
+        }
+        return score;
+    }
+
+    private Map<String, Integer> readPackingSizeQuantities(Row header, Row row, PackingColumns columns) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        for (int col = columns.sizeStart(); col <= columns.sizeEnd(); col++) {
+            String size = sizeHeaderText(header, col);
+            Integer quantity = integerValue(row, col);
+            if (size == null || size.isBlank() || quantity == null || quantity <= 0) {
+                continue;
+            }
+            result.merge(size, quantity, Integer::sum);
+        }
+        return result;
+    }
+
+    private boolean isPackingTotalRow(Row row, PackingColumns columns) {
+        String rowText = rowText(row, columns.firstDataColumn(), columns.dataEnd());
+        return rowText.contains("合计")
+                || (text(row, columns.companyStyleNo()).isBlank()
+                && integerValue(row, columns.totalPairs()) != null
+                && integerValue(row, columns.cartonCount()) != null);
+    }
+
+    private boolean isPackingBlankRow(Row row, PackingColumns columns) {
+        for (int col = columns.firstDataColumn(); col <= columns.dataEnd(); col++) {
+            if (!text(row, col).isBlank()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isPackingRepeatedHeaderRow(Row row, PackingColumns columns) {
+        return normalizeHeader(text(row, columns.image())).equals("图片")
+                || normalizeHeader(text(row, columns.companyStyleNo())).contains("公司款号")
+                || normalizeHeader(text(row, columns.pairs())).contains("PRS");
+    }
+
     private String joinDevelopmentNos(List<OrderRecordDetail> details) {
         return details.stream()
                 .map(OrderRecordDetail::getDevelopmentNo)
@@ -285,20 +454,22 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 .collect(Collectors.joining(", "));
     }
 
-    private void fillTotalsIfMissing(OrderRecord order, List<OrderRecordDetail> details) {
-        if (order.getTotalQuantity() == null || order.getTotalQuantity() <= 0) {
-            order.setTotalQuantity(details.stream()
-                    .map(OrderRecordDetail::getQuantity)
-                    .filter(value -> value != null && value > 0)
-                    .mapToInt(Integer::intValue)
-                    .sum());
+    private void fillTotalsFromDetails(OrderRecord order, List<OrderRecordDetail> details) {
+        int detailQuantityTotal = details.stream()
+                .map(OrderRecordDetail::getQuantity)
+                .filter(value -> value != null && value > 0)
+                .mapToInt(Integer::intValue)
+                .sum();
+        int detailCartonTotal = details.stream()
+                .map(OrderRecordDetail::getCartonCount)
+                .filter(value -> value != null && value > 0)
+                .mapToInt(Integer::intValue)
+                .sum();
+        if (detailQuantityTotal > 0) {
+            order.setTotalQuantity(detailQuantityTotal);
         }
-        if (order.getTotalCartonCount() == null || order.getTotalCartonCount() <= 0) {
-            order.setTotalCartonCount(details.stream()
-                    .map(OrderRecordDetail::getCartonCount)
-                    .filter(value -> value != null && value > 0)
-                    .mapToInt(Integer::intValue)
-                    .sum());
+        if (detailCartonTotal > 0) {
+            order.setTotalCartonCount(detailCartonTotal);
         }
     }
 
@@ -309,7 +480,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         }
         // 尺码列不是固定数量，从“商标”后面一直读到“双数/箱数/总数量”前面。
         for (int col = columns.sizeStart(); col <= columns.sizeEnd(); col++) {
-            String size = text(header, col);
+            String size = sizeHeaderText(header, col);
             Integer quantity = integerValue(row, col);
             if (size == null || size.isBlank() || quantity == null || quantity <= 0) {
                 continue;
@@ -317,6 +488,40 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             result.merge(size, quantity, Integer::sum);
         }
         return result;
+    }
+
+    private String sizeHeaderText(Row header, int colIndex) {
+        String primary = text(header, colIndex);
+        if (primary.isBlank()) {
+            return "";
+        }
+        // 有些订单是“双码”表头：表头上一行保存欧码，当前表头行保存美码，例如 6.5 / 36。
+        String secondary = text(header.getSheet(), header.getRowNum() - 1, colIndex);
+        if (isUsableSecondarySize(primary, secondary)) {
+            return primary + "/" + secondary;
+        }
+        return primary;
+    }
+
+    private boolean isUsableSecondarySize(String primary, String secondary) {
+        if (secondary == null || secondary.isBlank()) {
+            return false;
+        }
+        String normalizedPrimary = normalizeHeader(primary);
+        String normalizedSecondary = normalizeHeader(secondary);
+        if (normalizedSecondary.equals(normalizedPrimary)) {
+            return false;
+        }
+        if (normalizedSecondary.contains("图片")
+                || normalizedSecondary.contains("楦头")
+                || normalizedSecondary.contains("开发编号")
+                || normalizedSecondary.contains("商标")
+                || normalizedSecondary.contains("双数")
+                || normalizedSecondary.contains("箱数")
+                || normalizedSecondary.contains("总数量")) {
+            return false;
+        }
+        return normalizedSecondary.matches("\\d+(\\.\\d+)?");
     }
 
     private Map<Integer, PictureInfo> extractPicturesByRow(Sheet sheet, int imageColumn, int firstDataRowIndex) {
@@ -528,6 +733,36 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return column.getFallbackIndex();
     }
 
+    private static int findColumnContains(Row header, String... aliases) {
+        return findColumnByHeader(header, false, aliases);
+    }
+
+    private static int findColumnExact(Row header, String... aliases) {
+        return findColumnByHeader(header, true, aliases);
+    }
+
+    private static int findColumnByHeader(Row header, boolean exact, String... aliases) {
+        if (header == null) {
+            return -1;
+        }
+        int first = Math.max(0, header.getFirstCellNum());
+        int last = Math.max(first, header.getLastCellNum() - 1);
+        for (int col = first; col <= last; col++) {
+            Cell cell = header.getCell(col);
+            if (cell == null) {
+                continue;
+            }
+            String name = normalizeHeader(new DataFormatter(Locale.CHINA).formatCellValue(cell)).toUpperCase(Locale.ROOT);
+            for (String alias : aliases) {
+                String normalizedAlias = normalizeHeader(alias).toUpperCase(Locale.ROOT);
+                if (exact ? name.equals(normalizedAlias) : name.contains(normalizedAlias)) {
+                    return col;
+                }
+            }
+        }
+        return -1;
+    }
+
     private static int firstPositive(int... columns) {
         int result = Integer.MAX_VALUE;
         for (int column : columns) {
@@ -625,6 +860,122 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         int firstDataColumn() {
             // 判断空行/合计行时，从最早的业务列开始看，不把表格左侧说明文字算进去。
             return Math.min(lastNo, developmentNo);
+        }
+    }
+
+    private record PackingColumns(
+            int image,
+            int companyStyleNo,
+            int customer,
+            int customerOrderNo,
+            int warehouseStoreNo,
+            int po,
+            int customerStyleNo,
+            int customerColor,
+            int material,
+            int itemNumber,
+            int trademark,
+            int pairs,
+            int cartonCount,
+            int totalPairs,
+            int cartonStart,
+            int cartonEnd,
+            int lengthValue,
+            int widthValue,
+            int heightValue,
+            int netWeight,
+            int grossWeight,
+            int measurement,
+            int totalNetWeight,
+            int totalGrossWeight,
+            int totalCbm,
+            int gender,
+            int productType,
+            int upperMaterial,
+            int soleMaterial,
+            int sizeStart,
+            int sizeEnd,
+            int dataEnd
+    ) {
+        static PackingColumns from(Row header) {
+            int image = findColumnContains(header, "图片");
+            int companyStyleNo = findColumnContains(header, "公司款号");
+            int customer = findColumnExact(header, "客人", "客户");
+            int customerOrderNo = findColumnContains(header, "客人订单号", "客户订单号");
+            int warehouseStoreNo = findColumnContains(header, "仓库号", "店铺号");
+            int po = findColumnContains(header, "PO");
+            int customerStyleNo = findColumnContains(header, "STYLE/客人款号", "客人款号");
+            int customerColor = findColumnContains(header, "COLOR/客人颜色", "客人颜色");
+            int material = findColumnContains(header, "MATERIAL/面料材质", "面料材质");
+            int itemNumber = findColumnContains(header, "ITEMNUMBER", "项目编号");
+            int trademark = findColumnContains(header, "商标");
+            int pairs = findColumnExact(header, "PRS", "双数");
+            int cartonCount = findColumnExact(header, "CTNS", "箱数");
+            int totalPairs = findColumnContains(header, "TTLPRS", "TOTALPRS", "总数量");
+            int cartonStart = findColumnContains(header, "CTNSTART", "开始箱号");
+            int cartonEnd = findColumnContains(header, "CTNEND", "结束箱号");
+            int lengthValue = findColumnExact(header, "L");
+            int widthValue = findColumnExact(header, "W");
+            int heightValue = findColumnExact(header, "H");
+            int netWeight = findColumnContains(header, "NW(KGS)", "净重");
+            int grossWeight = findColumnContains(header, "GW(KGS)", "毛重");
+            int measurement = findColumnExact(header, "MEA");
+            int totalNetWeight = findColumnContains(header, "TOTALNW", "总净重");
+            int totalGrossWeight = findColumnContains(header, "TOTALGW", "总毛重");
+            int totalCbm = findColumnContains(header, "TOTALCBM", "总体积");
+            int gender = findColumnContains(header, "GENDER", "鞋类");
+            int productType = findColumnContains(header, "PRODUCTTYPE", "产品类型");
+            int upperMaterial = findColumnContains(header, "UPPERMATERIAL", "鞋邦材质", "鞋帮材质");
+            int soleMaterial = findColumnContains(header, "SOLEMATERIAL", "鞋底材质");
+            int firstSummary = firstPositive(pairs, cartonCount, totalPairs, cartonStart, cartonEnd);
+            int sizeStart = trademark >= 0 ? trademark + 1 : -1;
+            int sizeEnd = sizeStart >= 0 && firstSummary > sizeStart ? firstSummary - 1 : sizeStart - 1;
+            int dataEnd = Math.max(
+                    firstPositive(Integer.MAX_VALUE, soleMaterial),
+                    Math.max(cartonEnd, Math.max(totalPairs, Math.max(cartonCount, Math.max(pairs, sizeEnd))))
+            );
+            if (dataEnd == Integer.MAX_VALUE || dataEnd < 0) {
+                dataEnd = header == null ? 0 : Math.max(0, header.getLastCellNum() - 1);
+            }
+            return new PackingColumns(
+                    image,
+                    companyStyleNo,
+                    customer,
+                    customerOrderNo,
+                    warehouseStoreNo,
+                    po,
+                    customerStyleNo,
+                    customerColor,
+                    material,
+                    itemNumber,
+                    trademark,
+                    pairs,
+                    cartonCount,
+                    totalPairs,
+                    cartonStart,
+                    cartonEnd,
+                    lengthValue,
+                    widthValue,
+                    heightValue,
+                    netWeight,
+                    grossWeight,
+                    measurement,
+                    totalNetWeight,
+                    totalGrossWeight,
+                    totalCbm,
+                    gender,
+                    productType,
+                    upperMaterial,
+                    soleMaterial,
+                    sizeStart,
+                    sizeEnd,
+                    dataEnd
+            );
+        }
+
+        int firstDataColumn() {
+            int first = firstPositive(image, companyStyleNo, customer, customerOrderNo);
+            return first < 0 ? 0 : first;
         }
     }
 

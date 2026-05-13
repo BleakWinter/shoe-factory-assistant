@@ -123,6 +123,47 @@ export interface OrderRecordDetail {
   createdAt?: string;
 }
 
+export interface OrderPackingDetail {
+  // 对应 order_packing_detail。
+  id: number;
+  orderId: number;
+  lineNo?: number;
+  imageUrl?: string;
+  companyStyleNo?: string;
+  customerName?: string;
+  customerOrderNo?: string;
+  warehouseStoreNo?: string;
+  poNo?: string;
+  customerStyleNo?: string;
+  customerColor?: string;
+  material?: string;
+  itemNumber?: string;
+  trademark?: string;
+  sizeQuantities?: Record<string, number>;
+  pairs?: number;
+  cartonCount?: number;
+  totalPairs?: number;
+  cartonStart?: string;
+  cartonEnd?: string;
+  lengthValue?: string;
+  widthValue?: string;
+  heightValue?: string;
+  netWeight?: string;
+  grossWeight?: string;
+  measurement?: string;
+  totalNetWeight?: string;
+  totalGrossWeight?: string;
+  totalCbm?: string;
+  gender?: string;
+  productType?: string;
+  upperMaterial?: string;
+  soleMaterial?: string;
+  sourceSheetName?: string;
+  rowIndex?: number;
+  remark?: string;
+  createdAt?: string;
+}
+
 export interface PrintTask {
   // 兼容原打印列表类型；现在每一行实际来自 order_record。
   id: number;
@@ -132,6 +173,8 @@ export interface PrintTask {
   customerName?: string;
   styleNos?: string[];
   totalPairs?: number;
+  orderPrinted?: boolean;
+  packingPrinted?: boolean;
   status: PrintTaskStatus;
   previewUrl?: string;
   errorMessage?: string;

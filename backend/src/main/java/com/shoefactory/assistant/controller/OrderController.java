@@ -1,6 +1,7 @@
 package com.shoefactory.assistant.controller;
 
 import com.shoefactory.assistant.common.ApiResponse;
+import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
@@ -77,10 +78,29 @@ public class OrderController {
         return ApiResponse.ok(orderService.listOrderDetails(id));
     }
 
+    @GetMapping("/{id}/packing-details")
+    public ApiResponse<List<OrderPackingDetailResponse>> listOrderPackingDetails(@PathVariable Long id) {
+        return ApiResponse.ok(orderService.listOrderPackingDetails(id));
+    }
+
     @GetMapping("/details/{id}/image")
     public ResponseEntity<UrlResource> orderDetailImage(@PathVariable Long id) throws MalformedURLException {
         // 图片是 Excel 内嵌图提取后的本地文件，这里以内联资源返回给浏览器预览。
         Path imagePath = orderService.loadOrderDetailImage(id);
+        UrlResource resource = new UrlResource(imagePath.toUri());
+        return ResponseEntity.ok()
+                .contentType(detectMediaType(imagePath))
+                .contentLength(fileSize(imagePath))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(imagePath.getFileName().toString(), StandardCharsets.UTF_8)
+                        .build()
+                .toString())
+                .body(resource);
+    }
+
+    @GetMapping("/packing-details/{id}/image")
+    public ResponseEntity<UrlResource> orderPackingDetailImage(@PathVariable Long id) throws MalformedURLException {
+        Path imagePath = orderService.loadOrderPackingDetailImage(id);
         UrlResource resource = new UrlResource(imagePath.toUri());
         return ResponseEntity.ok()
                 .contentType(detectMediaType(imagePath))

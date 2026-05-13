@@ -25,6 +25,9 @@ public interface PrintTaskService {
     // 强制重新生成订单/装箱单 PDF 预览。
     PrintPreviewResponse regenerateTaskPreview(Long taskId, PrintType printType);
 
+    // 页面手动确认某一种单据已经打印。
+    PrintTaskResponse markTaskPrinted(Long id, PrintType printType);
+
     // 本地打印代理回写任务状态。
     PrintTaskResponse updateTaskStatus(Long id, PrintTaskStatusUpdateRequest request);
 }

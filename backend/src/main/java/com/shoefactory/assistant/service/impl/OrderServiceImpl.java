@@ -2,17 +2,22 @@ package com.shoefactory.assistant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
+import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
+import com.shoefactory.assistant.entity.OrderPackingDetail;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.enums.FileType;
 import com.shoefactory.assistant.enums.OrderRecognitionStatus;
 import com.shoefactory.assistant.mapper.OrderDetailProcessMapper;
+import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.service.OrderExcelImportService;
@@ -33,9 +38,14 @@ import java.util.stream.Collectors;
 @Service
 public class OrderServiceImpl implements OrderService {
 
-    // 订单相关 Mapper 只对应三张新表：order_record、order_record_detail、order_detail_process。
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Integer>> SIZE_MAP_TYPE = new TypeReference<>() {
+    };
+
+    // 订单相关 Mapper 对应主表、订单明细、装箱单明细和处理状态。
     private final OrderRecordMapper orderRecordMapper;
     private final OrderRecordDetailMapper orderRecordDetailMapper;
+    private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderDetailProcessMapper orderDetailProcessMapper;
     private final FileStorageUtil fileStorageUtil;
     private final OrderExcelImportService orderExcelImportService;
@@ -43,12 +53,14 @@ public class OrderServiceImpl implements OrderService {
     public OrderServiceImpl(
             OrderRecordMapper orderRecordMapper,
             OrderRecordDetailMapper orderRecordDetailMapper,
+            OrderPackingDetailMapper orderPackingDetailMapper,
             OrderDetailProcessMapper orderDetailProcessMapper,
             FileStorageUtil fileStorageUtil,
             OrderExcelImportService orderExcelImportService
     ) {
         this.orderRecordMapper = orderRecordMapper;
         this.orderRecordDetailMapper = orderRecordDetailMapper;
+        this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderDetailProcessMapper = orderDetailProcessMapper;
         this.fileStorageUtil = fileStorageUtil;
         this.orderExcelImportService = orderExcelImportService;
@@ -75,10 +87,15 @@ public class OrderServiceImpl implements OrderService {
                 fileNo
         );
         OrderRecord orderRecord = importResult.getOrder();
+        fillTotalsFromPackingDetails(orderRecord, importResult.getPackingDetails());
         orderRecordMapper.insert(orderRecord);
         for (OrderRecordDetail detail : importResult.getDetails()) {
             detail.setOrderId(orderRecord.getId());
             orderRecordDetailMapper.insert(detail);
+        }
+        for (OrderPackingDetail detail : importResult.getPackingDetails()) {
+            detail.setOrderId(orderRecord.getId());
+            orderPackingDetailMapper.insert(detail);
         }
 
         return buildUploadResponse(orderRecord, importResult.getDetails());
@@ -102,8 +119,14 @@ public class OrderServiceImpl implements OrderService {
                 .eq(parsedStatus != null, OrderRecord::getRecognitionStatus, parsedStatus == null ? null : parsedStatus.getCode())
                 .orderByDesc(OrderRecord::getCreatedAt);
         Page<OrderRecord> resultPage = orderRecordMapper.selectPage(pageRequest, wrapper);
+        Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(resultPage.getRecords());
+        Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderId(resultPage.getRecords());
         List<OrderRecordResponse> records = resultPage.getRecords().stream()
-                .map(OrderRecordResponse::from)
+                .map(order -> buildOrderResponse(
+                        order,
+                        detailsByOrderId.getOrDefault(order.getId(), List.of()),
+                        packingDetailsByOrderId.getOrDefault(order.getId(), List.of())
+                ))
                 .toList();
         return PageResponse.from(resultPage, records);
     }
@@ -132,12 +155,38 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public List<OrderPackingDetailResponse> listOrderPackingDetails(Long orderId) {
+        OrderRecord order = orderRecordMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException("订单不存在: " + orderId);
+        }
+        return orderPackingDetailMapper.selectList(new LambdaQueryWrapper<OrderPackingDetail>()
+                        .eq(OrderPackingDetail::getOrderId, orderId)
+                        .orderByAsc(OrderPackingDetail::getRowIndex)
+                        .orderByAsc(OrderPackingDetail::getLineNo))
+                .stream()
+                .map(OrderPackingDetailResponse::from)
+                .toList();
+    }
+
+    @Override
     public Path loadOrderDetailImage(Long detailId) {
         OrderRecordDetail detail = orderRecordDetailMapper.selectById(detailId);
         if (detail == null || detail.getStyleImagePath() == null || detail.getStyleImagePath().isBlank()) {
             throw new BusinessException("订单图片不存在: " + detailId);
         }
         // 数据库里存绝对路径，真正返回给前端前仍要通过 FileStorageUtil 做路径白名单检查。
+        Path imagePath = fileStorageUtil.resolvePath(detail.getStyleImagePath());
+        fileStorageUtil.ensureExists(imagePath);
+        return imagePath;
+    }
+
+    @Override
+    public Path loadOrderPackingDetailImage(Long detailId) {
+        OrderPackingDetail detail = orderPackingDetailMapper.selectById(detailId);
+        if (detail == null || detail.getStyleImagePath() == null || detail.getStyleImagePath().isBlank()) {
+            throw new BusinessException("装箱单图片不存在: " + detailId);
+        }
         Path imagePath = fileStorageUtil.resolvePath(detail.getStyleImagePath());
         fileStorageUtil.ensureExists(imagePath);
         return imagePath;
@@ -167,5 +216,116 @@ public class OrderServiceImpl implements OrderService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private Map<Long, List<OrderRecordDetail>> loadDetailsByOrderId(List<OrderRecord> orders) {
+        List<Long> orderIds = orders.stream()
+                .map(OrderRecord::getId)
+                .filter(id -> id != null)
+                .toList();
+        if (orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                        .in(OrderRecordDetail::getOrderId, orderIds))
+                .stream()
+                .collect(Collectors.groupingBy(OrderRecordDetail::getOrderId));
+    }
+
+    private Map<Long, List<OrderPackingDetail>> loadPackingDetailsByOrderId(List<OrderRecord> orders) {
+        List<Long> orderIds = orders.stream()
+                .map(OrderRecord::getId)
+                .filter(id -> id != null)
+                .toList();
+        if (orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return orderPackingDetailMapper.selectList(new LambdaQueryWrapper<OrderPackingDetail>()
+                        .in(OrderPackingDetail::getOrderId, orderIds))
+                .stream()
+                .collect(Collectors.groupingBy(OrderPackingDetail::getOrderId));
+    }
+
+    private OrderRecordResponse buildOrderResponse(
+            OrderRecord order,
+            List<OrderRecordDetail> details,
+            List<OrderPackingDetail> packingDetails
+    ) {
+        OrderRecordResponse response = OrderRecordResponse.from(order);
+        DetailTotals totals = summarizeDetails(details);
+        DetailTotals packingTotals = summarizePackingDetails(packingDetails);
+        if (totals.quantity() > 0) {
+            response.setTotalQuantity(totals.quantity());
+        } else if (packingTotals.quantity() > 0) {
+            response.setTotalQuantity(packingTotals.quantity());
+        }
+        if (packingTotals.cartonCount() > 0) {
+            response.setTotalCartonCount(packingTotals.cartonCount());
+        } else if (totals.cartonCount() > 0) {
+            response.setTotalCartonCount(totals.cartonCount());
+        }
+        return response;
+    }
+
+    private DetailTotals summarizeDetails(List<OrderRecordDetail> details) {
+        int quantity = 0;
+        int cartonCount = 0;
+        for (OrderRecordDetail detail : details) {
+            int sizeTotal = sumSizeQuantities(detail.getSizeQuantitiesJson());
+            if (sizeTotal > 0) {
+                quantity += sizeTotal;
+            } else if (detail.getQuantity() != null && detail.getQuantity() > 0) {
+                quantity += detail.getQuantity();
+            }
+            if (detail.getCartonCount() != null && detail.getCartonCount() > 0) {
+                cartonCount += detail.getCartonCount();
+            }
+        }
+        return new DetailTotals(quantity, cartonCount);
+    }
+
+    private DetailTotals summarizePackingDetails(List<OrderPackingDetail> details) {
+        int quantity = 0;
+        int cartonCount = 0;
+        for (OrderPackingDetail detail : details) {
+            if (detail.getTotalPairs() != null && detail.getTotalPairs() > 0) {
+                quantity += detail.getTotalPairs();
+            } else {
+                quantity += sumSizeQuantities(detail.getSizeQuantitiesJson());
+            }
+            if (detail.getCartonCount() != null && detail.getCartonCount() > 0) {
+                cartonCount += detail.getCartonCount();
+            }
+        }
+        return new DetailTotals(quantity, cartonCount);
+    }
+
+    private void fillTotalsFromPackingDetails(OrderRecord order, List<OrderPackingDetail> packingDetails) {
+        DetailTotals totals = summarizePackingDetails(packingDetails);
+        if ((order.getTotalQuantity() == null || order.getTotalQuantity() <= 0) && totals.quantity() > 0) {
+            order.setTotalQuantity(totals.quantity());
+        }
+        if (totals.cartonCount() > 0) {
+            order.setTotalCartonCount(totals.cartonCount());
+        }
+    }
+
+    private int sumSizeQuantities(String json) {
+        if (json == null || json.isBlank()) {
+            return 0;
+        }
+        try {
+            return OBJECT_MAPPER.readValue(json, SIZE_MAP_TYPE)
+                    .values()
+                    .stream()
+                    .filter(value -> value != null && value > 0)
+                    .mapToInt(Integer::intValue)
+                    .sum();
+        } catch (Exception ex) {
+            return 0;
+        }
+    }
+
+    private record DetailTotals(int quantity, int cartonCount) {
     }
 }

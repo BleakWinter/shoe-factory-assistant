@@ -17,6 +17,8 @@ public class PrintTaskResponse {
     private String customerName;
     private List<String> styleNos;
     private Integer totalPairs;
+    private Boolean orderPrinted;
+    private Boolean packingPrinted;
     private Long previewId;
     private String previewUrl;
     private String printType;
@@ -41,6 +43,8 @@ public class PrintTaskResponse {
         response.setCustomerName(order.getCustomerName());
         response.setStyleNos(splitDevelopmentNos(order.getDevelopmentNos()));
         response.setTotalPairs(order.getTotalQuantity());
+        response.setOrderPrinted(order.getOrderPrinted());
+        response.setPackingPrinted(order.getPackingPrinted());
         response.setStatus(resolveStatus(order));
         response.setPriority(0);
         response.setErrorMessage(order.getErrorMessage());
@@ -119,6 +123,22 @@ public class PrintTaskResponse {
 
     public void setTotalPairs(Integer totalPairs) {
         this.totalPairs = totalPairs;
+    }
+
+    public Boolean getOrderPrinted() {
+        return orderPrinted;
+    }
+
+    public void setOrderPrinted(Boolean orderPrinted) {
+        this.orderPrinted = orderPrinted;
+    }
+
+    public Boolean getPackingPrinted() {
+        return packingPrinted;
+    }
+
+    public void setPackingPrinted(Boolean packingPrinted) {
+        this.packingPrinted = packingPrinted;
     }
 
     public Long getPreviewId() {

@@ -52,3 +52,14 @@ export async function regeneratePrintTaskPreview(
   );
   return data;
 }
+
+export async function markPrintTaskPrinted(
+  id: number,
+  printType: PrintType,
+) {
+  // 页面手动确认某一种单据已经打印。
+  const { data } = await request.patch<PrintTask>(`/print-tasks/${id}/printed`, {
+    printType,
+  });
+  return data;
+}

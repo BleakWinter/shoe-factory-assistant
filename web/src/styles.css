@@ -147,6 +147,37 @@ a {
   background: #f8fafc;
 }
 
+.order-detail-modal {
+  top: 22px;
+  max-width: calc(100vw - 70px);
+  padding-bottom: 22px;
+}
+
+.order-detail-modal .ant-modal-content {
+  min-height: calc(100vh - 44px);
+  padding: 0;
+}
+
+.order-detail-modal .ant-modal-header {
+  margin: 0;
+  padding: 22px 30px;
+  border-bottom: 1px solid #e5eaf1;
+}
+
+.order-detail-modal .ant-modal-body {
+  padding: 30px;
+}
+
+.order-detail-modal .ant-modal-close {
+  top: 18px;
+  inset-inline-end: auto;
+  left: 20px;
+}
+
+.order-detail-modal .ant-modal-title {
+  padding-left: 42px;
+}
+
 /* Order image and size quantity cells. */
 .source-file-name {
   max-width: 180px;

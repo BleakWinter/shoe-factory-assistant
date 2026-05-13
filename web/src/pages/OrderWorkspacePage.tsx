@@ -2,10 +2,10 @@ import { EyeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
-  Drawer,
   Form,
   Image,
   Input,
+  Modal,
   Select,
   Space,
   Table,
@@ -14,8 +14,14 @@ import {
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchOrderDetails, fetchOrders, toAssetUrl } from "../api/orderApi";
-import type { OrderDetailProcess, OrderRecord, OrderRecordDetail, OrderRecordQueryParams } from "../types/order";
+import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders, toAssetUrl } from "../api/orderApi";
+import type {
+  OrderDetailProcess,
+  OrderPackingDetail,
+  OrderRecord,
+  OrderRecordDetail,
+  OrderRecordQueryParams,
+} from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
@@ -25,6 +31,8 @@ interface FilterValues {
   developmentNo?: string;
   recognitionStatus?: string;
 }
+
+type DetailMode = "ORDER" | "PACKING";
 
 function renderDevelopmentNos(values?: string[]) {
   // 开发编号在主表里是汇总字段，页面拆成标签便于扫读。
@@ -113,9 +121,11 @@ export default function OrderWorkspacePage() {
   const [form] = Form.useForm<FilterValues>();
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
+  const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeOrder, setActiveOrder] = useState<OrderRecord | null>(null);
+  const [activeDetailMode, setActiveDetailMode] = useState<DetailMode>("ORDER");
   const [query, setQuery] = useState<OrderRecordQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
 
@@ -155,9 +165,11 @@ export default function OrderWorkspacePage() {
     setQuery({ page: 1, size: query.size ?? 20 });
   };
 
-  const openDetails = async (order: OrderRecord) => {
+  const openOrderDetails = useCallback(async (order: OrderRecord) => {
     setActiveOrder(order);
+    setActiveDetailMode("ORDER");
     setDetails([]);
+    setPackingDetails([]);
     setDetailLoading(true);
     try {
       setDetails(await fetchOrderDetails(order.id));
@@ -166,7 +178,22 @@ export default function OrderWorkspacePage() {
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, [message]);
+
+  const openPackingDetails = useCallback(async (order: OrderRecord) => {
+    setActiveOrder(order);
+    setActiveDetailMode("PACKING");
+    setDetails([]);
+    setPackingDetails([]);
+    setDetailLoading(true);
+    try {
+      setPackingDetails(await fetchOrderPackingDetails(order.id));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "装箱单明细加载失败");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [message]);
 
   const columns = useMemo<ColumnsType<OrderRecord>>(
     () => [
@@ -224,16 +251,21 @@ export default function OrderWorkspacePage() {
       {
         title: "操作",
         key: "actions",
-        width: 120,
+        width: 240,
         fixed: "right",
         render: (_, record) => (
-          <Button icon={<EyeOutlined />} onClick={() => void openDetails(record)}>
-            详情
-          </Button>
+          <Space>
+            <Button icon={<EyeOutlined />} onClick={() => void openOrderDetails(record)}>
+              订单明细
+            </Button>
+            <Button icon={<EyeOutlined />} onClick={() => void openPackingDetails(record)}>
+              装箱单明细
+            </Button>
+          </Space>
         ),
       },
     ],
-    [],
+    [openOrderDetails, openPackingDetails],
   );
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
@@ -257,7 +289,7 @@ export default function OrderWorkspacePage() {
           ),
       },
       { title: "开发编号", dataIndex: "developmentNo", width: 150, fixed: "left", render: formatEmpty },
-      { title: "楦头", dataIndex: "lastNo", width: 110, fixed: "left", render: formatEmpty },
+      { title: "楦头", dataIndex: "lastNo", width: 110, render: formatEmpty },
       { title: "客人", dataIndex: "customerName", width: 150, render: formatEmpty },
       { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
       { title: "出货时间", dataIndex: "deliveryDate", width: 120, render: formatEmpty },
@@ -284,6 +316,51 @@ export default function OrderWorkspacePage() {
     [],
   );
 
+  const packingDetailColumns = useMemo<ColumnsType<OrderPackingDetail>>(
+    () => [
+      {
+        title: "图片",
+        dataIndex: "imageUrl",
+        width: 86,
+        fixed: "left",
+        render: (value: string) =>
+          value ? (
+            <Image
+              src={toAssetUrl(value)}
+              width={58}
+              height={44}
+              className="order-image"
+              preview={{ mask: "查看" }}
+            />
+          ) : (
+            <Tag>无图</Tag>
+          ),
+      },
+      { title: "公司款号", dataIndex: "companyStyleNo", width: 150, fixed: "left", render: formatEmpty },
+      { title: "客人", dataIndex: "customerName", width: 130, render: formatEmpty },
+      { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
+      { title: "仓库号/店铺号", dataIndex: "warehouseStoreNo", width: 150, render: formatEmpty },
+      { title: "PO", dataIndex: "poNo", width: 120, render: formatEmpty },
+      { title: "客人款号", dataIndex: "customerStyleNo", width: 140, render: formatEmpty },
+      { title: "客人颜色", dataIndex: "customerColor", width: 170, render: formatEmpty },
+      { title: "面料材质", dataIndex: "material", width: 150, render: formatEmpty },
+      { title: "项目编号", dataIndex: "itemNumber", width: 130, render: formatEmpty },
+      { title: "商标", dataIndex: "trademark", width: 120, render: formatEmpty },
+      {
+        title: "尺码数量",
+        dataIndex: "sizeQuantities",
+        width: 260,
+        render: renderSizeQuantities,
+      },
+      { title: "PRS", dataIndex: "pairs", width: 80, align: "right", render: formatEmpty },
+      { title: "CTNS", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
+      { title: "TTL PRS", dataIndex: "totalPairs", width: 100, align: "right", render: formatEmpty },
+      { title: "开始箱号", dataIndex: "cartonStart", width: 120, render: formatEmpty },
+      { title: "结束箱号", dataIndex: "cartonEnd", width: 120, render: formatEmpty },
+    ],
+    [],
+  );
+
   const pagination: TablePaginationConfig = {
     current: query.page,
     pageSize: query.size,
@@ -292,13 +369,17 @@ export default function OrderWorkspacePage() {
     showTotal: (count) => `共 ${count} 条`,
   };
 
+  const detailTitle = activeOrder
+    ? `${activeDetailMode === "PACKING" ? "装箱单明细" : "订单明细"}：${activeOrder.orderNo || activeOrder.id}`
+    : "订单明细";
+
   return (
     <div className="workspace">
       <div className="toolbar-band">
         <div>
           <Typography.Title level={3}>订单列表</Typography.Title>
           <Typography.Text type="secondary">
-            主表展示订单汇总，详情里查看订单明细和处理状态。
+            主表展示订单汇总，可分别查看订单明细和装箱单明细。
           </Typography.Text>
         </div>
       </div>
@@ -351,7 +432,7 @@ export default function OrderWorkspacePage() {
           columns={columns}
           dataSource={orders}
           pagination={pagination}
-          scroll={{ x: 1320 }}
+          scroll={{ x: 1440 }}
           className="data-table"
           onChange={(nextPagination) => {
             // Ant Design 分页变化后，只更新 page/size，保留当前筛选条件。
@@ -364,30 +445,45 @@ export default function OrderWorkspacePage() {
         />
       </div>
 
-      <Drawer
+      <Modal
         open={Boolean(activeOrder)}
-        title={activeOrder ? `订单详情：${activeOrder.orderNo || activeOrder.id}` : "订单详情"}
-        onClose={() => {
+        title={detailTitle}
+        onCancel={() => {
           setActiveOrder(null);
           setDetails([]);
+          setPackingDetails([]);
         }}
-        width="92vw"
+        width="82vw"
+        footer={null}
+        className="order-detail-modal"
         destroyOnClose
       >
-        <Table
-          rowKey="id"
-          loading={detailLoading}
-          columns={detailColumns}
-          dataSource={details}
-          pagination={false}
-          scroll={{ x: 3090 }}
-          className="data-table"
-          expandable={{
-            expandedRowRender: (record) => renderProcesses(record.processes),
-            rowExpandable: () => true,
-          }}
-        />
-      </Drawer>
+        {activeDetailMode === "PACKING" ? (
+          <Table
+            rowKey="id"
+            loading={detailLoading}
+            columns={packingDetailColumns}
+            dataSource={packingDetails}
+            pagination={false}
+            scroll={{ x: 2220 }}
+            className="data-table"
+          />
+        ) : (
+          <Table
+            rowKey="id"
+            loading={detailLoading}
+            columns={detailColumns}
+            dataSource={details}
+            pagination={false}
+            scroll={{ x: 3090 }}
+            className="data-table"
+            expandable={{
+              expandedRowRender: (record) => renderProcesses(record.processes),
+              rowExpandable: () => true,
+            }}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
