@@ -60,6 +60,15 @@ public class PrintTaskController {
         return ApiResponse.ok(printTaskService.generateTaskPreview(id, PrintType.parse(request.getPrintType())));
     }
 
+    @PostMapping("/{id}/preview/regenerate")
+    public ApiResponse<PrintPreviewResponse> regeneratePreview(
+            @PathVariable Long id,
+            @Valid @RequestBody PrintTaskPreviewRequest request
+    ) {
+        // 页面点“重新生成”时，先删除旧 PDF 并清空订单上的 PDF 路径，再重新生成。
+        return ApiResponse.ok(printTaskService.regenerateTaskPreview(id, PrintType.parse(request.getPrintType())));
+    }
+
     @PatchMapping("/{id}/status")
     public ApiResponse<PrintTaskResponse> updateStatus(
             @PathVariable Long id,

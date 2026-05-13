@@ -10,6 +10,9 @@ public interface PrintPreviewService {
     // 按打印类型生成 PDF 预览，printType 决定取“订单”还是“装箱单”sheet。
     PrintPreviewResponse generatePreview(Long orderId, PrintType printType);
 
+    // 删除已有 PDF、清空订单表里的 PDF 路径，再重新生成预览。
+    PrintPreviewResponse regeneratePreview(Long orderId, PrintType printType);
+
     // 读取已经生成好的 PDF 文件。
     Path loadPreviewPdf(Long previewId);
 

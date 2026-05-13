@@ -40,3 +40,15 @@ export async function generatePrintTaskPreview(
   });
   return data;
 }
+
+export async function regeneratePrintTaskPreview(
+  id: number,
+  printType: PrintType,
+) {
+  // 强制重新生成：后端会先删除旧 PDF 并清空订单上的 PDF 路径。
+  const { data } = await request.post<PrintPreview>(
+    `/print-tasks/${id}/preview/regenerate`,
+    { printType },
+  );
+  return data;
+}

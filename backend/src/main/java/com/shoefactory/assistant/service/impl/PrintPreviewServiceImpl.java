@@ -1,5 +1,6 @@
 package com.shoefactory.assistant.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PrintPreviewResponse;
 import com.shoefactory.assistant.entity.OrderRecord;
@@ -12,6 +13,7 @@ import com.shoefactory.assistant.service.PrintPreviewService;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -53,6 +55,19 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
 
         String previewNo = FileStorageUtil.newBusinessNo("PV");
         Long previewId = previewIdSequence.incrementAndGet();
+        Path existingPdf = existingPdfPath(order, printType);
+        if (existingPdf != null && Files.isRegularFile(existingPdf)) {
+            previewPathCache.put(previewId, existingPdf);
+            return buildReadyResponse(
+                    previewId,
+                    previewNo,
+                    order,
+                    printType,
+                    existingPdf,
+                    existingGeneratedAt(order, printType)
+            );
+        }
+
         Path targetPdf = fileStorageUtil.allocateOrderPdfPath(order.getOrderNo(), printType.name().toLowerCase(Locale.ROOT));
         LocalDateTime now = LocalDateTime.now();
 
@@ -62,20 +77,17 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
             previewPathCache.put(previewId, targetPdf);
             bindPdfPath(order, printType, targetPdf, now);
             orderRecordMapper.updateById(order);
-            return PrintPreviewResponse.generated(
-                    previewId,
-                    previewNo,
-                    order,
-                    printType.name(),
-                    "/api/orders/" + order.getId() + "/pdf/" + printType.name(),
-                    Files.size(targetPdf),
-                    PrintPreviewStatus.READY.name(),
-                    null,
-                    now
-            );
+            return buildReadyResponse(previewId, previewNo, order, printType, targetPdf, now);
         } catch (Exception ex) {
             throw new BusinessException("生成打印预览失败: " + ex.getMessage(), ex);
         }
+    }
+
+    @Override
+    public PrintPreviewResponse regeneratePreview(Long orderId, PrintType printType) {
+        OrderRecord order = getRequiredOrder(orderId);
+        deletePdfAndClearPath(order, printType);
+        return generatePreview(orderId, printType);
     }
 
     @Override
@@ -121,6 +133,72 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         }
         order.setPackingPdfPath(targetPdf.toString());
         order.setPackingPdfGeneratedAt(generatedAt);
+    }
+
+    private Path existingPdfPath(OrderRecord order, PrintType printType) {
+        String pdfPath = pdfPath(order, printType);
+        if (pdfPath == null || pdfPath.isBlank()) {
+            return null;
+        }
+        return fileStorageUtil.resolvePath(pdfPath);
+    }
+
+    private String pdfPath(OrderRecord order, PrintType printType) {
+        return printType == PrintType.ORDER ? order.getOrderPdfPath() : order.getPackingPdfPath();
+    }
+
+    private LocalDateTime existingGeneratedAt(OrderRecord order, PrintType printType) {
+        LocalDateTime generatedAt = printType == PrintType.ORDER
+                ? order.getOrderPdfGeneratedAt()
+                : order.getPackingPdfGeneratedAt();
+        return generatedAt == null ? LocalDateTime.now() : generatedAt;
+    }
+
+    private PrintPreviewResponse buildReadyResponse(
+            Long previewId,
+            String previewNo,
+            OrderRecord order,
+            PrintType printType,
+            Path pdfPath,
+            LocalDateTime createdAt
+    ) {
+        long pdfSize;
+        try {
+            pdfSize = Files.size(pdfPath);
+        } catch (IOException ex) {
+            throw new BusinessException("读取 PDF 文件大小失败: " + pdfPath, ex);
+        }
+        return PrintPreviewResponse.generated(
+                previewId,
+                previewNo,
+                order,
+                printType.name(),
+                "/api/orders/" + order.getId() + "/pdf/" + printType.name(),
+                pdfSize,
+                PrintPreviewStatus.READY.name(),
+                null,
+                createdAt
+        );
+    }
+
+    private void deletePdfAndClearPath(OrderRecord order, PrintType printType) {
+        Path existingPdf = existingPdfPath(order, printType);
+        if (existingPdf != null) {
+            try {
+                Files.deleteIfExists(existingPdf);
+            } catch (IOException ex) {
+                throw new BusinessException("删除旧 PDF 失败: " + existingPdf, ex);
+            }
+        }
+
+        LambdaUpdateWrapper<OrderRecord> wrapper = new LambdaUpdateWrapper<OrderRecord>()
+                .eq(OrderRecord::getId, order.getId())
+                .set(printType == PrintType.ORDER, OrderRecord::getOrderPdfPath, null)
+                .set(printType == PrintType.ORDER, OrderRecord::getOrderPdfGeneratedAt, null)
+                .set(printType == PrintType.PACKING, OrderRecord::getPackingPdfPath, null)
+                .set(printType == PrintType.PACKING, OrderRecord::getPackingPdfGeneratedAt, null)
+                .set(OrderRecord::getUpdatedAt, LocalDateTime.now());
+        orderRecordMapper.update(null, wrapper);
     }
 
     private int nullToZero(Integer value) {

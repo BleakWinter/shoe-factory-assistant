@@ -18,6 +18,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -54,11 +55,14 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
     private Path prepareSingleSheetExcel(Path sourceExcel, Path tempDir, String sheetName) throws IOException {
         String extension = extensionOf(sourceExcel.getFileName().toString());
         Path prepared = tempDir.resolve("prepared." + extension);
-        try (Workbook workbook = WorkbookFactory.create(sourceExcel.toFile())) {
+
+        // 用输入流只读打开原 Excel，下面的删 sheet 只发生在内存 workbook 里，不会回写原文件。
+        try (InputStream inputStream = Files.newInputStream(sourceExcel);
+             Workbook workbook = WorkbookFactory.create(inputStream)) {
             int targetSheetIndex = findSheetIndex(workbook, sheetName)
                     .orElseThrow(() -> new BusinessException("Excel 中未找到 sheet: " + sheetName));
 
-            // 删除非目标 sheet，避免 LibreOffice/Excel 导出整个工作簿。
+            // 删除内存 workbook 里的非目标 sheet，避免 LibreOffice/Excel 导出整个工作簿。
             for (int i = workbook.getNumberOfSheets() - 1; i >= 0; i--) {
                 if (i != targetSheetIndex) {
                     workbook.removeSheetAt(i);
@@ -69,7 +73,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
             }
 
             Sheet sheet = workbook.getSheetAt(0);
-            configurePrintSettings(workbook, sheet);
+            configurePrintSettings(workbook, sheet, sheetName);
             workbook.setActiveSheet(0);
             workbook.setSelectedTab(0);
             try (java.io.OutputStream outputStream = Files.newOutputStream(prepared)) {
@@ -127,7 +131,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
                 .trim();
     }
 
-    private void configurePrintSettings(Workbook workbook, Sheet sheet) {
+    private void configurePrintSettings(Workbook workbook, Sheet sheet, String sheetName) {
         PrintSetup setup = sheet.getPrintSetup();
         // 核心打印规则：A4、横向、一页宽、多页高。这样横向列不会被拆成多张纸。
         setup.setPaperSize(PrintSetup.A4_PAPERSIZE);
@@ -144,13 +148,13 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         sheet.setHorizontallyCenter(true);
 
         // 自动检测有效内容区域，避免把大片空白列/行一起打印进去。
-        PrintArea printArea = detectPrintArea(sheet);
+        PrintArea printArea = detectPrintArea(sheet, sheetName);
         if (printArea != null) {
             workbook.setPrintArea(0, printArea.firstCol(), printArea.lastCol(), printArea.firstRow(), printArea.lastRow());
         }
     }
 
-    private PrintArea detectPrintArea(Sheet sheet) {
+    private PrintArea detectPrintArea(Sheet sheet, String sheetName) {
         int firstRow = Integer.MAX_VALUE;
         int lastRow = -1;
         int firstCol = Integer.MAX_VALUE;
@@ -180,7 +184,60 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         if (lastRow < 0 || lastCol < 0) {
             return null;
         }
+        int businessEndColumn = findBusinessEndColumn(sheet, sheetName);
+        if (businessEndColumn >= 0) {
+            lastCol = Math.min(lastCol, businessEndColumn);
+        }
         return new PrintArea(firstRow, lastRow, firstCol, lastCol);
+    }
+
+    private int findBusinessEndColumn(Sheet sheet, String sheetName) {
+        String normalizedSheetName = normalizeSheetName(sheetName);
+        if ("订单".equals(normalizedSheetName)) {
+            // 订单 PDF 只打印到“总数量”这一列。
+            return findHeaderColumn(sheet, value -> value.contains("总数量"));
+        }
+        if ("装箱单".equals(normalizedSheetName)) {
+            // 装箱单 PDF 只打印到“CTN END / 结束箱号”这一列。
+            return findHeaderColumn(sheet, value -> value.contains("CTNEND") || value.contains("结束箱号"));
+        }
+        return -1;
+    }
+
+    private int findHeaderColumn(Sheet sheet, java.util.function.Predicate<String> matcher) {
+        int lastScanRow = Math.min(sheet.getLastRowNum(), 79);
+        for (int rowIndex = 0; rowIndex <= lastScanRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            short firstCellNum = row.getFirstCellNum();
+            short lastCellNum = row.getLastCellNum();
+            if (firstCellNum < 0 || lastCellNum < 0) {
+                continue;
+            }
+            for (int colIndex = firstCellNum; colIndex < lastCellNum; colIndex++) {
+                String value = normalizeHeaderText(row.getCell(colIndex));
+                if (matcher.test(value)) {
+                    return colIndex;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private String normalizeHeaderText(Cell cell) {
+        if (cell == null) {
+            return "";
+        }
+        return cell.toString()
+                .replace("\u00A0", "")
+                .replace("\u3000", "")
+                .replaceAll("\\s+", "")
+                .replace("：", ":")
+                .replace("／", "/")
+                .toUpperCase(Locale.ROOT)
+                .trim();
     }
 
     private boolean isCellUsed(Cell cell) {

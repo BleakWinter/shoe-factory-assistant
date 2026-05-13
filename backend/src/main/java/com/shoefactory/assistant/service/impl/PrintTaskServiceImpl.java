@@ -72,6 +72,12 @@ public class PrintTaskServiceImpl implements PrintTaskService {
     }
 
     @Override
+    public PrintPreviewResponse regenerateTaskPreview(Long taskId, PrintType printType) {
+        // 这里的 taskId 兼容旧接口名，实际就是 order_record.id。
+        return printPreviewService.regeneratePreview(taskId, printType);
+    }
+
+    @Override
     @Transactional
     public PrintTaskResponse updateTaskStatus(Long id, PrintTaskStatusUpdateRequest request) {
         OrderRecord order = orderRecordMapper.selectById(id);

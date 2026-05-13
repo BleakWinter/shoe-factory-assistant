@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS `order_record` (
 
   `order_pdf_path` varchar(512) DEFAULT NULL COMMENT '订单PDF本地路径',
   `packing_pdf_path` varchar(512) DEFAULT NULL COMMENT '装箱单PDF本地路径',
+  `order_pdf_generated_at` datetime DEFAULT NULL COMMENT '订单PDF生成时间',
+  `packing_pdf_generated_at` datetime DEFAULT NULL COMMENT '装箱单PDF生成时间',
 
   `total_quantity` int NOT NULL DEFAULT 0 COMMENT '总对数',
   `total_carton_count` int NOT NULL DEFAULT 0 COMMENT '总箱数',

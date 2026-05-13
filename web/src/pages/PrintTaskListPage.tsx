@@ -4,7 +4,11 @@ import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { uploadOrderFile } from "../api/orderApi";
-import { fetchPrintTasks, generatePrintTaskPreview } from "../api/printTaskApi";
+import {
+  fetchPrintTasks,
+  generatePrintTaskPreview,
+  regeneratePrintTaskPreview,
+} from "../api/printTaskApi";
 import PdfPreview from "../components/PdfPreview";
 import { PRINT_TYPES } from "../types/order";
 import type { PrintTask, PrintTaskStatus, PrintType } from "../types/order";
@@ -52,8 +56,10 @@ export default function PrintTaskListPage() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
+  const [activePrintType, setActivePrintType] = useState<PrintType | "">("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewLoading, setPreviewLoading] = useState<PrintType | "">("");
+  const [regenerating, setRegenerating] = useState(false);
 
   const loadTasks = useCallback(async () => {
     // 刷新打印任务列表。上传成功后也会调用一次。
@@ -106,36 +112,66 @@ export default function PrintTaskListPage() {
     },
   };
 
-  const openPrintModal = (task: PrintTask) => {
-    // 如果任务之前已经生成过预览，打开弹窗时直接显示旧 previewUrl。
-    setActiveTask(task);
-    setPreviewUrl(task.previewUrl || "");
-  };
-
-  const closePrintModal = () => {
-    setActiveTask(null);
-    setPreviewUrl("");
-    setPreviewLoading("");
-  };
-
-  const loadPreview = async (printType: PrintType) => {
-    if (!activeTask) {
-      return;
-    }
+  const requestPreview = async (task: PrintTask, printType: PrintType) => {
+    setActivePrintType(printType);
     setPreviewLoading(printType);
     try {
       // 生成 PDF 后，把当前任务的 previewUrl 同步回表格缓存。
-      const preview = await generatePrintTaskPreview(activeTask.id, printType);
+      const preview = await generatePrintTaskPreview(task.id, printType);
       setPreviewUrl(preview.previewUrl);
       setTasks((prev) =>
         prev.map((task) =>
-          task.id === activeTask.id ? { ...task, previewUrl: preview.previewUrl } : task,
+          task.id === preview.orderId ? { ...task, previewUrl: preview.previewUrl } : task,
         ),
       );
     } catch (error) {
       message.error(error instanceof Error ? error.message : "PDF 预览生成失败");
     } finally {
       setPreviewLoading("");
+    }
+  };
+
+  const openPrintModal = (task: PrintTask) => {
+    // 打开弹窗时默认选中“订单”，并立即请求订单预览。
+    setActiveTask(task);
+    setActivePrintType(PRINT_TYPES.ORDER);
+    setPreviewUrl(task.previewUrl || "");
+    void requestPreview(task, PRINT_TYPES.ORDER);
+  };
+
+  const closePrintModal = () => {
+    setActiveTask(null);
+    setActivePrintType("");
+    setPreviewUrl("");
+    setPreviewLoading("");
+    setRegenerating(false);
+  };
+
+  const loadPreview = async (printType: PrintType) => {
+    if (!activeTask) {
+      return;
+    }
+    await requestPreview(activeTask, printType);
+  };
+
+  const regeneratePreview = async () => {
+    if (!activeTask || !activePrintType) {
+      return;
+    }
+    setRegenerating(true);
+    try {
+      const preview = await regeneratePrintTaskPreview(activeTask.id, activePrintType);
+      setPreviewUrl(preview.previewUrl);
+      setTasks((prev) =>
+        prev.map((task) =>
+          task.id === activeTask.id ? { ...task, previewUrl: preview.previewUrl } : task,
+        ),
+      );
+      message.success("PDF 已重新生成");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "PDF 重新生成失败");
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -253,17 +289,27 @@ export default function PrintTaskListPage() {
         <div className="print-modal-body">
           <Space wrap className="print-options">
             <Button
-              type="primary"
+              type={activePrintType === PRINT_TYPES.ORDER ? "primary" : "default"}
               loading={previewLoading === PRINT_TYPES.ORDER}
               onClick={() => void loadPreview(PRINT_TYPES.ORDER)}
             >
               订单
             </Button>
             <Button
+              type={activePrintType === PRINT_TYPES.PACKING ? "primary" : "default"}
               loading={previewLoading === PRINT_TYPES.PACKING}
               onClick={() => void loadPreview(PRINT_TYPES.PACKING)}
             >
               装箱单
+            </Button>
+            <Button
+              danger
+              icon={<ReloadOutlined />}
+              disabled={!activePrintType || !previewUrl || Boolean(previewLoading)}
+              loading={regenerating}
+              onClick={() => void regeneratePreview()}
+            >
+              重新生成
             </Button>
             <Typography.Text type="secondary">
               生成预览后，使用 PDF 预览窗口里的打印功能即可。

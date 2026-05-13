@@ -22,6 +22,9 @@ public interface PrintTaskService {
     // 当前主流程：对已有任务生成订单/装箱单 PDF 预览。
     PrintPreviewResponse generateTaskPreview(Long taskId, PrintType printType);
 
+    // 强制重新生成订单/装箱单 PDF 预览。
+    PrintPreviewResponse regenerateTaskPreview(Long taskId, PrintType printType);
+
     // 本地打印代理回写任务状态。
     PrintTaskResponse updateTaskStatus(Long id, PrintTaskStatusUpdateRequest request);
 }
