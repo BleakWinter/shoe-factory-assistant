@@ -247,9 +247,14 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             detail.setInsolePlatform(blankToNull(text(row, columns.insolePlatform())));
             detail.setOutsole(blankToNull(text(row, columns.outsole())));
             detail.setTrademark(blankToNull(text(row, columns.trademark())));
-            detail.setQuantity(nullToZero(integerValue(row, columns.quantity())));
+            Map<String, Integer> sizeQuantities = readSizeQuantities(header, row, columns);
+            int sizeQuantityTotal = sizeQuantities.values().stream()
+                    .filter(value -> value != null && value > 0)
+                    .mapToInt(Integer::intValue)
+                    .sum();
+            detail.setQuantity(sizeQuantityTotal > 0 ? sizeQuantityTotal : nullToZero(integerValue(row, columns.quantity())));
             detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
-            detail.setSizeQuantitiesJson(toJson(readSizeQuantities(header, row, columns)));
+            detail.setSizeQuantitiesJson(toJson(sizeQuantities));
             detail.setSourceSheetName(sheet.getSheetName());
             detail.setRowIndex(rowIndex + 1);
             detail.setCreatedAt(now);

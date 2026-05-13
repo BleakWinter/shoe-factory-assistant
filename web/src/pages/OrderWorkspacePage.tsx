@@ -59,7 +59,9 @@ function renderPrintFlags(record: OrderRecord) {
 
 function renderSizeQuantities(value?: Record<string, number>) {
   // 尺码数量由后端 JSON 转成对象，例如 {"35": 10, "36": 20}。
-  const entries = Object.entries(value || {}).filter(([, count]) => Number(count) > 0);
+  const entries = Object.entries(value || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort(([left], [right]) => compareSizes(left, right));
   if (entries.length === 0) {
     return "-";
   }
@@ -73,6 +75,21 @@ function renderSizeQuantities(value?: Record<string, number>) {
       ))}
     </div>
   );
+}
+
+function compareSizes(left: string, right: string) {
+  const leftValue = parseSizeValue(left);
+  const rightValue = parseSizeValue(right);
+  if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+    return leftValue - rightValue;
+  }
+  return left.localeCompare(right, "zh-CN", { numeric: true });
+}
+
+function parseSizeValue(value: string) {
+  const normalized = value.trim().replace("½", ".5");
+  const match = normalized.match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
 }
 
 function renderProcesses(processes?: OrderDetailProcess[]) {
@@ -221,7 +238,6 @@ export default function OrderWorkspacePage() {
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
     () => [
-      { title: "行号", dataIndex: "lineNo", width: 76, fixed: "left", render: formatEmpty },
       {
         title: "图片",
         dataIndex: "imageUrl",
@@ -240,8 +256,8 @@ export default function OrderWorkspacePage() {
             <Tag>无图</Tag>
           ),
       },
+      { title: "开发编号", dataIndex: "developmentNo", width: 150, fixed: "left", render: formatEmpty },
       { title: "楦头", dataIndex: "lastNo", width: 110, fixed: "left", render: formatEmpty },
-      { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
       { title: "客人", dataIndex: "customerName", width: 150, render: formatEmpty },
       { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
       { title: "出货时间", dataIndex: "deliveryDate", width: 120, render: formatEmpty },
@@ -364,7 +380,7 @@ export default function OrderWorkspacePage() {
           columns={detailColumns}
           dataSource={details}
           pagination={false}
-          scroll={{ x: 3160 }}
+          scroll={{ x: 3090 }}
           className="data-table"
           expandable={{
             expandedRowRender: (record) => renderProcesses(record.processes),
