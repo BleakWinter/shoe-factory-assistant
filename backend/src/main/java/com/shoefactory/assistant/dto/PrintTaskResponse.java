@@ -1,14 +1,15 @@
 package com.shoefactory.assistant.dto;
 
 import com.shoefactory.assistant.entity.OrderRecord;
-import com.shoefactory.assistant.entity.PrintPreview;
-import com.shoefactory.assistant.entity.PrintTask;
+import com.shoefactory.assistant.enums.PrintTaskStatus;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 public class PrintTaskResponse {
 
+    // 打印列表现在直接以 order_record 为数据源，id 就是订单 id。
     private Long id;
     private String taskNo;
     private Long orderId;
@@ -28,36 +29,40 @@ public class PrintTaskResponse {
     private LocalDateTime printedAt;
     private LocalDateTime createdAt;
 
-    public static PrintTaskResponse from(PrintTask task, OrderRecord order, PrintPreview preview) {
+    public static PrintTaskResponse fromOrder(OrderRecord order) {
         PrintTaskResponse response = new PrintTaskResponse();
-        response.setId(task.getId());
-        response.setTaskNo(task.getTaskNo());
-        response.setOrderId(task.getOrderId());
-        response.setPreviewId(task.getPreviewId());
-        response.setPrintType(task.getPrintType());
-        response.setPrinterName(task.getPrinterName());
-        response.setCopies(task.getCopies());
-        response.setStatus(task.getStatus());
-        response.setPriority(task.getPriority());
-        response.setErrorMessage(task.getErrorMessage());
-        response.setPickedAt(task.getPickedAt());
-        response.setPrintedAt(task.getPrintedAt());
-        response.setCreatedAt(task.getCreatedAt());
-        if (order != null) {
-            response.setOrderNo(order.getOrderNo());
-            response.setCustomerName(order.getCustomerName());
-            response.setTotalPairs(order.getQuantity());
+        if (order == null) {
+            return response;
         }
-        if (preview != null) {
-            response.setPreviewUrl(preview.getPreviewUrl());
-        }
+        response.setId(order.getId());
+        response.setTaskNo(order.getOrderNo());
+        response.setOrderId(order.getId());
+        response.setOrderNo(order.getOrderNo());
+        response.setCustomerName(order.getCustomerName());
+        response.setStyleNos(splitDevelopmentNos(order.getDevelopmentNos()));
+        response.setTotalPairs(order.getTotalQuantity());
+        response.setStatus(resolveStatus(order));
+        response.setPriority(0);
+        response.setErrorMessage(order.getErrorMessage());
+        response.setCreatedAt(order.getCreatedAt());
         return response;
     }
 
-    public static PrintTaskResponse from(PrintTask task, OrderRecord order, PrintPreview preview, List<String> styleNos) {
-        PrintTaskResponse response = from(task, order, preview);
-        response.setStyleNos(styleNos);
-        return response;
+    private static String resolveStatus(OrderRecord order) {
+        return Boolean.TRUE.equals(order.getOrderPrinted()) && Boolean.TRUE.equals(order.getPackingPrinted())
+                ? PrintTaskStatus.SUCCESS.name()
+                : PrintTaskStatus.PENDING.name();
+    }
+
+    private static List<String> splitDevelopmentNos(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .toList();
     }
 
     public Long getId() {

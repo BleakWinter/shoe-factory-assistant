@@ -26,6 +26,7 @@ import java.util.stream.Stream;
 @Service
 public class ExcelPdfServiceImpl implements ExcelPdfService {
 
+    // LibreOffice 命令、超时时间等都从 application.yml 的 app.file-storage 读取。
     private final FileStorageProperties properties;
 
     public ExcelPdfServiceImpl(FileStorageProperties properties) {
@@ -38,6 +39,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         try {
             Files.createDirectories(targetPdf.getParent());
             tempDir = Files.createTempDirectory("shoe-excel-pdf-");
+            // 为了只打印某一个 sheet，先复制出一个只包含目标 sheet 的临时 Excel。
             Path conversionInput = prepareSingleSheetExcel(sourceExcel, tempDir, sheetName);
             Path generatedPdf = runConverter(conversionInput, tempDir);
             Files.copy(generatedPdf, targetPdf, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
@@ -56,6 +58,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
             int targetSheetIndex = findSheetIndex(workbook, sheetName)
                     .orElseThrow(() -> new BusinessException("Excel 中未找到 sheet: " + sheetName));
 
+            // 删除非目标 sheet，避免 LibreOffice/Excel 导出整个工作簿。
             for (int i = workbook.getNumberOfSheets() - 1; i >= 0; i--) {
                 if (i != targetSheetIndex) {
                     workbook.removeSheetAt(i);
@@ -77,6 +80,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
     }
 
     private Optional<Integer> findSheetIndex(Workbook workbook, String sheetName) {
+        // 先精确匹配 sheet 名；不行再做去空格后的模糊匹配，兼容“装 箱 单”之类的名字。
         for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
             String current = workbook.getSheetName(i);
             if (current.equals(sheetName)) {
@@ -89,6 +93,21 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
             String normalizedCurrent = normalizeSheetName(current);
             if (normalizedCurrent.contains(normalizedExpected) || normalizedExpected.contains(normalizedCurrent)) {
                 return Optional.of(i);
+            }
+        }
+        // 旧订单可能只有一个默认 sheet 名，但上传解析已经能从里面识别订单内容；订单 PDF 允许回退到第一个 sheet。
+        if ("订单".equals(normalizedExpected) && workbook.getNumberOfSheets() > 0) {
+            return Optional.of(0);
+        }
+        // 装箱单如果没有标准名称，优先找包含“箱”的 sheet，再退回第二个 sheet。
+        if ("装箱单".equals(normalizedExpected)) {
+            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                if (normalizeSheetName(workbook.getSheetName(i)).contains("箱")) {
+                    return Optional.of(i);
+                }
+            }
+            if (workbook.getNumberOfSheets() > 1) {
+                return Optional.of(1);
             }
         }
         return Optional.empty();
@@ -110,6 +129,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
 
     private void configurePrintSettings(Workbook workbook, Sheet sheet) {
         PrintSetup setup = sheet.getPrintSetup();
+        // 核心打印规则：A4、横向、一页宽、多页高。这样横向列不会被拆成多张纸。
         setup.setPaperSize(PrintSetup.A4_PAPERSIZE);
         setup.setLandscape(true);
         setup.setFitWidth((short) 1);
@@ -123,6 +143,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         sheet.setMargin(Sheet.RightMargin, 0.2);
         sheet.setHorizontallyCenter(true);
 
+        // 自动检测有效内容区域，避免把大片空白列/行一起打印进去。
         PrintArea printArea = detectPrintArea(sheet);
         if (printArea != null) {
             workbook.setPrintArea(0, printArea.firstCol(), printArea.lastCol(), printArea.firstRow(), printArea.lastRow());
@@ -174,8 +195,10 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
 
     private Path runConverter(Path input, Path outputDir) {
         try {
+            // 优先用 LibreOffice，部署简单且不依赖本机安装 Microsoft Excel。
             return runLibreOffice(input, outputDir);
         } catch (BusinessException ex) {
+            // Windows 家用电脑可能装了 Excel 没装 LibreOffice，用 COM 导出做兜底。
             return runExcelExport(input, outputDir, ex);
         }
     }
@@ -214,6 +237,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
 
     private Path runExcelExport(Path input, Path outputDir, BusinessException libreOfficeError) {
         Path outputPdf = outputDir.resolve(stripExtension(input.getFileName().toString()) + ".pdf");
+        // PowerShell 脚本通过 Excel COM 打开临时 Excel 并导出 PDF。
         String script = """
                 $ErrorActionPreference = 'Stop';
                 $excel = New-Object -ComObject Excel.Application;
@@ -295,6 +319,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
     }
 
     private String stripSurroundingQuotes(String value) {
+        // application.yml 里如果把命令写成带引号的完整路径，这里去掉外层引号。
         if (value == null || value.isBlank()) {
             return "soffice";
         }
@@ -322,6 +347,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         }
     }
 
+    // POI 设置打印区域时需要起止行列，record 用来把这 4 个数打包传递。
     private record PrintArea(int firstRow, int lastRow, int firstCol, int lastCol) {
     }
 }

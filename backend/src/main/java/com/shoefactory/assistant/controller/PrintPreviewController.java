@@ -20,6 +20,7 @@ import java.nio.file.Path;
 @RequestMapping("/api/print-previews")
 public class PrintPreviewController {
 
+    // 只负责把已经生成好的 PDF 文件返回给浏览器预览。
     private final PrintPreviewService printPreviewService;
 
     public PrintPreviewController(PrintPreviewService printPreviewService) {
@@ -28,6 +29,7 @@ public class PrintPreviewController {
 
     @GetMapping("/{id}/preview")
     public ResponseEntity<UrlResource> preview(@PathVariable Long id) throws MalformedURLException {
+        // Content-Disposition inline 让浏览器直接打开 PDF，而不是强制下载。
         Path previewPdf = printPreviewService.loadPreviewPdf(id);
         UrlResource resource = new UrlResource(previewPdf.toUri());
         return ResponseEntity.ok()

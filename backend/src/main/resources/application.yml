@@ -10,7 +10,7 @@ spring:
       max-request-size: 120MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://192.168.75.130:3316/shoe_factory_assistant?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://192.168.40.128:3306/shoe_factory_assistant?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: 1234
 
@@ -27,6 +27,7 @@ app:
     order-archive-root-path: D:/清化资料
     order-archive-customer: 达维
     order-image-archive-root-path: D:/清化资料/image
+    pdf-archive-root-path: D:/清化资料/pdf
     print-image-swap-path: D:/清化资料/image/swap
     libre-office-command: soffice
     libre-office-timeout-seconds: 120

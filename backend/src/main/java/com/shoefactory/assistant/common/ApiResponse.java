@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public class ApiResponse<T> {
 
+    // 前端 axios 拦截器会识别 success/data/message，并把 data 拿出来给页面使用。
     private boolean success;
     private String message;
     private T data;

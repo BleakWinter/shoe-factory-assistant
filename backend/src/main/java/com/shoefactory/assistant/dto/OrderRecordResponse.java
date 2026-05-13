@@ -1,49 +1,77 @@
 package com.shoefactory.assistant.dto;
 
 import com.shoefactory.assistant.entity.OrderRecord;
-import com.shoefactory.assistant.entity.SourceFile;
+import com.shoefactory.assistant.enums.OrderRecognitionStatus;
+import com.shoefactory.assistant.enums.OrderSourceType;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 
 public class OrderRecordResponse {
 
+    // 订单主表响应，对应页面上的订单列表和打印列表。
     private Long id;
     private String orderNo;
     private String customerName;
-    private String styleNo;
-    private String color;
-    private Integer quantity;
-    private Integer cartonCount;
-    private LocalDate deliveryDate;
-    private String recognitionStatus;
+    private String originalFileName;
+    private String boxImageUrl;
+    private String developmentNos;
+    private List<String> developmentNoList;
+    private Boolean orderPrinted;
+    private Boolean packingPrinted;
+    private String orderPdfPath;
+    private String packingPdfPath;
+    private LocalDateTime orderPdfGeneratedAt;
+    private LocalDateTime packingPdfGeneratedAt;
+    private Integer totalQuantity;
+    private Integer totalCartonCount;
+    private Integer sourceType;
+    private String sourceTypeText;
+    private Integer recognitionStatus;
+    private String recognitionStatusText;
+    private String remark;
     private String errorMessage;
-    private Long sourceFileId;
-    private String sourceFileName;
-    private String sourceFileType;
-    private String sourceSheetName;
     private LocalDateTime createdAt;
 
-    public static OrderRecordResponse from(OrderRecord order, SourceFile sourceFile) {
+    public static OrderRecordResponse from(OrderRecord order) {
         OrderRecordResponse response = new OrderRecordResponse();
         response.setId(order.getId());
         response.setOrderNo(order.getOrderNo());
         response.setCustomerName(order.getCustomerName());
-        response.setStyleNo(order.getStyleNo());
-        response.setColor(order.getColor());
-        response.setQuantity(order.getQuantity());
-        response.setCartonCount(order.getCartonCount());
-        response.setDeliveryDate(order.getDeliveryDate());
+        response.setOriginalFileName(order.getOriginalFileName());
+        response.setBoxImageUrl(order.getBoxImageUrl());
+        response.setDevelopmentNos(order.getDevelopmentNos());
+        response.setDevelopmentNoList(splitDevelopmentNos(order.getDevelopmentNos()));
+        response.setOrderPrinted(order.getOrderPrinted());
+        response.setPackingPrinted(order.getPackingPrinted());
+        response.setOrderPdfPath(order.getOrderPdfPath());
+        response.setPackingPdfPath(order.getPackingPdfPath());
+        response.setOrderPdfGeneratedAt(order.getOrderPdfGeneratedAt());
+        response.setPackingPdfGeneratedAt(order.getPackingPdfGeneratedAt());
+        response.setTotalQuantity(order.getTotalQuantity());
+        response.setTotalCartonCount(order.getTotalCartonCount());
+        response.setSourceType(order.getSourceType());
+        OrderSourceType sourceType = OrderSourceType.fromCode(order.getSourceType());
+        response.setSourceTypeText(sourceType == null ? null : sourceType.getLabel());
         response.setRecognitionStatus(order.getRecognitionStatus());
+        OrderRecognitionStatus status = OrderRecognitionStatus.fromCode(order.getRecognitionStatus());
+        response.setRecognitionStatusText(status == null ? null : status.getLabel());
+        response.setRemark(order.getRemark());
         response.setErrorMessage(order.getErrorMessage());
-        response.setSourceFileId(order.getSourceFileId());
-        response.setSourceSheetName(order.getSourceSheetName());
         response.setCreatedAt(order.getCreatedAt());
-        if (sourceFile != null) {
-            response.setSourceFileName(sourceFile.getOriginalName());
-            response.setSourceFileType(sourceFile.getFileType());
-        }
         return response;
+    }
+
+    private static List<String> splitDevelopmentNos(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .toList();
     }
 
     public Long getId() {
@@ -70,52 +98,140 @@ public class OrderRecordResponse {
         this.customerName = customerName;
     }
 
-    public String getStyleNo() {
-        return styleNo;
+    public String getOriginalFileName() {
+        return originalFileName;
     }
 
-    public void setStyleNo(String styleNo) {
-        this.styleNo = styleNo;
+    public void setOriginalFileName(String originalFileName) {
+        this.originalFileName = originalFileName;
     }
 
-    public String getColor() {
-        return color;
+    public String getBoxImageUrl() {
+        return boxImageUrl;
     }
 
-    public void setColor(String color) {
-        this.color = color;
+    public void setBoxImageUrl(String boxImageUrl) {
+        this.boxImageUrl = boxImageUrl;
     }
 
-    public Integer getQuantity() {
-        return quantity;
+    public String getDevelopmentNos() {
+        return developmentNos;
     }
 
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
+    public void setDevelopmentNos(String developmentNos) {
+        this.developmentNos = developmentNos;
     }
 
-    public Integer getCartonCount() {
-        return cartonCount;
+    public List<String> getDevelopmentNoList() {
+        return developmentNoList;
     }
 
-    public void setCartonCount(Integer cartonCount) {
-        this.cartonCount = cartonCount;
+    public void setDevelopmentNoList(List<String> developmentNoList) {
+        this.developmentNoList = developmentNoList;
     }
 
-    public LocalDate getDeliveryDate() {
-        return deliveryDate;
+    public Boolean getOrderPrinted() {
+        return orderPrinted;
     }
 
-    public void setDeliveryDate(LocalDate deliveryDate) {
-        this.deliveryDate = deliveryDate;
+    public void setOrderPrinted(Boolean orderPrinted) {
+        this.orderPrinted = orderPrinted;
     }
 
-    public String getRecognitionStatus() {
+    public Boolean getPackingPrinted() {
+        return packingPrinted;
+    }
+
+    public void setPackingPrinted(Boolean packingPrinted) {
+        this.packingPrinted = packingPrinted;
+    }
+
+    public String getOrderPdfPath() {
+        return orderPdfPath;
+    }
+
+    public void setOrderPdfPath(String orderPdfPath) {
+        this.orderPdfPath = orderPdfPath;
+    }
+
+    public String getPackingPdfPath() {
+        return packingPdfPath;
+    }
+
+    public void setPackingPdfPath(String packingPdfPath) {
+        this.packingPdfPath = packingPdfPath;
+    }
+
+    public LocalDateTime getOrderPdfGeneratedAt() {
+        return orderPdfGeneratedAt;
+    }
+
+    public void setOrderPdfGeneratedAt(LocalDateTime orderPdfGeneratedAt) {
+        this.orderPdfGeneratedAt = orderPdfGeneratedAt;
+    }
+
+    public LocalDateTime getPackingPdfGeneratedAt() {
+        return packingPdfGeneratedAt;
+    }
+
+    public void setPackingPdfGeneratedAt(LocalDateTime packingPdfGeneratedAt) {
+        this.packingPdfGeneratedAt = packingPdfGeneratedAt;
+    }
+
+    public Integer getTotalQuantity() {
+        return totalQuantity;
+    }
+
+    public void setTotalQuantity(Integer totalQuantity) {
+        this.totalQuantity = totalQuantity;
+    }
+
+    public Integer getTotalCartonCount() {
+        return totalCartonCount;
+    }
+
+    public void setTotalCartonCount(Integer totalCartonCount) {
+        this.totalCartonCount = totalCartonCount;
+    }
+
+    public Integer getSourceType() {
+        return sourceType;
+    }
+
+    public void setSourceType(Integer sourceType) {
+        this.sourceType = sourceType;
+    }
+
+    public String getSourceTypeText() {
+        return sourceTypeText;
+    }
+
+    public void setSourceTypeText(String sourceTypeText) {
+        this.sourceTypeText = sourceTypeText;
+    }
+
+    public Integer getRecognitionStatus() {
         return recognitionStatus;
     }
 
-    public void setRecognitionStatus(String recognitionStatus) {
+    public void setRecognitionStatus(Integer recognitionStatus) {
         this.recognitionStatus = recognitionStatus;
+    }
+
+    public String getRecognitionStatusText() {
+        return recognitionStatusText;
+    }
+
+    public void setRecognitionStatusText(String recognitionStatusText) {
+        this.recognitionStatusText = recognitionStatusText;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
     }
 
     public String getErrorMessage() {
@@ -124,38 +240,6 @@ public class OrderRecordResponse {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
-    }
-
-    public Long getSourceFileId() {
-        return sourceFileId;
-    }
-
-    public void setSourceFileId(Long sourceFileId) {
-        this.sourceFileId = sourceFileId;
-    }
-
-    public String getSourceFileName() {
-        return sourceFileName;
-    }
-
-    public void setSourceFileName(String sourceFileName) {
-        this.sourceFileName = sourceFileName;
-    }
-
-    public String getSourceFileType() {
-        return sourceFileType;
-    }
-
-    public void setSourceFileType(String sourceFileType) {
-        this.sourceFileType = sourceFileType;
-    }
-
-    public String getSourceSheetName() {
-        return sourceSheetName;
-    }
-
-    public void setSourceSheetName(String sourceSheetName) {
-        this.sourceSheetName = sourceSheetName;
     }
 
     public LocalDateTime getCreatedAt() {

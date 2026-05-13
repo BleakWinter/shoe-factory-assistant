@@ -1,4 +1,5 @@
 export interface ApiResponse<T> {
+  // 后端统一响应外壳，axios 拦截器会把 data 拆出来。
   success: boolean;
   message: string;
   data: T;
@@ -6,14 +7,20 @@ export interface ApiResponse<T> {
 }
 
 export interface PageResponse<T> {
+  // Ant Design 表格分页需要 records 和 total。
   records: T[];
   total: number;
   page: number;
   size: number;
 }
 
-export type OrderImportStatus = "IMPORTED" | "PARTIAL" | "FAILED";
-export type ShipmentStatus = "NOT_SHIPPED" | "SHIPPED";
+export const PRINT_TYPES = {
+  ORDER: "ORDER",
+  PACKING: "PACKING",
+} as const;
+export type PrintType = (typeof PRINT_TYPES)[keyof typeof PRINT_TYPES];
+
+// 打印任务状态和后端 PrintTaskStatus 枚举保持一致。
 export type PrintTaskStatus =
   | "PENDING"
   | "PRINTING"
@@ -22,6 +29,7 @@ export type PrintTaskStatus =
   | "CANCELED";
 
 export interface OrderUploadResult {
+  // 上传成功后后端返回的摘要，用于提示“解析了哪条订单”。
   orderId: number;
   orderNo?: string;
   customerName?: string;
@@ -31,22 +39,71 @@ export interface OrderUploadResult {
   printTaskNo?: string;
 }
 
-export interface OrderLine {
+export interface OrderRecord {
+  // 对应 order_record 主表，订单列表和打印列表都展示它。
+  id: number;
+  orderNo?: string;
+  customerName?: string;
+  originalFileName?: string;
+  boxImageUrl?: string;
+  developmentNos?: string;
+  developmentNoList?: string[];
+  orderPrinted?: boolean;
+  packingPrinted?: boolean;
+  orderPdfPath?: string;
+  packingPdfPath?: string;
+  orderPdfGeneratedAt?: string;
+  packingPdfGeneratedAt?: string;
+  totalQuantity?: number;
+  totalCartonCount?: number;
+  sourceType?: number;
+  sourceTypeText?: string;
+  recognitionStatus?: number;
+  recognitionStatusText?: string;
+  remark?: string;
+  errorMessage?: string;
+  createdAt?: string;
+}
+
+export interface OrderRecordQueryParams {
+  // 订单主表筛选参数，字段名和后端 /api/orders 对齐。
+  orderNo?: string;
+  customerName?: string;
+  developmentNo?: string;
+  recognitionStatus?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface OrderDetailProcess {
+  // 对应 order_detail_process。
   id: number;
   orderId: number;
-  orderNo?: string;
-  invoiceNo?: string;
-  customerName?: string;
-  orderDate?: string;
-  deliveryDate?: string;
-  imageUrl?: string;
+  orderDetailId: number;
+  processType?: number;
+  processTypeText?: string;
+  processStatus?: number;
+  processStatusText?: string;
+  processCount?: number;
+  lastProcessAt?: string;
+  remark?: string;
+  createdAt?: string;
+}
+
+export interface OrderRecordDetail {
+  // 对应 order_record_detail。
+  id: number;
+  orderId: number;
+  lineNo?: number;
   lastNo?: string;
-  styleNo?: string;
   developmentNo?: string;
+  customerName?: string;
   customerOrderNo?: string;
-  warehouseNo?: string;
+  warehouseStoreNo?: string;
+  deliveryDate?: string;
   poNo?: string;
   customerStyleNo?: string;
+  imageUrl?: string;
   englishColor?: string;
   englishMaterial?: string;
   upperMaterial?: string;
@@ -55,32 +112,21 @@ export interface OrderLine {
   insolePlatform?: string;
   outsole?: string;
   trademark?: string;
+  sizeQuantities?: Record<string, number>;
   quantity?: number;
   cartonCount?: number;
-  totalQuantity?: number;
-  sizeQuantities?: Record<string, number>;
-  shipmentStatus?: ShipmentStatus;
-  remark?: string;
-  importStatus?: OrderImportStatus;
-  errorMessage?: string;
+  boxSpec?: string;
   sourceSheetName?: string;
   rowIndex?: number;
+  remark?: string;
+  processes?: OrderDetailProcess[];
   createdAt?: string;
 }
 
-export interface OrderLineQueryParams {
-  orderNo?: string;
-  styleNo?: string;
-  lastNo?: string;
-  shipmentStatus?: ShipmentStatus;
-  deliveryDate?: string;
-  page?: number;
-  size?: number;
-}
-
 export interface PrintTask {
+  // 兼容原打印列表类型；现在每一行实际来自 order_record。
   id: number;
-  taskNo: string;
+  taskNo?: string;
   orderId: number;
   orderNo?: string;
   customerName?: string;
@@ -93,11 +139,12 @@ export interface PrintTask {
 }
 
 export interface PrintPreview {
+  // PDF 预览信息，previewUrl 可直接放进 iframe。
   id: number;
   previewNo: string;
   orderId: number;
   orderNo?: string;
-  printType: "ORDER" | "PACKING";
+  printType: PrintType;
   previewUrl: string;
   status: "READY" | "FAILED";
   errorMessage?: string;

@@ -24,6 +24,7 @@ import java.util.List;
 @RequestMapping("/api/print-tasks")
 public class PrintTaskController {
 
+    // 打印任务接口：页面查询任务、生成预览；pending/status 留给后续本地打印代理使用。
     private final PrintTaskService printTaskService;
 
     public PrintTaskController(PrintTaskService printTaskService) {
@@ -32,11 +33,13 @@ public class PrintTaskController {
 
     @PostMapping
     public ApiResponse<PrintTaskResponse> createTask(@Valid @RequestBody PrintTaskCreateRequest request) {
+        // 早期“确认打印”接口，当前上传 Excel 时已经自动创建待打印任务。
         return ApiResponse.ok(printTaskService.createTask(request));
     }
 
     @GetMapping
     public ApiResponse<List<PrintTaskResponse>> listTasks() {
+        // 打印列表页面调用这里。
         return ApiResponse.ok(printTaskService.listTasks());
     }
 
@@ -44,6 +47,7 @@ public class PrintTaskController {
     public ApiResponse<List<PrintTaskResponse>> listPendingTasks(
             @RequestParam(name = "limit", defaultValue = "20") int limit
     ) {
+        // 预留给 print-agent 轮询待打印任务。
         return ApiResponse.ok(printTaskService.listPendingTasks(limit));
     }
 
@@ -52,6 +56,7 @@ public class PrintTaskController {
             @PathVariable Long id,
             @Valid @RequestBody PrintTaskPreviewRequest request
     ) {
+        // 页面点击“订单”或“装箱单”后，按所选类型生成 PDF 预览。
         return ApiResponse.ok(printTaskService.generateTaskPreview(id, PrintType.parse(request.getPrintType())));
     }
 
@@ -60,6 +65,7 @@ public class PrintTaskController {
             @PathVariable Long id,
             @Valid @RequestBody PrintTaskStatusUpdateRequest request
     ) {
+        // 预留给本地打印代理回写 PRINTING/SUCCESS/FAILED 等状态。
         return ApiResponse.ok(printTaskService.updateTaskStatus(id, request));
     }
 }

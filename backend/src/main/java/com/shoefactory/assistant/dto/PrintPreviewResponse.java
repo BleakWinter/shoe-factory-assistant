@@ -1,12 +1,12 @@
 package com.shoefactory.assistant.dto;
 
 import com.shoefactory.assistant.entity.OrderRecord;
-import com.shoefactory.assistant.entity.PrintPreview;
 
 import java.time.LocalDateTime;
 
 public class PrintPreviewResponse {
 
+    // PDF 预览响应，previewUrl 给前端 iframe 直接打开。
     private Long id;
     private String previewNo;
     private Long orderId;
@@ -18,17 +18,27 @@ public class PrintPreviewResponse {
     private String errorMessage;
     private LocalDateTime createdAt;
 
-    public static PrintPreviewResponse from(PrintPreview preview, OrderRecord order) {
+    public static PrintPreviewResponse generated(
+            Long id,
+            String previewNo,
+            OrderRecord order,
+            String printType,
+            String previewUrl,
+            Long pdfSize,
+            String status,
+            String errorMessage,
+            LocalDateTime createdAt
+    ) {
         PrintPreviewResponse response = new PrintPreviewResponse();
-        response.setId(preview.getId());
-        response.setPreviewNo(preview.getPreviewNo());
-        response.setOrderId(preview.getOrderId());
-        response.setPrintType(preview.getPrintType());
-        response.setPreviewUrl(preview.getPreviewUrl());
-        response.setPdfSize(preview.getPdfSize());
-        response.setStatus(preview.getStatus());
-        response.setErrorMessage(preview.getErrorMessage());
-        response.setCreatedAt(preview.getCreatedAt());
+        response.setId(id);
+        response.setPreviewNo(previewNo);
+        response.setOrderId(order == null ? null : order.getId());
+        response.setPrintType(printType);
+        response.setPreviewUrl(previewUrl);
+        response.setPdfSize(pdfSize);
+        response.setStatus(status);
+        response.setErrorMessage(errorMessage);
+        response.setCreatedAt(createdAt);
         if (order != null) {
             response.setOrderNo(order.getOrderNo());
         }

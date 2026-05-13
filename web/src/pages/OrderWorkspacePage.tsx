@@ -1,8 +1,8 @@
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { EyeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
-  DatePicker,
+  Drawer,
   Form,
   Image,
   Input,
@@ -13,36 +13,52 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import type { Dayjs } from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchOrderLines, toAssetUrl } from "../api/orderApi";
-import type { OrderImportStatus, OrderLine, OrderLineQueryParams, ShipmentStatus } from "../types/order";
+import { fetchOrderDetails, fetchOrders, toAssetUrl } from "../api/orderApi";
+import type { OrderDetailProcess, OrderRecord, OrderRecordDetail, OrderRecordQueryParams } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
+  // 筛选表单字段，提交时会转换成后端查询参数。
   orderNo?: string;
-  styleNo?: string;
-  lastNo?: string;
-  shipmentStatus?: ShipmentStatus;
-  deliveryDate?: Dayjs;
+  customerName?: string;
+  developmentNo?: string;
+  recognitionStatus?: string;
 }
 
-interface StyleOption {
-  label: string;
-  value: string;
+function renderDevelopmentNos(values?: string[]) {
+  // 开发编号在主表里是汇总字段，页面拆成标签便于扫读。
+  if (!values || values.length === 0) {
+    return "-";
+  }
+  return (
+    <Space size={[4, 4]} wrap>
+      {values.map((value) => (
+        <Tag key={value}>{value}</Tag>
+      ))}
+    </Space>
+  );
 }
 
-function renderImportStatus(status?: OrderImportStatus, errorMessage?: string) {
-  if (status === "FAILED") {
-    return <Tag color="red">{errorMessage || "导入失败"}</Tag>;
+function renderRecognitionStatus(statusText?: string, errorMessage?: string) {
+  if (errorMessage) {
+    return <Tag color="red">{statusText || "异常"}</Tag>;
   }
-  if (status === "PARTIAL") {
-    return <Tag color="gold">部分识别</Tag>;
-  }
-  return <Tag color="green">已导入</Tag>;
+  const color = statusText === "已识别" ? "green" : statusText === "识别失败" ? "red" : "gold";
+  return <Tag color={color}>{statusText || "待识别"}</Tag>;
+}
+
+function renderPrintFlags(record: OrderRecord) {
+  return (
+    <Space size={[4, 4]} wrap>
+      <Tag color={record.orderPrinted ? "green" : "default"}>订单</Tag>
+      <Tag color={record.packingPrinted ? "green" : "default"}>装箱单</Tag>
+    </Space>
+  );
 }
 
 function renderSizeQuantities(value?: Record<string, number>) {
+  // 尺码数量由后端 JSON 转成对象，例如 {"35": 10, "36": 20}。
   const entries = Object.entries(value || {}).filter(([, count]) => Number(count) > 0);
   if (entries.length === 0) {
     return "-";
@@ -59,68 +75,59 @@ function renderSizeQuantities(value?: Record<string, number>) {
   );
 }
 
-function styleGroupOf(styleNo?: string) {
-  if (!styleNo) {
-    return "";
+function renderProcesses(processes?: OrderDetailProcess[]) {
+  if (!processes || processes.length === 0) {
+    return <Typography.Text type="secondary">暂无处理记录</Typography.Text>;
   }
-  const parts = styleNo.trim().split("-").filter(Boolean);
-  return parts.length >= 2 ? `${parts[0]}-${parts[1]}` : styleNo.trim();
-}
-
-function buildStyleOptions(lines: OrderLine[]): StyleOption[] {
-  const styles = new Set<string>();
-  lines.forEach((line) => {
-    const fullStyle = line.developmentNo?.trim();
-    if (!fullStyle) {
-      return;
-    }
-    styles.add(fullStyle);
-  });
-
-  return Array.from(styles)
-    .sort((a, b) => a.localeCompare(b))
-    .map((value) => ({
-      label: `${styleGroupOf(value)} / ${value}`,
-      value,
-    }));
+  return (
+    <Space size={[6, 6]} wrap>
+      {processes.map((process) => (
+        <Tag key={process.id} color="blue">
+          {process.processTypeText || process.processType}: {process.processStatusText || "已处理"}
+          {process.processCount ? ` x${process.processCount}` : ""}
+        </Tag>
+      ))}
+    </Space>
+  );
 }
 
 export default function OrderWorkspacePage() {
   const { message } = App.useApp();
   const [form] = Form.useForm<FilterValues>();
-  const [lines, setLines] = useState<OrderLine[]>([]);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [details, setDetails] = useState<OrderRecordDetail[]>([]);
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState<OrderLineQueryParams>({ page: 1, size: 20 });
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [activeOrder, setActiveOrder] = useState<OrderRecord | null>(null);
+  const [query, setQuery] = useState<OrderRecordQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
 
-  const loadLines = useCallback(async (params: OrderLineQueryParams) => {
+  const loadOrders = useCallback(async (params: OrderRecordQueryParams) => {
+    // 按当前筛选和分页参数加载订单主表。
     setLoading(true);
     try {
-      const page = await fetchOrderLines(params);
-      setLines(page.records);
+      const page = await fetchOrders(params);
+      setOrders(page.records);
       setTotal(page.total);
     } catch (error) {
-      setLines([]);
+      setOrders([]);
       setTotal(0);
-      message.error(error instanceof Error ? error.message : "订单明细加载失败");
+      message.error(error instanceof Error ? error.message : "订单列表加载失败");
     } finally {
       setLoading(false);
     }
   }, [message]);
 
   useEffect(() => {
-    void loadLines(query);
-  }, [loadLines, query]);
-
-  const styleOptions = useMemo(() => buildStyleOptions(lines), [lines]);
+    void loadOrders(query);
+  }, [loadOrders, query]);
 
   const submitFilters = (values: FilterValues) => {
     setQuery({
       orderNo: values.orderNo,
-      styleNo: values.styleNo,
-      lastNo: values.lastNo,
-      shipmentStatus: values.shipmentStatus,
-      deliveryDate: values.deliveryDate?.format("YYYY-MM-DD"),
+      customerName: values.customerName,
+      developmentNo: values.developmentNo,
+      recognitionStatus: values.recognitionStatus,
       page: 1,
       size: query.size ?? 20,
     });
@@ -131,15 +138,90 @@ export default function OrderWorkspacePage() {
     setQuery({ page: 1, size: query.size ?? 20 });
   };
 
-  const columns = useMemo<ColumnsType<OrderLine>>(
+  const openDetails = async (order: OrderRecord) => {
+    setActiveOrder(order);
+    setDetails([]);
+    setDetailLoading(true);
+    try {
+      setDetails(await fetchOrderDetails(order.id));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "订单详情加载失败");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const columns = useMemo<ColumnsType<OrderRecord>>(
     () => [
       {
         title: "订单流水号",
         dataIndex: "orderNo",
-        width: 130,
+        width: 150,
         fixed: "left",
         render: formatEmpty,
       },
+      {
+        title: "客户",
+        dataIndex: "customerName",
+        width: 150,
+        render: formatEmpty,
+      },
+      {
+        title: "开发编号",
+        dataIndex: "developmentNoList",
+        minWidth: 260,
+        render: renderDevelopmentNos,
+      },
+      {
+        title: "订单总对数",
+        dataIndex: "totalQuantity",
+        width: 120,
+        align: "right",
+        render: formatEmpty,
+      },
+      {
+        title: "总箱数",
+        dataIndex: "totalCartonCount",
+        width: 100,
+        align: "right",
+        render: formatEmpty,
+      },
+      {
+        title: "识别状态",
+        dataIndex: "recognitionStatusText",
+        width: 120,
+        render: (value: string, record) => renderRecognitionStatus(value, record.errorMessage),
+      },
+      {
+        title: "打印",
+        key: "printed",
+        width: 140,
+        render: (_, record) => renderPrintFlags(record),
+      },
+      {
+        title: "上传时间",
+        dataIndex: "createdAt",
+        width: 170,
+        render: formatDateTime,
+      },
+      {
+        title: "操作",
+        key: "actions",
+        width: 120,
+        fixed: "right",
+        render: (_, record) => (
+          <Button icon={<EyeOutlined />} onClick={() => void openDetails(record)}>
+            详情
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
+    () => [
+      { title: "行号", dataIndex: "lineNo", width: 76, fixed: "left", render: formatEmpty },
       {
         title: "图片",
         dataIndex: "imageUrl",
@@ -159,7 +241,7 @@ export default function OrderWorkspacePage() {
           ),
       },
       { title: "楦头", dataIndex: "lastNo", width: 110, fixed: "left", render: formatEmpty },
-      { title: "开发编号", dataIndex: "developmentNo", width: 130, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
       { title: "客人", dataIndex: "customerName", width: 150, render: formatEmpty },
       { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
       { title: "出货时间", dataIndex: "deliveryDate", width: 120, render: formatEmpty },
@@ -181,15 +263,7 @@ export default function OrderWorkspacePage() {
       },
       { title: "双数", dataIndex: "quantity", width: 90, align: "right", render: formatEmpty },
       { title: "箱数", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
-      { title: "总数量", dataIndex: "totalQuantity", width: 100, align: "right", render: formatEmpty },
-      {
-        title: "导入状态",
-        dataIndex: "importStatus",
-        width: 120,
-        render: (status: OrderImportStatus, record) =>
-          renderImportStatus(status, record.errorMessage),
-      },
-      { title: "上传时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
+      { title: "盒规", dataIndex: "boxSpec", width: 120, render: formatEmpty },
     ],
     [],
   );
@@ -199,7 +273,7 @@ export default function OrderWorkspacePage() {
     pageSize: query.size,
     total,
     showSizeChanger: true,
-    showTotal: (count) => `共 ${count} 行`,
+    showTotal: (count) => `共 ${count} 条`,
   };
 
   return (
@@ -208,7 +282,7 @@ export default function OrderWorkspacePage() {
         <div>
           <Typography.Title level={3}>订单列表</Typography.Title>
           <Typography.Text type="secondary">
-            这里看 Excel 里解析出来的订单明细，上传入口放在打印列表里。
+            主表展示订单汇总，详情里查看订单明细和处理状态。
           </Typography.Text>
         </div>
       </div>
@@ -223,32 +297,24 @@ export default function OrderWorkspacePage() {
           <Form.Item name="orderNo" label="订单流水号">
             <Input allowClear placeholder="订单流水号" />
           </Form.Item>
-          <Form.Item name="styleNo" label="款号">
-            <Select
-              allowClear
-              className="style-cascader"
-              options={styleOptions}
-              placeholder="选择款号"
-              showSearch
-              optionFilterProp="label"
-            />
+          <Form.Item name="customerName" label="客户">
+            <Input allowClear placeholder="客户" />
           </Form.Item>
-          <Form.Item name="lastNo" label="楦头">
-            <Input allowClear placeholder="楦头" />
+          <Form.Item name="developmentNo" label="开发编号">
+            <Input allowClear placeholder="开发编号" />
           </Form.Item>
-          <Form.Item name="shipmentStatus" label="出货状态">
+          <Form.Item name="recognitionStatus" label="识别状态">
             <Select
               allowClear
               className="status-select"
               placeholder="全部"
               options={[
-                { label: "未出货", value: "NOT_SHIPPED" },
-                { label: "已出货", value: "SHIPPED" },
+                { label: "待识别", value: "0" },
+                { label: "已识别", value: "1" },
+                { label: "待人工处理", value: "2" },
+                { label: "识别失败", value: "3" },
               ]}
             />
-          </Form.Item>
-          <Form.Item name="deliveryDate" label="出货时间">
-            <DatePicker allowClear />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -256,7 +322,7 @@ export default function OrderWorkspacePage() {
                 查询
               </Button>
               <Button onClick={resetFilters}>重置</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => void loadLines(query)}>
+              <Button icon={<ReloadOutlined />} onClick={() => void loadOrders(query)}>
                 刷新
               </Button>
             </Space>
@@ -267,11 +333,12 @@ export default function OrderWorkspacePage() {
           rowKey="id"
           loading={loading}
           columns={columns}
-          dataSource={lines}
+          dataSource={orders}
           pagination={pagination}
-          scroll={{ x: 3450 }}
+          scroll={{ x: 1320 }}
           className="data-table"
           onChange={(nextPagination) => {
+            // Ant Design 分页变化后，只更新 page/size，保留当前筛选条件。
             setQuery((prev) => ({
               ...prev,
               page: nextPagination.current ?? 1,
@@ -280,6 +347,31 @@ export default function OrderWorkspacePage() {
           }}
         />
       </div>
+
+      <Drawer
+        open={Boolean(activeOrder)}
+        title={activeOrder ? `订单详情：${activeOrder.orderNo || activeOrder.id}` : "订单详情"}
+        onClose={() => {
+          setActiveOrder(null);
+          setDetails([]);
+        }}
+        width="92vw"
+        destroyOnClose
+      >
+        <Table
+          rowKey="id"
+          loading={detailLoading}
+          columns={detailColumns}
+          dataSource={details}
+          pagination={false}
+          scroll={{ x: 3160 }}
+          className="data-table"
+          expandable={{
+            expandedRowRender: (record) => renderProcesses(record.processes),
+            rowExpandable: () => true,
+          }}
+        />
+      </Drawer>
     </div>
   );
 }

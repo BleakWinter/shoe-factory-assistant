@@ -6,17 +6,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { uploadOrderFile } from "../api/orderApi";
 import { fetchPrintTasks, generatePrintTaskPreview } from "../api/printTaskApi";
 import PdfPreview from "../components/PdfPreview";
-import type { PrintTask, PrintTaskStatus } from "../types/order";
+import { PRINT_TYPES } from "../types/order";
+import type { PrintTask, PrintTaskStatus, PrintType } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 const allowedExtensions = ["xlsx", "xls"];
 
 function isAllowedFile(file: File) {
+  // 前端先做一次扩展名校验，后端仍会再校验一遍。
   const extension = file.name.split(".").pop()?.toLowerCase();
   return Boolean(extension && allowedExtensions.includes(extension));
 }
 
 function renderTaskStatus(status: PrintTaskStatus) {
+  // 后端存英文枚举，页面转成爸妈看得懂的中文状态。
   const map: Record<PrintTaskStatus, { color: string; label: string }> = {
     PENDING: { color: "gold", label: "待打印" },
     PRINTING: { color: "blue", label: "打印中" },
@@ -29,6 +32,7 @@ function renderTaskStatus(status: PrintTaskStatus) {
 }
 
 function renderStyleNos(styleNos?: string[]) {
+  // 一个订单可能有多个开发编号，用标签分开显示。
   if (!styleNos || styleNos.length === 0) {
     return "-";
   }
@@ -43,14 +47,16 @@ function renderStyleNos(styleNos?: string[]) {
 
 export default function PrintTaskListPage() {
   const { message } = App.useApp();
+  // tasks 是表格数据；activeTask 是当前打开打印弹窗的那条任务。
   const [tasks, setTasks] = useState<PrintTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [previewLoading, setPreviewLoading] = useState<"ORDER" | "PACKING" | "">("");
+  const [previewLoading, setPreviewLoading] = useState<PrintType | "">("");
 
   const loadTasks = useCallback(async () => {
+    // 刷新打印任务列表。上传成功后也会调用一次。
     setLoading(true);
     try {
       const data = await fetchPrintTasks();
@@ -80,6 +86,7 @@ export default function PrintTaskListPage() {
       return true;
     },
     customRequest: async (options) => {
+      // Ant Design Upload 默认会自己发请求，这里改成走我们的 uploadOrderFile。
       setUploading(true);
       try {
         const file = options.file as File;
@@ -100,6 +107,7 @@ export default function PrintTaskListPage() {
   };
 
   const openPrintModal = (task: PrintTask) => {
+    // 如果任务之前已经生成过预览，打开弹窗时直接显示旧 previewUrl。
     setActiveTask(task);
     setPreviewUrl(task.previewUrl || "");
   };
@@ -110,12 +118,13 @@ export default function PrintTaskListPage() {
     setPreviewLoading("");
   };
 
-  const loadPreview = async (printType: "ORDER" | "PACKING") => {
+  const loadPreview = async (printType: PrintType) => {
     if (!activeTask) {
       return;
     }
     setPreviewLoading(printType);
     try {
+      // 生成 PDF 后，把当前任务的 previewUrl 同步回表格缓存。
       const preview = await generatePrintTaskPreview(activeTask.id, printType);
       setPreviewUrl(preview.previewUrl);
       setTasks((prev) =>
@@ -131,6 +140,7 @@ export default function PrintTaskListPage() {
   };
 
   const columns = useMemo<ColumnsType<PrintTask>>(
+    // 表格列定义固定，用 useMemo 避免每次状态变化都重建。
     () => [
       {
         title: "订单流水号",
@@ -184,6 +194,7 @@ export default function PrintTaskListPage() {
               打印
             </Button>
             <Button disabled icon={<UploadOutlined />}>
+              {/* 预留按钮：后续做“重新上传并覆盖旧订单”。 */}
               重新上传
             </Button>
           </Space>
@@ -243,14 +254,14 @@ export default function PrintTaskListPage() {
           <Space wrap className="print-options">
             <Button
               type="primary"
-              loading={previewLoading === "ORDER"}
-              onClick={() => void loadPreview("ORDER")}
+              loading={previewLoading === PRINT_TYPES.ORDER}
+              onClick={() => void loadPreview(PRINT_TYPES.ORDER)}
             >
               订单
             </Button>
             <Button
-              loading={previewLoading === "PACKING"}
-              onClick={() => void loadPreview("PACKING")}
+              loading={previewLoading === PRINT_TYPES.PACKING}
+              onClick={() => void loadPreview(PRINT_TYPES.PACKING)}
             >
               装箱单
             </Button>

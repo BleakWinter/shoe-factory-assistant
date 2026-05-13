@@ -1,4 +1,5 @@
 export function formatFileSize(size?: number) {
+  // 给后续文件列表预留的大小格式化工具。
   if (!size) {
     return "-";
   }
@@ -15,6 +16,7 @@ export function formatFileSize(size?: number) {
 }
 
 export function formatDateTime(value?: string) {
+  // 后端返回 ISO 时间字符串，页面统一显示成中文本地时间。
   if (!value) {
     return "-";
   }
@@ -34,6 +36,7 @@ export function formatDateTime(value?: string) {
 }
 
 export function formatEmpty(value?: string | number | null) {
+  // 表格里空值统一显示 -，避免一片 undefined/null。
   if (value === null || value === undefined || value === "") {
     return "-";
   }

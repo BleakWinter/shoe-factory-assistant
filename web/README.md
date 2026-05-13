@@ -22,12 +22,14 @@ npm run build
 
 ## 页面
 
-- `/orders`：订单表。上传 Excel 订单文件后，把文件里的每一行订单明细列出来，包含图片、款号、楦头号、材料、大底、尺码数量等。
-- `/tasks`：打印列表。上传订单后按订单生成一条打印任务，只显示订单号、客户、订单里的款号、总双数和状态。
+- `/orders`：订单主表。展示 `order_record`，点详情后查看 `order_record_detail` 和 `order_detail_process`。
+- `/tasks`：打印列表。展示 `order_record`，上传 Excel 后可生成订单或装箱单 PDF 预览。
 
 ## 接口约定
 
 - `POST /api/orders/upload`
-- `GET /api/orders/lines`
+- `GET /api/orders`
+- `GET /api/orders/{id}/details`
+- `GET /api/orders/{id}/pdf/{printType}`
 - `GET /api/print-tasks`
 - `PATCH /api/print-tasks/{id}/status`

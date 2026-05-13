@@ -7,7 +7,12 @@ import java.nio.file.Path;
 
 public interface PrintPreviewService {
 
+    // 按打印类型生成 PDF 预览，printType 决定取“订单”还是“装箱单”sheet。
     PrintPreviewResponse generatePreview(Long orderId, PrintType printType);
 
+    // 读取已经生成好的 PDF 文件。
     Path loadPreviewPdf(Long previewId);
+
+    // 按订单和打印类型读取已生成并保存到 order_record 的 PDF。
+    Path loadOrderPdf(Long orderId, PrintType printType);
 }

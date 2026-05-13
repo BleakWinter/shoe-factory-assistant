@@ -4,8 +4,10 @@ import jakarta.validation.constraints.NotBlank;
 
 public class PrintTaskStatusUpdateRequest {
 
+    // PENDING/PRINTING/SUCCESS/FAILED/CANCELED。
     @NotBlank
     private String status;
+    // 失败或取消时可写原因。
     private String errorMessage;
 
     public String getStatus() {

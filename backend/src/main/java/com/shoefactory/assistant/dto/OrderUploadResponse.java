@@ -2,6 +2,7 @@ package com.shoefactory.assistant.dto;
 
 public class OrderUploadResponse {
 
+    // 上传完成后给前端弹成功提示用的摘要信息。
     private Long orderId;
     private String orderNo;
     private String customerName;

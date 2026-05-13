@@ -6,6 +6,7 @@ interface PdfPreviewProps {
 }
 
 export default function PdfPreview({ url }: PdfPreviewProps) {
+  // url 变化时重新显示 loading，iframe load 后隐藏。
   const [loading, setLoading] = useState(Boolean(url));
 
   useEffect(() => {
@@ -13,6 +14,7 @@ export default function PdfPreview({ url }: PdfPreviewProps) {
   }, [url]);
 
   if (!url) {
+    // 上传后还没点击“订单/装箱单”时会走这里。
     return (
       <div className="pdf-empty">
         <Empty description="暂无 PDF 预览" />

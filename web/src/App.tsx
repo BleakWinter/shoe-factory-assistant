@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 const { Header, Content } = Layout;
 
+// 顶部导航固定两个页面：订单明细和打印任务。
 const navItems = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/tasks", label: "打印列表", icon: <FileDoneOutlined /> },

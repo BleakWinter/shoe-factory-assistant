@@ -6,6 +6,7 @@ import java.util.List;
 
 public class PageResponse<T> {
 
+    // 统一分页结构，兼容前端表格的 records/total/page/size。
     private List<T> records;
     private long total;
     private long page;

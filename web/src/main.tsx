@@ -6,6 +6,7 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./router";
 import "./styles.css";
 
+// React 入口：这里配置中文语言包、主题和路由。
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ConfigProvider

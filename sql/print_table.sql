@@ -1,137 +1,138 @@
-USE shoe_factory_assistant;
+CREATE TABLE IF NOT EXISTS `order_record` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
 
-CREATE TABLE IF NOT EXISTS source_file (
-    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-    file_no VARCHAR(64) NOT NULL COMMENT '文件编号',
-    original_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
-    file_ext VARCHAR(16) NOT NULL COMMENT '文件扩展名',
-    file_type VARCHAR(32) NOT NULL COMMENT '文件类型: EXCEL/IMAGE',
-    mime_type VARCHAR(128) DEFAULT NULL COMMENT 'MIME 类型',
-    file_size BIGINT NOT NULL DEFAULT 0 COMMENT '原始文件大小',
-    original_path VARCHAR(512) NOT NULL COMMENT '原始文件本地路径',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_source_file_no (file_no),
-    KEY idx_source_file_type (file_type),
-    KEY idx_source_file_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单原稿文件表';
+  `order_no` varchar(128) DEFAULT NULL COMMENT '订单流水号',
+  `customer_name` varchar(128) DEFAULT NULL COMMENT '客户名称',
 
-CREATE TABLE IF NOT EXISTS order_record (
-    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-    order_no VARCHAR(128) DEFAULT NULL COMMENT '订单号',
-    customer_name VARCHAR(128) DEFAULT NULL COMMENT '客户',
-    style_no VARCHAR(128) DEFAULT NULL COMMENT '款号',
-    color VARCHAR(128) DEFAULT NULL COMMENT '颜色',
-    quantity INT DEFAULT NULL COMMENT '数量',
-    carton_count INT DEFAULT NULL COMMENT '箱数',
-    delivery_date DATE DEFAULT NULL COMMENT '交期',
-    recognition_status VARCHAR(32) NOT NULL COMMENT '识别状态: RECOGNIZED/PENDING_MANUAL/FAILED',
-    source_file_id BIGINT NOT NULL COMMENT '原稿文件 ID',
-    source_sheet_name VARCHAR(128) DEFAULT NULL COMMENT '识别来源 sheet',
-    error_message VARCHAR(1024) DEFAULT NULL COMMENT '识别错误信息',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    KEY idx_order_record_order_no (order_no),
-    KEY idx_order_record_style_no (style_no),
-    KEY idx_order_record_customer (customer_name),
-    KEY idx_order_record_delivery_date (delivery_date),
-    KEY idx_order_record_status (recognition_status),
-    KEY idx_order_record_source_file_id (source_file_id),
-    CONSTRAINT fk_order_record_source_file_id FOREIGN KEY (source_file_id) REFERENCES source_file (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单记录表';
+  `original_file_name` varchar(255) DEFAULT NULL COMMENT '原始订单文件名',
+  `original_file_path` varchar(512) DEFAULT NULL COMMENT '原始订单文件本地路径',
 
-CREATE TABLE IF NOT EXISTS order_line (
-    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-    order_id BIGINT NOT NULL COMMENT '订单 ID',
-    source_file_id BIGINT NOT NULL COMMENT '原稿文件 ID',
-    order_no VARCHAR(128) DEFAULT NULL COMMENT '订单流水号',
-    invoice_no VARCHAR(128) DEFAULT NULL COMMENT '发票编号',
-    customer_name VARCHAR(128) DEFAULT NULL COMMENT '客人',
-    order_date DATE DEFAULT NULL COMMENT '订单日期',
-    delivery_date DATE DEFAULT NULL COMMENT '出货时间',
-    image_path VARCHAR(512) DEFAULT NULL COMMENT '图片本地路径',
-    last_no VARCHAR(128) DEFAULT NULL COMMENT '楦头',
-    style_no VARCHAR(128) DEFAULT NULL COMMENT '款号/楦头',
-    development_no VARCHAR(128) DEFAULT NULL COMMENT '开发编号',
-    customer_order_no VARCHAR(255) DEFAULT NULL COMMENT '客人订单号',
-    warehouse_no VARCHAR(128) DEFAULT NULL COMMENT '仓库号/店铺号',
-    po_no VARCHAR(128) DEFAULT NULL COMMENT 'PO',
-    customer_style_no VARCHAR(128) DEFAULT NULL COMMENT '客人型体号',
-    english_color VARCHAR(255) DEFAULT NULL COMMENT '英文颜色',
-    english_material VARCHAR(255) DEFAULT NULL COMMENT '英文材质',
-    upper_material TEXT DEFAULT NULL COMMENT '面料',
-    lining_material TEXT DEFAULT NULL COMMENT '里料/垫脚',
-    accessory VARCHAR(512) DEFAULT NULL COMMENT '饰扣/鞋带',
-    insole_platform VARCHAR(512) DEFAULT NULL COMMENT '中底/包中底',
-    outsole TEXT DEFAULT NULL COMMENT '大底',
-    trademark VARCHAR(255) DEFAULT NULL COMMENT '商标',
-    quantity INT DEFAULT NULL COMMENT '双数',
-    carton_count INT DEFAULT NULL COMMENT '箱数',
-    total_quantity INT DEFAULT NULL COMMENT '总数量',
-    size_quantities_json JSON DEFAULT NULL COMMENT '尺码数量',
-    shipment_status VARCHAR(32) NOT NULL DEFAULT 'NOT_SHIPPED' COMMENT '出货状态: NOT_SHIPPED/SHIPPED',
-    import_status VARCHAR(32) NOT NULL DEFAULT 'IMPORTED' COMMENT '导入状态',
-    error_message VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',
-    source_sheet_name VARCHAR(128) DEFAULT NULL COMMENT '来源 sheet',
-    row_index INT DEFAULT NULL COMMENT 'Excel 行号',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    KEY idx_order_line_order_id (order_id),
-    KEY idx_order_line_order_no (order_no),
-    KEY idx_order_line_style_no (style_no),
-    KEY idx_order_line_customer (customer_name),
-    KEY idx_order_line_last_no (last_no),
-    KEY idx_order_line_shipment_status (shipment_status),
-    KEY idx_order_line_delivery_date (delivery_date),
-    CONSTRAINT fk_order_line_order_id FOREIGN KEY (order_id) REFERENCES order_record (id),
-    CONSTRAINT fk_order_line_source_file_id FOREIGN KEY (source_file_id) REFERENCES source_file (id)
+  `box_image_url` varchar(512) DEFAULT NULL COMMENT '订单盒子图片访问链接',
+  `box_image_path` varchar(512) DEFAULT NULL COMMENT '订单盒子图片本地路径',
+
+  `development_nos` varchar(1024) DEFAULT NULL COMMENT '开发编号汇总，多个用逗号分隔，仅用于展示',
+
+  `order_printed` tinyint NOT NULL DEFAULT 0 COMMENT '是否已打印订单: 0否 1是',
+  `packing_printed` tinyint NOT NULL DEFAULT 0 COMMENT '是否已打印装箱单: 0否 1是',
+
+  `order_pdf_path` varchar(512) DEFAULT NULL COMMENT '订单PDF本地路径',
+  `packing_pdf_path` varchar(512) DEFAULT NULL COMMENT '装箱单PDF本地路径',
+
+  `total_quantity` int NOT NULL DEFAULT 0 COMMENT '总对数',
+  `total_carton_count` int NOT NULL DEFAULT 0 COMMENT '总箱数',
+
+  `source_type` tinyint DEFAULT NULL COMMENT '订单来源: 1 Excel, 2 图片, 3 手动录入',
+  `recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
+
+  `remark` varchar(1024) DEFAULT NULL COMMENT '备注',
+  `error_message` varchar(1024) DEFAULT NULL COMMENT '识别或处理错误信息',
+
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+
+  KEY `idx_order_record_order_no` (`order_no`),
+  KEY `idx_order_record_customer_name` (`customer_name`),
+  KEY `idx_order_record_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单主表';
+
+
+CREATE TABLE IF NOT EXISTS `order_record_detail` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+
+  `order_id` bigint NOT NULL COMMENT '订单主表ID',
+
+  `line_no` int DEFAULT NULL COMMENT '明细行号',
+
+  `last_no` varchar(128) DEFAULT NULL COMMENT '楦头号',
+
+  `development_no` varchar(128) DEFAULT NULL COMMENT '款号/开发编号',
+
+  `customer_name` varchar(128) DEFAULT NULL COMMENT '客人',
+
+  `customer_order_no` varchar(255) DEFAULT NULL COMMENT '客人订单号',
+
+  `warehouse_store_no` varchar(128) DEFAULT NULL COMMENT '仓库号/店铺号',
+
+  `delivery_date` date DEFAULT NULL COMMENT '交期/出货日期',
+
+  `po_no` varchar(128) DEFAULT NULL COMMENT 'PO号',
+
+  `customer_style_no` varchar(128) DEFAULT NULL COMMENT '客人型体号',
+
+  `style_image_url` varchar(512) DEFAULT NULL COMMENT '图片访问链接',
+
+  `style_image_path` varchar(512) DEFAULT NULL COMMENT '图片本地路径',
+
+  `english_color` varchar(255) DEFAULT NULL COMMENT '英文颜色',
+
+  `english_material` varchar(255) DEFAULT NULL COMMENT '英文材质',
+
+  `upper_material` text DEFAULT NULL COMMENT '面料',
+
+  `lining_material` text DEFAULT NULL COMMENT '里料/垫脚',
+
+  `accessory` varchar(512) DEFAULT NULL COMMENT '饰扣/鞋带',
+
+  `insole_platform` varchar(512) DEFAULT NULL COMMENT '包中底/水台',
+
+  `outsole` text DEFAULT NULL COMMENT '大底',
+
+  `trademark` varchar(255) DEFAULT NULL COMMENT '商标',
+
+  `size_quantities_json` json DEFAULT NULL COMMENT '尺码数量JSON，例如 {"35":10,"36":20}',
+
+  `quantity` int NOT NULL DEFAULT 0 COMMENT '双数',
+
+  `carton_count` int NOT NULL DEFAULT 0 COMMENT '箱数',
+
+  `box_spec` varchar(128) DEFAULT NULL COMMENT '盒子规模，例如 30×20×10',
+
+  `source_sheet_name` varchar(128) DEFAULT NULL COMMENT '来源sheet',
+
+  `row_index` int DEFAULT NULL COMMENT 'Excel行号',
+
+  `remark` varchar(1024) DEFAULT NULL COMMENT '备注',
+
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+
+  KEY `idx_detail_order_id` (`order_id`),
+  KEY `idx_detail_development_no` (`development_no`),
+  KEY `idx_detail_last_no` (`last_no`),
+  KEY `idx_detail_delivery_date` (`delivery_date`),
+  KEY `idx_detail_row_index` (`order_id`, `row_index`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细表';
 
-CREATE TABLE IF NOT EXISTS print_preview (
-    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-    preview_no VARCHAR(64) NOT NULL COMMENT '预览编号',
-    order_id BIGINT NOT NULL COMMENT '订单 ID',
-    source_file_id BIGINT NOT NULL COMMENT '原稿文件 ID',
-    print_type VARCHAR(32) NOT NULL COMMENT '打印类型: ORDER/PACKING',
-    pdf_path VARCHAR(512) NOT NULL COMMENT 'PDF 本地路径',
-    pdf_size BIGINT DEFAULT NULL COMMENT 'PDF 文件大小',
-    preview_url VARCHAR(512) NOT NULL COMMENT 'PDF 预览地址',
-    status VARCHAR(32) NOT NULL DEFAULT 'READY' COMMENT '状态: READY/FAILED',
-    error_message VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_print_preview_no (preview_no),
-    KEY idx_print_preview_order_id (order_id),
-    KEY idx_print_preview_source_file_id (source_file_id),
-    KEY idx_print_preview_type (print_type),
-    CONSTRAINT fk_print_preview_order_id FOREIGN KEY (order_id) REFERENCES order_record (id),
-    CONSTRAINT fk_print_preview_source_file_id FOREIGN KEY (source_file_id) REFERENCES source_file (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='打印预览表';
 
-CREATE TABLE IF NOT EXISTS print_task (
-    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-    task_no VARCHAR(64) NOT NULL COMMENT '打印任务编号',
-    order_id BIGINT NOT NULL COMMENT '订单 ID',
-    preview_id BIGINT DEFAULT NULL COMMENT '打印预览 ID',
-    print_type VARCHAR(32) DEFAULT NULL COMMENT '打印类型: ORDER/PACKING',
-    printer_name VARCHAR(128) DEFAULT NULL COMMENT '目标打印机名称',
-    copies INT NOT NULL DEFAULT 1 COMMENT '打印份数',
-    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '任务状态: PENDING/PRINTING/SUCCESS/FAILED/CANCELED',
-    priority INT NOT NULL DEFAULT 0 COMMENT '优先级，数字越大越优先',
-    error_message VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',
-    picked_at DATETIME DEFAULT NULL COMMENT '本地打印助手领取时间',
-    printed_at DATETIME DEFAULT NULL COMMENT '打印完成时间',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_print_task_no (task_no),
-    KEY idx_print_task_status_priority (status, priority, created_at),
-    KEY idx_print_task_order_id (order_id),
-    KEY idx_print_task_preview_id (preview_id),
-    CONSTRAINT fk_print_task_order_id FOREIGN KEY (order_id) REFERENCES order_record (id),
-    CONSTRAINT fk_print_task_preview_id FOREIGN KEY (preview_id) REFERENCES print_preview (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='打印任务表';
+CREATE TABLE IF NOT EXISTS `order_detail_process` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+
+  `order_id` bigint NOT NULL COMMENT '订单主表ID',
+  `order_detail_id` bigint NOT NULL COMMENT '订单明细ID',
+
+  `process_type` tinyint NOT NULL COMMENT '处理类型: 1订包装, 2定大底, 3定中底, 4定跟, 5内盒贴标, 6外箱贴标',
+
+  `process_status` tinyint NOT NULL DEFAULT 1 COMMENT '处理状态: 1已处理',
+
+  `process_count` int NOT NULL DEFAULT 1 COMMENT '处理次数',
+
+  `last_process_at` datetime DEFAULT NULL COMMENT '最后处理时间',
+
+  `remark` varchar(1024) DEFAULT NULL COMMENT '备注',
+
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+
+  UNIQUE KEY `uk_detail_process` (`order_detail_id`, `process_type`),
+
+  KEY `idx_process_order_id` (`order_id`),
+  KEY `idx_process_detail_id` (`order_detail_id`),
+  KEY `idx_process_type` (`process_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细处理状态表';

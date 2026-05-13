@@ -23,6 +23,7 @@ a {
   text-decoration: none;
 }
 
+/* App shell and top navigation. */
 .app-shell {
   min-height: 100vh;
   background: #f4f6f8;
@@ -85,6 +86,7 @@ a {
   padding: 24px 28px 36px;
 }
 
+/* Shared page layout used by the order list and print task list. */
 .workspace {
   display: flex;
   flex-direction: column;
@@ -124,6 +126,7 @@ a {
   margin-bottom: 0;
 }
 
+/* Fixed widths keep filter controls from jumping when text changes. */
 .status-select {
   width: 130px;
 }
@@ -144,6 +147,7 @@ a {
   background: #f8fafc;
 }
 
+/* Order image and size quantity cells. */
 .source-file-name {
   max-width: 180px;
 }
@@ -184,6 +188,7 @@ a {
   width: 180px;
 }
 
+/* PDF preview modal. */
 .pdf-preview {
   position: relative;
   width: 100%;
@@ -219,6 +224,7 @@ a {
   border-radius: 8px;
 }
 
+/* Mobile layout: stack toolbar, nav, and filters into one column. */
 @media (max-width: 920px) {
   .app-header {
     align-items: flex-start;

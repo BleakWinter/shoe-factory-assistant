@@ -3,13 +3,16 @@ package com.shoefactory.assistant.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.common.BusinessException;
-import com.shoefactory.assistant.entity.OrderLine;
 import com.shoefactory.assistant.entity.OrderRecord;
-import com.shoefactory.assistant.entity.SourceFile;
+import com.shoefactory.assistant.entity.OrderRecordDetail;
+import com.shoefactory.assistant.enums.OrderExcelColumn;
+import com.shoefactory.assistant.enums.OrderExcelTemplate;
 import com.shoefactory.assistant.enums.OrderRecognitionStatus;
+import com.shoefactory.assistant.enums.OrderSourceType;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.util.FileStorageUtil;
+import com.shoefactory.assistant.util.StoredFile;
 import org.apache.poi.ooxml.POIXMLDocumentPart;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -39,35 +42,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 public class OrderExcelImportServiceImpl implements OrderExcelImportService {
-
-    private static final String ORDER_SHEET_NAME = "订单";
-    private static final int FALLBACK_HEADER_ROW_INDEX = 4;
-    private static final int MAX_HEADER_SCAN_ROWS = 30;
-    private static final int COL_IMAGE = 5;
-    private static final int COL_LAST_NO = 6;
-    private static final int COL_DEVELOPMENT_NO = 7;
-    private static final int COL_CUSTOMER = 8;
-    private static final int COL_CUSTOMER_ORDER_NO = 9;
-    private static final int COL_DELIVERY_DATE = 10;
-    private static final int COL_PO = 11;
-    private static final int COL_CUSTOMER_STYLE_NO = 12;
-    private static final int COL_ENGLISH_COLOR = 13;
-    private static final int COL_ENGLISH_MATERIAL = 14;
-    private static final int COL_UPPER_MATERIAL = 15;
-    private static final int COL_LINING_MATERIAL = 16;
-    private static final int COL_ACCESSORY = 17;
-    private static final int COL_INSOLE_PLATFORM = 18;
-    private static final int COL_OUTSOLE = 19;
-    private static final int COL_TRADEMARK = 20;
-    private static final int COL_SIZE_START = 21;
-    private static final int COL_QUANTITY = 38;
-    private static final int COL_CARTON_COUNT = 39;
-    private static final int COL_TOTAL_QUANTITY = 40;
-    private static final Pattern LEADING_ORDER_NO_PATTERN = Pattern.compile("^(\\d{4,})");
 
     private final DataFormatter formatter = new DataFormatter(Locale.CHINA);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -78,9 +56,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     @Override
-    public OrderImportResult importOrder(Path sourceExcel, SourceFile sourceFile) {
+    public OrderImportResult importOrder(Path sourceExcel, StoredFile storedFile, String fileNo) {
         try (Workbook workbook = WorkbookFactory.create(sourceExcel.toFile())) {
-            Sheet sheet = workbook.getSheet(ORDER_SHEET_NAME);
+            Sheet sheet = workbook.getSheet(OrderExcelTemplate.DEFAULT.getOrderSheetName());
             if (sheet == null) {
                 throw new BusinessException("Excel 中未找到“订单”sheet");
             }
@@ -88,15 +66,18 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             if (header == null) {
                 throw new BusinessException("订单 sheet 未找到明细表头行");
             }
+            // TableColumns 会把“图片、楦头、开发编号...”这些业务字段映射成真实列号。
             TableColumns columns = TableColumns.from(header);
             int firstDataRowIndex = header.getRowNum() + 1;
             Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet, columns.image(), firstDataRowIndex);
-            OrderRecord order = buildOrderRecord(sheet, sourceFile, columns);
-            List<OrderLine> lines = buildLines(sheet, sourceFile, order, picturesByRow, columns, firstDataRowIndex);
-            if (lines.isEmpty()) {
+            OrderRecord order = buildOrderRecord(sheet, storedFile, columns);
+            List<OrderRecordDetail> details = buildDetails(sheet, fileNo, order, picturesByRow, columns, firstDataRowIndex);
+            if (details.isEmpty()) {
                 throw new BusinessException("订单 sheet 未解析到明细行");
             }
-            return new OrderImportResult(order, lines);
+            order.setDevelopmentNos(joinDevelopmentNos(details));
+            fillTotalsIfMissing(order, details);
+            return new OrderImportResult(order, details);
         } catch (BusinessException ex) {
             throw ex;
         } catch (IOException ex) {
@@ -104,28 +85,31 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         }
     }
 
-    private OrderRecord buildOrderRecord(Sheet sheet, SourceFile sourceFile, TableColumns columns) {
+    private OrderRecord buildOrderRecord(Sheet sheet, StoredFile storedFile, TableColumns columns) {
         LocalDateTime now = LocalDateTime.now();
         OrderRecord order = new OrderRecord();
-        order.setSourceFileId(sourceFile.getId());
-        order.setOrderNo(blankToNull(resolveOrderNo(sheet, sourceFile)));
+        order.setOriginalFileName(storedFile.getOriginalName());
+        order.setOriginalFilePath(storedFile.getPath().toString());
+        order.setOrderNo(blankToNull(resolveOrderNo(sheet, storedFile.getOriginalName())));
         order.setCustomerName(blankToNull(text(sheet, 1, 6)));
-        order.setDeliveryDate(dateValue(sheet.getRow(3) == null ? null : sheet.getRow(3).getCell(15)));
-        order.setSourceSheetName(sheet.getSheetName());
-        order.setRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.name());
+        order.setOrderPrinted(false);
+        order.setPackingPrinted(false);
+        order.setSourceType(OrderSourceType.EXCEL.getCode());
+        order.setRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
+        // 订单总双数和箱数以“合计行”为准，避免逐行累加时遇到空行/重复表头出错。
         Row totalRow = findTotalRow(sheet, columns);
-        order.setQuantity(totalRow == null ? null : integerValue(totalRow, columns.totalQuantity()));
-        order.setCartonCount(totalRow == null ? null : integerValue(totalRow, columns.cartonCount()));
+        order.setTotalQuantity(totalRow == null ? 0 : nullToZero(integerValue(totalRow, columns.totalQuantity())));
+        order.setTotalCartonCount(totalRow == null ? 0 : nullToZero(integerValue(totalRow, columns.cartonCount())));
         return order;
     }
 
     private Row findHeaderRow(Sheet sheet) {
-        Row fallback = sheet.getRow(FALLBACK_HEADER_ROW_INDEX);
+        Row fallback = sheet.getRow(OrderExcelTemplate.DEFAULT.getFallbackHeaderRowIndex());
         Row bestRow = null;
         int bestScore = 0;
-        int lastScanRow = Math.min(sheet.getLastRowNum(), MAX_HEADER_SCAN_ROWS - 1);
+        int lastScanRow = Math.min(sheet.getLastRowNum(), OrderExcelTemplate.DEFAULT.getMaxHeaderScanRows() - 1);
         for (int rowIndex = 0; rowIndex <= lastScanRow; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             int score = headerScore(row);
@@ -134,6 +118,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 bestRow = row;
             }
         }
+        // 分数太低说明没有可靠表头，退回到第 5 行的老样本位置。
         return bestScore >= 4 ? bestRow : fallback;
     }
 
@@ -142,18 +127,15 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             return 0;
         }
         int score = 0;
-        score += hasHeader(row, "图片") ? 2 : 0;
-        score += hasHeader(row, "楦头", "楦头号") ? 2 : 0;
-        score += hasHeader(row, "开发编号", "开发号") ? 2 : 0;
-        score += hasHeader(row, "客人", "客户") ? 1 : 0;
-        score += hasHeader(row, "客人订单号", "客户订单号") ? 1 : 0;
-        score += hasHeader(row, "PO", "PONO", "PO号", "PO号码") ? 1 : 0;
-        score += hasHeader(row, "大底") ? 1 : 0;
-        score += hasHeader(row, "双数", "数量") ? 1 : 0;
+        for (OrderExcelColumn column : OrderExcelColumn.values()) {
+            if (column.participatesInHeaderScore() && hasHeader(row, column)) {
+                score += column.getHeaderScoreWeight();
+            }
+        }
         return score;
     }
 
-    private boolean hasHeader(Row row, String... aliases) {
+    private boolean hasHeader(Row row, OrderExcelColumn column) {
         if (row == null) {
             return false;
         }
@@ -161,7 +143,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         int last = Math.max(first, row.getLastCellNum() - 1);
         for (int col = first; col <= last; col++) {
             String value = normalizeHeader(text(row, col));
-            for (String alias : aliases) {
+            for (String alias : column.getAliases()) {
                 if (value.equals(normalizeHeader(alias))) {
                     return true;
                 }
@@ -170,7 +152,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return false;
     }
 
-    private String resolveOrderNo(Sheet sheet, SourceFile sourceFile) {
+    private String resolveOrderNo(Sheet sheet, String originalFileName) {
+        // 订单号在不同模板里位置不完全一致，所以从“标签附近、固定单元格、文件名”逐级兜底。
         String labeledOrderNo = findValueAfterLabel(sheet, "订单流水号", 0, 8);
         if (!labeledOrderNo.isBlank()) {
             return labeledOrderNo;
@@ -191,7 +174,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             return fixedInvoiceNo;
         }
 
-        return leadingOrderNoFromFileName(sourceFile.getOriginalName());
+        return leadingOrderNoFromFileName(originalFileName);
     }
 
     private String findValueAfterLabel(Sheet sheet, String label, int startRow, int endRow) {
@@ -223,19 +206,19 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         if (fileName == null) {
             return "";
         }
-        Matcher matcher = LEADING_ORDER_NO_PATTERN.matcher(fileName.trim());
+        Matcher matcher = OrderExcelTemplate.DEFAULT.getLeadingOrderNoPattern().matcher(fileName.trim());
         return matcher.find() ? matcher.group(1) : "";
     }
 
-    private List<OrderLine> buildLines(
+    private List<OrderRecordDetail> buildDetails(
             Sheet sheet,
-            SourceFile sourceFile,
+            String fileNo,
             OrderRecord order,
             Map<Integer, PictureInfo> picturesByRow,
             TableColumns columns,
             int firstDataRowIndex
     ) {
-        List<OrderLine> lines = new ArrayList<>();
+        List<OrderRecordDetail> details = new ArrayList<>();
         Row header = sheet.getRow(columns.headerRowIndex());
         LocalDateTime now = LocalDateTime.now();
         for (int rowIndex = firstDataRowIndex; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -246,52 +229,72 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             if (isBlankRow(row, columns) || isRepeatedHeaderRow(row, columns)) {
                 continue;
             }
-            OrderLine line = new OrderLine();
-            line.setSourceFileId(sourceFile.getId());
-            line.setOrderNo(order.getOrderNo());
-            line.setInvoiceNo(blankToNull(text(sheet, 3, 6)));
-            line.setCustomerName(blankToNull(text(row, columns.customer())));
-            line.setOrderDate(dateValue(cell(sheet.getRow(1), 15)));
-            line.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
-            line.setLastNo(blankToNull(text(row, columns.lastNo())));
-            line.setStyleNo(blankToNull(text(row, columns.lastNo())));
-            line.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
-            line.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
-            line.setPoNo(blankToNull(text(row, columns.po())));
-            line.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
-            line.setEnglishColor(blankToNull(text(row, columns.englishColor())));
-            line.setEnglishMaterial(blankToNull(text(row, columns.englishMaterial())));
-            line.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
-            line.setLiningMaterial(blankToNull(text(row, columns.liningMaterial())));
-            line.setAccessory(blankToNull(text(row, columns.accessory())));
-            line.setInsolePlatform(blankToNull(text(row, columns.insolePlatform())));
-            line.setOutsole(blankToNull(text(row, columns.outsole())));
-            line.setTrademark(blankToNull(text(row, columns.trademark())));
-            line.setQuantity(integerValue(row, columns.quantity()));
-            line.setCartonCount(integerValue(row, columns.cartonCount()));
-            line.setTotalQuantity(integerValue(row, columns.totalQuantity()));
-            line.setSizeQuantitiesJson(toJson(readSizeQuantities(header, row, columns)));
-            line.setShipmentStatus("NOT_SHIPPED");
-            line.setImportStatus("IMPORTED");
-            line.setSourceSheetName(sheet.getSheetName());
-            line.setRowIndex(rowIndex + 1);
-            line.setCreatedAt(now);
-            line.setUpdatedAt(now);
+            // 这里是一行 Excel 明细 -> 一条 order_record_detail，字段名和 SQL 明细表对齐。
+            OrderRecordDetail detail = new OrderRecordDetail();
+            detail.setLineNo(details.size() + 1);
+            detail.setCustomerName(blankToNull(text(row, columns.customer())));
+            detail.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
+            detail.setLastNo(blankToNull(text(row, columns.lastNo())));
+            detail.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
+            detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
+            detail.setPoNo(blankToNull(text(row, columns.po())));
+            detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
+            detail.setEnglishColor(blankToNull(text(row, columns.englishColor())));
+            detail.setEnglishMaterial(blankToNull(text(row, columns.englishMaterial())));
+            detail.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
+            detail.setLiningMaterial(blankToNull(text(row, columns.liningMaterial())));
+            detail.setAccessory(blankToNull(text(row, columns.accessory())));
+            detail.setInsolePlatform(blankToNull(text(row, columns.insolePlatform())));
+            detail.setOutsole(blankToNull(text(row, columns.outsole())));
+            detail.setTrademark(blankToNull(text(row, columns.trademark())));
+            detail.setQuantity(nullToZero(integerValue(row, columns.quantity())));
+            detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
+            detail.setSizeQuantitiesJson(toJson(readSizeQuantities(header, row, columns)));
+            detail.setSourceSheetName(sheet.getSheetName());
+            detail.setRowIndex(rowIndex + 1);
+            detail.setCreatedAt(now);
+            detail.setUpdatedAt(now);
 
+            // POI 图片锚点里的行号按 0 开始，picturesByRow 存的是 Excel 可见行号，所以这里 +1。
             PictureInfo picture = picturesByRow.get(rowIndex + 1);
             if (picture != null) {
-                Path imagePath = fileStorageUtil.saveOrderLineImage(
+                Path imagePath = fileStorageUtil.saveOrderDetailImage(
                         picture.bytes(),
-                        sourceFile.getFileNo(),
+                        fileNo,
                         order.getOrderNo(),
                         rowIndex + 1,
                         picture.extension()
                 );
-                line.setImagePath(imagePath == null ? null : imagePath.toString());
+                detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
             }
-            lines.add(line);
+            details.add(detail);
         }
-        return lines;
+        return details;
+    }
+
+    private String joinDevelopmentNos(List<OrderRecordDetail> details) {
+        return details.stream()
+                .map(OrderRecordDetail::getDevelopmentNo)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .collect(Collectors.joining(", "));
+    }
+
+    private void fillTotalsIfMissing(OrderRecord order, List<OrderRecordDetail> details) {
+        if (order.getTotalQuantity() == null || order.getTotalQuantity() <= 0) {
+            order.setTotalQuantity(details.stream()
+                    .map(OrderRecordDetail::getQuantity)
+                    .filter(value -> value != null && value > 0)
+                    .mapToInt(Integer::intValue)
+                    .sum());
+        }
+        if (order.getTotalCartonCount() == null || order.getTotalCartonCount() <= 0) {
+            order.setTotalCartonCount(details.stream()
+                    .map(OrderRecordDetail::getCartonCount)
+                    .filter(value -> value != null && value > 0)
+                    .mapToInt(Integer::intValue)
+                    .sum());
+        }
     }
 
     private Map<String, Integer> readSizeQuantities(Row header, Row row, TableColumns columns) {
@@ -299,6 +302,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         if (header == null) {
             return result;
         }
+        // 尺码列不是固定数量，从“商标”后面一直读到“双数/箱数/总数量”前面。
         for (int col = columns.sizeStart(); col <= columns.sizeEnd(); col++) {
             String size = text(header, col);
             Integer quantity = integerValue(row, col);
@@ -315,6 +319,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         if (!(sheet instanceof XSSFSheet xssfSheet)) {
             return result;
         }
+        // 只有 xlsx 能通过 XSSF 读取内嵌图片；xls 仍可导入文字明细，但图片会为空。
         for (POIXMLDocumentPart relation : xssfSheet.getRelations()) {
             if (!(relation instanceof XSSFDrawing drawing)) {
                 continue;
@@ -350,6 +355,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         String styleNo = text(row, columns.lastNo());
         String developmentNo = text(row, columns.developmentNo());
         String totalLabel = rowText(row, columns.firstDataColumn(), columns.dataEnd());
+        // 合计行有时写“合计”，有时只在总数量列有数字；两个规则都兼容。
         return (styleNo.isBlank() && developmentNo.isBlank() && integerValue(row, columns.totalQuantity()) != null)
                 || totalLabel.contains("合计");
     }
@@ -478,6 +484,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private Integer nullToZero(Integer value) {
+        return value == null ? 0 : value;
+    }
+
     private static String normalizeHeader(String value) {
         if (value == null) {
             return "";
@@ -490,9 +500,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 .trim();
     }
 
-    private static int findColumn(Row header, int fallback, String... aliases) {
+    private static int findColumn(Row header, OrderExcelColumn column) {
         if (header == null) {
-            return fallback;
+            return column.getFallbackIndex();
         }
         int first = Math.max(0, header.getFirstCellNum());
         int last = Math.max(first, header.getLastCellNum() - 1);
@@ -502,14 +512,15 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 continue;
             }
             String name = normalizeHeader(new DataFormatter(Locale.CHINA).formatCellValue(cell));
-            for (String alias : aliases) {
+            for (String alias : column.getAliases()) {
                 String normalizedAlias = normalizeHeader(alias);
                 if (name.equals(normalizedAlias)) {
                     return col;
                 }
             }
         }
-        return fallback;
+        // 找不到表头文字时，用样本订单的固定列号兜底。
+        return column.getFallbackIndex();
     }
 
     private static int firstPositive(int... columns) {
@@ -522,6 +533,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return result == Integer.MAX_VALUE ? -1 : result;
     }
 
+    /*
+     * 解析出来的“业务字段 -> Excel 列号”映射。
+     * record 只是一个轻量数据盒子，避免在方法之间传一长串 int 参数。
+     */
     private record TableColumns(
             int image,
             int lastNo,
@@ -548,28 +563,32 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int headerRowIndex
     ) {
         static TableColumns from(Row header) {
-            int image = findColumn(header, COL_IMAGE, "图片");
-            int lastNo = findColumn(header, COL_LAST_NO, "楦头", "楦头号");
-            int developmentNo = findColumn(header, COL_DEVELOPMENT_NO, "开发编号", "开发号");
-            int customer = findColumn(header, COL_CUSTOMER, "客人", "客户");
-            int customerOrderNo = findColumn(header, COL_CUSTOMER_ORDER_NO, "客人订单号", "客户订单号");
-            int deliveryDate = findColumn(header, COL_DELIVERY_DATE, "出货时间", "出货日期");
-            int po = findColumn(header, COL_PO, "PO", "PONO", "PO号");
-            int customerStyleNo = findColumn(header, COL_CUSTOMER_STYLE_NO, "客人型体号", "客户型体号");
-            int englishColor = findColumn(header, COL_ENGLISH_COLOR, "英文颜色");
-            int englishMaterial = findColumn(header, COL_ENGLISH_MATERIAL, "英文材质");
-            int upperMaterial = findColumn(header, COL_UPPER_MATERIAL, "面料");
-            int liningMaterial = findColumn(header, COL_LINING_MATERIAL, "里料/垫脚", "里料", "垫脚");
-            int accessory = findColumn(header, COL_ACCESSORY, "饰扣/鞋带", "饰扣", "鞋带");
-            int insolePlatform = findColumn(header, COL_INSOLE_PLATFORM, "中底/包中底", "中底", "包中底");
-            int outsole = findColumn(header, COL_OUTSOLE, "大底");
-            int trademark = findColumn(header, COL_TRADEMARK, "商标");
-            int quantity = findColumn(header, COL_QUANTITY, "双数", "数量");
-            int cartonCount = findColumn(header, COL_CARTON_COUNT, "箱数");
-            int totalQuantity = findColumn(header, COL_TOTAL_QUANTITY, "总数量", "总数");
+            // 每个字段都支持常见别名，比如“客人/客户”“开发编号/开发号”。
+            int image = findColumn(header, OrderExcelColumn.IMAGE);
+            int lastNo = findColumn(header, OrderExcelColumn.LAST_NO);
+            int developmentNo = findColumn(header, OrderExcelColumn.DEVELOPMENT_NO);
+            int customer = findColumn(header, OrderExcelColumn.CUSTOMER);
+            int customerOrderNo = findColumn(header, OrderExcelColumn.CUSTOMER_ORDER_NO);
+            int deliveryDate = findColumn(header, OrderExcelColumn.DELIVERY_DATE);
+            int po = findColumn(header, OrderExcelColumn.PO);
+            int customerStyleNo = findColumn(header, OrderExcelColumn.CUSTOMER_STYLE_NO);
+            int englishColor = findColumn(header, OrderExcelColumn.ENGLISH_COLOR);
+            int englishMaterial = findColumn(header, OrderExcelColumn.ENGLISH_MATERIAL);
+            int upperMaterial = findColumn(header, OrderExcelColumn.UPPER_MATERIAL);
+            int liningMaterial = findColumn(header, OrderExcelColumn.LINING_MATERIAL);
+            int accessory = findColumn(header, OrderExcelColumn.ACCESSORY);
+            int insolePlatform = findColumn(header, OrderExcelColumn.INSOLE_PLATFORM);
+            int outsole = findColumn(header, OrderExcelColumn.OUTSOLE);
+            int trademark = findColumn(header, OrderExcelColumn.TRADEMARK);
+            int quantity = findColumn(header, OrderExcelColumn.QUANTITY);
+            int cartonCount = findColumn(header, OrderExcelColumn.CARTON_COUNT);
+            int totalQuantity = findColumn(header, OrderExcelColumn.TOTAL_QUANTITY);
             int firstSummary = firstPositive(quantity, cartonCount, totalQuantity);
-            int sizeStart = Math.max(COL_SIZE_START, trademark + 1);
-            int sizeEnd = firstSummary > sizeStart ? firstSummary - 1 : Math.max(sizeStart - 1, header == null ? COL_QUANTITY - 1 : header.getLastCellNum() - 1);
+            // 尺码从商标后一列开始；如果商标列识别异常，再退回样本订单的尺码起始列。
+            int sizeStart = Math.max(OrderExcelColumn.TRADEMARK.getFallbackIndex() + 1, trademark + 1);
+            int sizeEnd = firstSummary > sizeStart
+                    ? firstSummary - 1
+                    : Math.max(sizeStart - 1, header == null ? OrderExcelColumn.QUANTITY.getFallbackIndex() - 1 : header.getLastCellNum() - 1);
             int dataEnd = Math.max(totalQuantity, Math.max(cartonCount, Math.max(quantity, sizeEnd)));
             return new TableColumns(
                     image,
@@ -594,11 +613,12 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                     sizeStart,
                     sizeEnd,
                     dataEnd,
-                    header == null ? FALLBACK_HEADER_ROW_INDEX : header.getRowNum()
+                    header == null ? OrderExcelTemplate.DEFAULT.getFallbackHeaderRowIndex() : header.getRowNum()
             );
         }
 
         int firstDataColumn() {
+            // 判断空行/合计行时，从最早的业务列开始看，不把表格左侧说明文字算进去。
             return Math.min(lastNo, developmentNo);
         }
     }

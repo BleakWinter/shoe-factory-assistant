@@ -4,24 +4,32 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @TableName("order_record")
 public class OrderRecord {
 
+    // 订单主表：一份 Excel 对应一条主记录，只放列表和打印入口需要的汇总字段。
     @TableId(type = IdType.AUTO)
     private Long id;
     private String orderNo;
     private String customerName;
-    private String styleNo;
-    private String color;
-    private Integer quantity;
-    private Integer cartonCount;
-    private LocalDate deliveryDate;
-    private String recognitionStatus;
-    private Long sourceFileId;
-    private String sourceSheetName;
+    private String originalFileName;
+    private String originalFilePath;
+    private String boxImageUrl;
+    private String boxImagePath;
+    private String developmentNos;
+    private Boolean orderPrinted;
+    private Boolean packingPrinted;
+    private String orderPdfPath;
+    private String packingPdfPath;
+    private LocalDateTime orderPdfGeneratedAt;
+    private LocalDateTime packingPdfGeneratedAt;
+    private Integer totalQuantity;
+    private Integer totalCartonCount;
+    private Integer sourceType;
+    private Integer recognitionStatus;
+    private String remark;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -50,68 +58,132 @@ public class OrderRecord {
         this.customerName = customerName;
     }
 
-    public String getStyleNo() {
-        return styleNo;
+    public String getOriginalFileName() {
+        return originalFileName;
     }
 
-    public void setStyleNo(String styleNo) {
-        this.styleNo = styleNo;
+    public void setOriginalFileName(String originalFileName) {
+        this.originalFileName = originalFileName;
     }
 
-    public String getColor() {
-        return color;
+    public String getOriginalFilePath() {
+        return originalFilePath;
     }
 
-    public void setColor(String color) {
-        this.color = color;
+    public void setOriginalFilePath(String originalFilePath) {
+        this.originalFilePath = originalFilePath;
     }
 
-    public Integer getQuantity() {
-        return quantity;
+    public String getBoxImageUrl() {
+        return boxImageUrl;
     }
 
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
+    public void setBoxImageUrl(String boxImageUrl) {
+        this.boxImageUrl = boxImageUrl;
     }
 
-    public Integer getCartonCount() {
-        return cartonCount;
+    public String getBoxImagePath() {
+        return boxImagePath;
     }
 
-    public void setCartonCount(Integer cartonCount) {
-        this.cartonCount = cartonCount;
+    public void setBoxImagePath(String boxImagePath) {
+        this.boxImagePath = boxImagePath;
     }
 
-    public LocalDate getDeliveryDate() {
-        return deliveryDate;
+    public String getDevelopmentNos() {
+        return developmentNos;
     }
 
-    public void setDeliveryDate(LocalDate deliveryDate) {
-        this.deliveryDate = deliveryDate;
+    public void setDevelopmentNos(String developmentNos) {
+        this.developmentNos = developmentNos;
     }
 
-    public String getRecognitionStatus() {
+    public Boolean getOrderPrinted() {
+        return orderPrinted;
+    }
+
+    public void setOrderPrinted(Boolean orderPrinted) {
+        this.orderPrinted = orderPrinted;
+    }
+
+    public Boolean getPackingPrinted() {
+        return packingPrinted;
+    }
+
+    public void setPackingPrinted(Boolean packingPrinted) {
+        this.packingPrinted = packingPrinted;
+    }
+
+    public String getOrderPdfPath() {
+        return orderPdfPath;
+    }
+
+    public void setOrderPdfPath(String orderPdfPath) {
+        this.orderPdfPath = orderPdfPath;
+    }
+
+    public String getPackingPdfPath() {
+        return packingPdfPath;
+    }
+
+    public void setPackingPdfPath(String packingPdfPath) {
+        this.packingPdfPath = packingPdfPath;
+    }
+
+    public LocalDateTime getOrderPdfGeneratedAt() {
+        return orderPdfGeneratedAt;
+    }
+
+    public void setOrderPdfGeneratedAt(LocalDateTime orderPdfGeneratedAt) {
+        this.orderPdfGeneratedAt = orderPdfGeneratedAt;
+    }
+
+    public LocalDateTime getPackingPdfGeneratedAt() {
+        return packingPdfGeneratedAt;
+    }
+
+    public void setPackingPdfGeneratedAt(LocalDateTime packingPdfGeneratedAt) {
+        this.packingPdfGeneratedAt = packingPdfGeneratedAt;
+    }
+
+    public Integer getTotalQuantity() {
+        return totalQuantity;
+    }
+
+    public void setTotalQuantity(Integer totalQuantity) {
+        this.totalQuantity = totalQuantity;
+    }
+
+    public Integer getTotalCartonCount() {
+        return totalCartonCount;
+    }
+
+    public void setTotalCartonCount(Integer totalCartonCount) {
+        this.totalCartonCount = totalCartonCount;
+    }
+
+    public Integer getSourceType() {
+        return sourceType;
+    }
+
+    public void setSourceType(Integer sourceType) {
+        this.sourceType = sourceType;
+    }
+
+    public Integer getRecognitionStatus() {
         return recognitionStatus;
     }
 
-    public void setRecognitionStatus(String recognitionStatus) {
+    public void setRecognitionStatus(Integer recognitionStatus) {
         this.recognitionStatus = recognitionStatus;
     }
 
-    public Long getSourceFileId() {
-        return sourceFileId;
+    public String getRemark() {
+        return remark;
     }
 
-    public void setSourceFileId(Long sourceFileId) {
-        this.sourceFileId = sourceFileId;
-    }
-
-    public String getSourceSheetName() {
-        return sourceSheetName;
-    }
-
-    public void setSourceSheetName(String sourceSheetName) {
-        this.sourceSheetName = sourceSheetName;
+    public void setRemark(String remark) {
+        this.remark = remark;
     }
 
     public String getErrorMessage() {

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public class PrintTaskPreviewRequest {
 
+    // ORDER 表示订单 sheet，PACKING 表示装箱单 sheet。
     @NotBlank
     private String printType;
 

@@ -8,6 +8,7 @@ export const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
+      // 默认进入订单列表；爸妈常用的上传入口在 /tasks。
       { index: true, element: <Navigate to="/orders" replace /> },
       { path: "orders", element: <OrderWorkspacePage /> },
       { path: "tasks", element: <PrintTaskListPage /> },

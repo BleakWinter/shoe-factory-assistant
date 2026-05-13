@@ -1,7 +1,8 @@
 import request from "../utils/request";
 import type {
-  OrderLine,
-  OrderLineQueryParams,
+  OrderRecord,
+  OrderRecordDetail,
+  OrderRecordQueryParams,
   OrderUploadResult,
   PageResponse,
 } from "../types/order";
@@ -11,6 +12,7 @@ function normalizePage<T>(
   page = 1,
   size = 20,
 ): PageResponse<T> {
+  // 后端有些历史接口可能返回数组，有些返回分页对象；前端统一整理成表格可用的分页结构。
   if (Array.isArray(data)) {
     return { records: data, total: data.length, page, size };
   }
@@ -23,6 +25,7 @@ function normalizePage<T>(
 }
 
 export async function uploadOrderFile(file: File) {
+  // 上传字段名必须和后端 @RequestPart("file") 对齐。
   const formData = new FormData();
   formData.append("file", file);
 
@@ -37,12 +40,19 @@ export async function uploadOrderFile(file: File) {
   return data;
 }
 
-export async function fetchOrderLines(params: OrderLineQueryParams) {
+export async function fetchOrders(params: OrderRecordQueryParams) {
+  // /orders 返回 order_record 主表分页数据。
   const { data } = await request.get<
-    PageResponse<OrderLine> | OrderLine[] | { records?: OrderLine[]; total?: number }
-  >("/orders/lines", { params });
+    PageResponse<OrderRecord> | OrderRecord[] | { records?: OrderRecord[]; total?: number }
+  >("/orders", { params });
 
   return normalizePage(data, params.page, params.size);
+}
+
+export async function fetchOrderDetails(orderId: number) {
+  // 明细接口会连同 order_detail_process 一起返回。
+  const { data } = await request.get<OrderRecordDetail[]>(`/orders/${orderId}/details`);
+  return data || [];
 }
 
 export function toAssetUrl(url?: string) {
@@ -52,5 +62,6 @@ export function toAssetUrl(url?: string) {
   if (/^https?:\/\//.test(url)) {
     return url;
   }
+  // 后端返回 /api/orders/details/{id}/image 这类相对地址时，保持由 Vite 代理转发。
   return url.startsWith("/") ? url : `/${url}`;
 }

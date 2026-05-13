@@ -4,13 +4,12 @@
 
 ## 功能范围
 
-- 上传 Excel 或图片订单原稿。
-- 上传时只保存原始文件并识别订单，不立即生成 PDF。
-- Excel 解析“订单”sheet，识别订单号、客户、款号、颜色、数量、箱数、交期。
-- 图片生成待手动补充订单记录。
+- 上传 Excel 订单原稿。
+- Excel 解析“订单”sheet，写入 `order_record` 和 `order_record_detail`。
+- `order_detail_process` 保存每条明细的处理状态。
 - 点击打印后按 `ORDER` 或 `PACKING` 提取对应 sheet 生成 PDF 预览。
-- 用户确认份数后创建打印任务。
-- 查询待打印任务、更新任务状态。
+- PDF 固定保存到 `D:/清化资料/pdf`，路径回写到 `order_record`。
+- 打印列表当前直接展示 `order_record`。
 
 ## 本地启动
 
