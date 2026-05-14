@@ -7,7 +7,8 @@ import {
 import { Breadcrumb, Button, Layout, Menu, Tabs, Typography } from "antd";
 import type { MenuProps, TabsProps } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 const { Header, Content, Sider } = Layout;
 
@@ -17,12 +18,63 @@ const navItems = [
   { path: "/tasks", label: "打印列表", icon: <FileDoneOutlined /> },
 ];
 
+interface WorkspaceTab {
+  key: string;
+  path: string;
+  label: string;
+  icon: ReactNode;
+  state?: unknown;
+}
+
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([]);
 
   const currentItem = navItems.find((item) => location.pathname.startsWith(item.path)) || navItems[0];
+  const isOrderDetailPage = /^\/orders\/[^/]+\/details/.test(location.pathname);
+  const routeState = location.state as { order?: { orderNo?: string; id?: number } } | null;
+  const pageTitle = isOrderDetailPage ? "订单明细" : currentItem.label;
+  const currentTab = useMemo<WorkspaceTab>(() => {
+    if (isOrderDetailPage) {
+      const orderLabel = routeState?.order?.orderNo || routeState?.order?.id;
+      return {
+        key: "order-detail",
+        path: location.pathname,
+        label: orderLabel ? `订单明细 ${orderLabel}` : "订单明细",
+        icon: <TableOutlined />,
+        state: location.state,
+      };
+    }
+    return {
+      key: currentItem.path,
+      path: currentItem.path,
+      label: currentItem.label,
+      icon: currentItem.icon,
+    };
+  }, [currentItem.icon, currentItem.label, currentItem.path, isOrderDetailPage, location.pathname, location.state, routeState?.order?.id, routeState?.order?.orderNo]);
+
+  useEffect(() => {
+    setWorkspaceTabs((prev) => {
+      const existing = prev.find((item) => item.key === currentTab.key);
+      if (existing) {
+        return prev.map((item) => (item.key === currentTab.key ? currentTab : item));
+      }
+      return [...prev, currentTab];
+    });
+  }, [currentTab]);
+
+  const breadcrumbItems = isOrderDetailPage
+    ? [
+        { title: "首页" },
+        { title: <a onClick={() => navigate("/orders")}>订单列表</a> },
+        { title: "订单明细" },
+      ]
+    : [
+        { title: "首页" },
+        { title: currentItem.label },
+      ];
 
   const menuItems = useMemo<MenuProps["items"]>(
     () =>
@@ -36,13 +88,36 @@ export default function App() {
 
   const tabItems = useMemo<TabsProps["items"]>(
     () =>
-      navItems.map((item) => ({
-        key: item.path,
+      workspaceTabs.map((item) => ({
+        key: item.key,
         label: item.label,
         icon: item.icon,
+        closable: workspaceTabs.length > 1,
       })),
-    [],
+    [workspaceTabs],
   );
+
+  const closeWorkspaceTab = (targetKey: string) => {
+    setWorkspaceTabs((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      const targetIndex = prev.findIndex((item) => item.key === targetKey);
+      const nextTabs = prev.filter((item) => item.key !== targetKey);
+      if (targetKey === currentTab.key) {
+        const nextActive = nextTabs[Math.max(0, targetIndex - 1)] || nextTabs[0];
+        navigate(nextActive.path, { state: nextActive.state });
+      }
+      return nextTabs;
+    });
+  };
+
+  const switchWorkspaceTab = (targetKey: string) => {
+    const target = workspaceTabs.find((item) => item.key === targetKey);
+    if (target) {
+      navigate(target.path, { state: target.state });
+    }
+  };
 
   return (
     <Layout className="app-shell">
@@ -84,21 +159,23 @@ export default function App() {
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
               onClick={() => setCollapsed((value) => !value)}
             />
-            <Breadcrumb
-              items={[
-                { title: "首页" },
-                { title: currentItem.label },
-              ]}
-            />
+            <Breadcrumb items={breadcrumbItems} />
           </div>
-          <Typography.Text className="topbar-title">{currentItem.label}</Typography.Text>
+          <Typography.Text className="topbar-title">{pageTitle}</Typography.Text>
         </Header>
 
         <div className="app-tabs">
           <Tabs
-            activeKey={currentItem.path}
+            hideAdd
+            type="editable-card"
+            activeKey={currentTab.key}
             items={tabItems}
-            onChange={(key) => navigate(key)}
+            onChange={switchWorkspaceTab}
+            onEdit={(targetKey, action) => {
+              if (action === "remove" && typeof targetKey === "string") {
+                closeWorkspaceTab(targetKey);
+              }
+            }}
           />
         </div>
 

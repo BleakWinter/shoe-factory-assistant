@@ -102,7 +102,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         if (header == null) {
             throw new BusinessException("订单 sheet 未找到明细表头行");
         }
-        return buildOrderRecord(sheet, storedFile, TableColumns.from(header));
+        TableColumns columns = TableColumns.from(header);
+        OrderRecord order = buildOrderRecord(sheet, storedFile, columns);
+        fillUploadSummaryFromDetails(sheet, order, columns);
+        return order;
     }
 
     private OrderSheetImport parseOrderSheet(Workbook workbook, StoredFile storedFile, String fileNo) {
@@ -128,13 +131,29 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return new OrderSheetImport(order, details);
     }
 
+    private void fillUploadSummaryFromDetails(Sheet sheet, OrderRecord order, TableColumns columns) {
+        List<OrderRecordDetail> details = buildOrderDetails(
+                sheet,
+                "SUMMARY",
+                order,
+                Map.of(),
+                columns,
+                columns.headerRowIndex() + 1
+        );
+        if (details.isEmpty()) {
+            return;
+        }
+        order.setDevelopmentNos(joinDevelopmentNos(details));
+        fillTotalsFromDetails(order, details);
+    }
+
     private OrderRecord buildOrderRecord(Sheet sheet, StoredFile storedFile, TableColumns columns) {
         LocalDateTime now = LocalDateTime.now();
         OrderRecord order = new OrderRecord();
         order.setOriginalFileName(storedFile.getOriginalName());
         order.setOriginalFilePath(storedFile.getPath().toString());
         order.setOrderNo(blankToNull(resolveOrderNo(sheet, storedFile.getOriginalName())));
-        order.setCustomerName(blankToNull(text(sheet, 1, 6)));
+        order.setCustomerName(blankToNull(resolveCustomerName(sheet)));
         order.setOrderPrinted(false);
         order.setPackingPrinted(false);
         order.setSourceType(OrderSourceType.EXCEL.getCode());
@@ -196,19 +215,14 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private String resolveOrderNo(Sheet sheet, String originalFileName) {
         // 订单号在不同模板里位置不完全一致，所以从“标签附近、固定单元格、文件名”逐级兜底。
-        String labeledOrderNo = findValueAfterLabel(sheet, "订单流水号", 0, 8);
-        if (!labeledOrderNo.isBlank()) {
-            return labeledOrderNo;
-        }
-
-        String fixedOrderNo = text(sheet, 1, 32);
-        if (!fixedOrderNo.isBlank()) {
-            return fixedOrderNo;
-        }
-
         String invoiceNo = findValueAfterLabel(sheet, "发票编号", 0, 8);
         if (!invoiceNo.isBlank()) {
             return invoiceNo;
+        }
+
+        String labeledOrderNo = findValueAfterLabel(sheet, "订单流水号", 0, 8);
+        if (!labeledOrderNo.isBlank()) {
+            return labeledOrderNo;
         }
 
         String fixedInvoiceNo = text(sheet, 3, 6);
@@ -216,7 +230,45 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             return fixedInvoiceNo;
         }
 
+        String fixedOrderNo = text(sheet, 1, 32);
+        if (!fixedOrderNo.isBlank()) {
+            return fixedOrderNo;
+        }
+
         return leadingOrderNoFromFileName(originalFileName);
+    }
+
+    private String resolveCustomerName(Sheet sheet) {
+        String labeledCustomerName = findValueAfterExactLabel(sheet, "客户", 0, 4);
+        if (!labeledCustomerName.isBlank()) {
+            return labeledCustomerName;
+        }
+        return text(sheet, 1, 6);
+    }
+
+    private String findValueAfterExactLabel(Sheet sheet, String label, int startRow, int endRow) {
+        String normalizedLabel = normalizeHeader(label);
+        for (int rowIndex = startRow; rowIndex <= Math.min(endRow, sheet.getLastRowNum()); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            int first = Math.max(0, row.getFirstCellNum());
+            int last = Math.max(first, row.getLastCellNum() - 1);
+            for (int col = first; col <= last; col++) {
+                String cellText = normalizeHeader(text(row, col)).replace(":", "");
+                if (!cellText.equals(normalizedLabel)) {
+                    continue;
+                }
+                for (int offset = 1; offset <= 6 && col + offset <= last; offset++) {
+                    String value = text(row, col + offset);
+                    if (!value.isBlank()) {
+                        return value;
+                    }
+                }
+            }
+        }
+        return "";
     }
 
     private String findValueAfterLabel(Sheet sheet, String label, int startRow, int endRow) {
@@ -299,7 +351,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     ) {
         OrderRecordDetail detail = new OrderRecordDetail();
         detail.setLineNo(lineNo);
-        detail.setCustomerName(blankToNull(text(row, columns.customer())));
+        detail.setCustomerName(blankToNull(firstText(text(row, columns.customer()), order.getCustomerName())));
         detail.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
         detail.setLastNo(blankToNull(text(row, columns.lastNo())));
         detail.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
@@ -814,6 +866,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String firstText(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? fallback : primary;
     }
 
     private Integer nullToZero(Integer value) {

@@ -17,6 +17,7 @@ import {
 import type { MenuProps } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   fetchOrderDetails,
   fetchOrderPackingDetails,
@@ -159,6 +160,7 @@ function renderProcesses(processes?: OrderDetailProcess[]) {
 
 export default function OrderWorkspacePage() {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const [form] = Form.useForm<FilterValues>();
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
@@ -241,11 +243,8 @@ export default function OrderWorkspacePage() {
   }, [message, updateOrderInList]);
 
   const openDetails = useCallback((order: OrderRecord) => {
-    setActiveOrder(order);
-    setDetails([]);
-    setPackingDetails([]);
-    setActivePanelKeys([]);
-  }, []);
+    navigate(`/orders/${order.id}/details`, { state: { order } });
+  }, [navigate]);
 
   const loadOrderDetails = useCallback(async (order: OrderRecord) => {
     setOrderDetailLoading(true);
