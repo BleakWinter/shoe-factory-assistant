@@ -30,8 +30,14 @@ public class OrderRecordResponse {
     private String sourceTypeText;
     private Integer recognitionStatus;
     private String recognitionStatusText;
+    private Integer orderRecognitionStatus;
+    private String orderRecognitionStatusText;
+    private Integer packingRecognitionStatus;
+    private String packingRecognitionStatusText;
     private String remark;
     private String errorMessage;
+    private String orderErrorMessage;
+    private String packingErrorMessage;
     private LocalDateTime createdAt;
 
     public static OrderRecordResponse from(OrderRecord order) {
@@ -57,8 +63,16 @@ public class OrderRecordResponse {
         response.setRecognitionStatus(order.getRecognitionStatus());
         OrderRecognitionStatus status = OrderRecognitionStatus.fromCode(order.getRecognitionStatus());
         response.setRecognitionStatusText(status == null ? null : status.getLabel());
+        response.setOrderRecognitionStatus(order.getOrderRecognitionStatus());
+        OrderRecognitionStatus orderStatus = OrderRecognitionStatus.fromCode(order.getOrderRecognitionStatus());
+        response.setOrderRecognitionStatusText(orderStatus == null ? null : orderStatus.getLabel());
+        response.setPackingRecognitionStatus(order.getPackingRecognitionStatus());
+        OrderRecognitionStatus packingStatus = OrderRecognitionStatus.fromCode(order.getPackingRecognitionStatus());
+        response.setPackingRecognitionStatusText(packingStatus == null ? null : packingStatus.getLabel());
         response.setRemark(order.getRemark());
         response.setErrorMessage(order.getErrorMessage());
+        response.setOrderErrorMessage(order.getOrderErrorMessage());
+        response.setPackingErrorMessage(order.getPackingErrorMessage());
         response.setCreatedAt(order.getCreatedAt());
         return response;
     }
@@ -226,6 +240,38 @@ public class OrderRecordResponse {
         this.recognitionStatusText = recognitionStatusText;
     }
 
+    public Integer getOrderRecognitionStatus() {
+        return orderRecognitionStatus;
+    }
+
+    public void setOrderRecognitionStatus(Integer orderRecognitionStatus) {
+        this.orderRecognitionStatus = orderRecognitionStatus;
+    }
+
+    public String getOrderRecognitionStatusText() {
+        return orderRecognitionStatusText;
+    }
+
+    public void setOrderRecognitionStatusText(String orderRecognitionStatusText) {
+        this.orderRecognitionStatusText = orderRecognitionStatusText;
+    }
+
+    public Integer getPackingRecognitionStatus() {
+        return packingRecognitionStatus;
+    }
+
+    public void setPackingRecognitionStatus(Integer packingRecognitionStatus) {
+        this.packingRecognitionStatus = packingRecognitionStatus;
+    }
+
+    public String getPackingRecognitionStatusText() {
+        return packingRecognitionStatusText;
+    }
+
+    public void setPackingRecognitionStatusText(String packingRecognitionStatusText) {
+        this.packingRecognitionStatusText = packingRecognitionStatusText;
+    }
+
     public String getRemark() {
         return remark;
     }
@@ -240,6 +286,22 @@ public class OrderRecordResponse {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public String getOrderErrorMessage() {
+        return orderErrorMessage;
+    }
+
+    public void setOrderErrorMessage(String orderErrorMessage) {
+        this.orderErrorMessage = orderErrorMessage;
+    }
+
+    public String getPackingErrorMessage() {
+        return packingErrorMessage;
+    }
+
+    public void setPackingErrorMessage(String packingErrorMessage) {
+        this.packingErrorMessage = packingErrorMessage;
     }
 
     public LocalDateTime getCreatedAt() {

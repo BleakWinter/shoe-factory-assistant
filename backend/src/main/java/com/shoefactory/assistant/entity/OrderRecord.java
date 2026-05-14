@@ -29,8 +29,12 @@ public class OrderRecord {
     private Integer totalCartonCount;
     private Integer sourceType;
     private Integer recognitionStatus;
+    private Integer orderRecognitionStatus;
+    private Integer packingRecognitionStatus;
     private String remark;
     private String errorMessage;
+    private String orderErrorMessage;
+    private String packingErrorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -178,6 +182,22 @@ public class OrderRecord {
         this.recognitionStatus = recognitionStatus;
     }
 
+    public Integer getOrderRecognitionStatus() {
+        return orderRecognitionStatus;
+    }
+
+    public void setOrderRecognitionStatus(Integer orderRecognitionStatus) {
+        this.orderRecognitionStatus = orderRecognitionStatus;
+    }
+
+    public Integer getPackingRecognitionStatus() {
+        return packingRecognitionStatus;
+    }
+
+    public void setPackingRecognitionStatus(Integer packingRecognitionStatus) {
+        this.packingRecognitionStatus = packingRecognitionStatus;
+    }
+
     public String getRemark() {
         return remark;
     }
@@ -192,6 +212,22 @@ public class OrderRecord {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public String getOrderErrorMessage() {
+        return orderErrorMessage;
+    }
+
+    public void setOrderErrorMessage(String orderErrorMessage) {
+        this.orderErrorMessage = orderErrorMessage;
+    }
+
+    public String getPackingErrorMessage() {
+        return packingErrorMessage;
+    }
+
+    public void setPackingErrorMessage(String packingErrorMessage) {
+        this.packingErrorMessage = packingErrorMessage;
     }
 
     public LocalDateTime getCreatedAt() {

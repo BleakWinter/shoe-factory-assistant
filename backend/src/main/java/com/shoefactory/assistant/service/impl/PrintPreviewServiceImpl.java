@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PrintPreviewResponse;
 import com.shoefactory.assistant.entity.OrderRecord;
-import com.shoefactory.assistant.enums.OrderRecognitionStatus;
 import com.shoefactory.assistant.enums.PrintPreviewStatus;
 import com.shoefactory.assistant.enums.PrintType;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
@@ -46,9 +45,6 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
     @Override
     public PrintPreviewResponse generatePreview(Long orderId, PrintType printType) {
         OrderRecord order = getRequiredOrder(orderId);
-        if (OrderRecognitionStatus.FAILED.getCode() == nullToZero(order.getRecognitionStatus())) {
-            throw new BusinessException("订单识别失败，不能生成打印预览: " + order.getErrorMessage());
-        }
         if (order.getOriginalFilePath() == null || order.getOriginalFilePath().isBlank()) {
             throw new BusinessException("订单原稿路径为空，不能生成打印预览");
         }
@@ -201,7 +197,4 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         orderRecordMapper.update(null, wrapper);
     }
 
-    private int nullToZero(Integer value) {
-        return value == null ? 0 : value;
-    }
 }

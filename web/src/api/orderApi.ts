@@ -61,6 +61,16 @@ export async function fetchOrderPackingDetails(orderId: number) {
   return data || [];
 }
 
+export async function recognizeOrder(orderId: number) {
+  const { data } = await request.post<OrderRecord>(`/orders/${orderId}/recognize-order`);
+  return data;
+}
+
+export async function recognizePacking(orderId: number) {
+  const { data } = await request.post<OrderRecord>(`/orders/${orderId}/recognize-packing`);
+  return data;
+}
+
 export function toAssetUrl(url?: string) {
   if (!url) {
     return "";

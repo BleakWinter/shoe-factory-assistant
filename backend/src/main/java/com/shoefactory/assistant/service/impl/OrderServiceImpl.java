@@ -5,10 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.common.BusinessException;
+import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
-import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
@@ -16,6 +16,7 @@ import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.enums.FileType;
 import com.shoefactory.assistant.enums.OrderRecognitionStatus;
+import com.shoefactory.assistant.enums.OrderSourceType;
 import com.shoefactory.assistant.mapper.OrderDetailProcessMapper;
 import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
@@ -30,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +44,6 @@ public class OrderServiceImpl implements OrderService {
     private static final TypeReference<Map<String, Integer>> SIZE_MAP_TYPE = new TypeReference<>() {
     };
 
-    // 订单相关 Mapper 对应主表、订单明细、装箱单明细和处理状态。
     private final OrderRecordMapper orderRecordMapper;
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
@@ -69,36 +70,18 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderUploadResponse uploadOrderSource(MultipartFile file) {
-        // V1 主流程只支持 Excel。图片订单、手工补录留给后续版本。
         String extension = fileStorageUtil.extractExtension(file == null ? null : file.getOriginalFilename());
         FileType fileType = toFileType(extension);
         if (fileType != FileType.EXCEL) {
             throw new BusinessException("V1 仅支持上传 Excel 订单文件");
         }
 
-        // 先把原始 Excel 保存到归档目录，文件名和路径会直接进入 order_record。
         String fileNo = FileStorageUtil.newBusinessNo("SF");
         StoredFile storedFile = fileStorageUtil.saveOriginal(file, fileNo);
-
-        // 导入服务会一次性解析订单主记录、明细行、Excel 内嵌图片。
-        OrderImportResult importResult = orderExcelImportService.importOrder(
-                fileStorageUtil.resolvePath(storedFile.getPath().toString()),
-                storedFile,
-                fileNo
-        );
-        OrderRecord orderRecord = importResult.getOrder();
-        fillTotalsFromPackingDetails(orderRecord, importResult.getPackingDetails());
+        OrderRecord orderRecord = readUploadSummary(storedFile, fileNo);
+        initializeRecognitionFields(orderRecord);
         orderRecordMapper.insert(orderRecord);
-        for (OrderRecordDetail detail : importResult.getDetails()) {
-            detail.setOrderId(orderRecord.getId());
-            orderRecordDetailMapper.insert(detail);
-        }
-        for (OrderPackingDetail detail : importResult.getPackingDetails()) {
-            detail.setOrderId(orderRecord.getId());
-            orderPackingDetailMapper.insert(detail);
-        }
-
-        return buildUploadResponse(orderRecord, importResult.getDetails());
+        return buildUploadResponse(orderRecord, 0);
     }
 
     @Override
@@ -106,17 +89,22 @@ public class OrderServiceImpl implements OrderService {
             String orderNo,
             String customerName,
             String developmentNo,
-            String recognitionStatus,
+            String orderRecognitionStatus,
+            String packingRecognitionStatus,
             long page,
             long size
     ) {
-        OrderRecognitionStatus parsedStatus = OrderRecognitionStatus.parseNullable(recognitionStatus);
+        OrderRecognitionStatus parsedOrderStatus = OrderRecognitionStatus.parseNullable(orderRecognitionStatus);
+        OrderRecognitionStatus parsedPackingStatus = OrderRecognitionStatus.parseNullable(packingRecognitionStatus);
         Page<OrderRecord> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
         LambdaQueryWrapper<OrderRecord> wrapper = new LambdaQueryWrapper<OrderRecord>()
                 .like(hasText(orderNo), OrderRecord::getOrderNo, orderNo)
                 .like(hasText(customerName), OrderRecord::getCustomerName, customerName)
                 .like(hasText(developmentNo), OrderRecord::getDevelopmentNos, developmentNo)
-                .eq(parsedStatus != null, OrderRecord::getRecognitionStatus, parsedStatus == null ? null : parsedStatus.getCode())
+                .eq(parsedOrderStatus != null, OrderRecord::getOrderRecognitionStatus,
+                        parsedOrderStatus == null ? null : parsedOrderStatus.getCode())
+                .eq(parsedPackingStatus != null, OrderRecord::getPackingRecognitionStatus,
+                        parsedPackingStatus == null ? null : parsedPackingStatus.getCode())
                 .orderByDesc(OrderRecord::getCreatedAt);
         Page<OrderRecord> resultPage = orderRecordMapper.selectPage(pageRequest, wrapper);
         Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(resultPage.getRecords());
@@ -132,15 +120,70 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public List<OrderRecordDetailResponse> listOrderDetails(Long orderId) {
-        OrderRecord order = orderRecordMapper.selectById(orderId);
-        if (order == null) {
-            throw new BusinessException("订单不存在: " + orderId);
+    @Transactional
+    public OrderRecordResponse recognizeOrder(Long orderId) {
+        OrderRecord order = getRequiredOrder(orderId);
+        try {
+            StoredFile storedFile = storedFileFromOrder(order);
+            deleteOrderDetailRows(orderId);
+            OrderImportResult importResult = orderExcelImportService.importOrderDetails(
+                    storedFile.getPath(),
+                    storedFile,
+                    FileStorageUtil.newBusinessNo("SF")
+            );
+            applyOrderSummary(order, importResult.getOrder());
+            for (OrderRecordDetail detail : importResult.getDetails()) {
+                detail.setOrderId(order.getId());
+                orderRecordDetailMapper.insert(detail);
+            }
+            fillTotalsFromDetails(order, importResult.getDetails());
+            fillTotalsFromPackingDetails(order, loadPackingDetails(orderId));
+            order.setOrderRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
+            order.setOrderErrorMessage(null);
+            order.setUpdatedAt(LocalDateTime.now());
+            syncLegacyRecognitionFields(order);
+            orderRecordMapper.updateById(order);
+        } catch (RuntimeException ex) {
+            markRecognitionFailed(order, true, ex);
         }
-        List<OrderRecordDetail> details = orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
-                .eq(OrderRecordDetail::getOrderId, orderId)
-                .orderByAsc(OrderRecordDetail::getRowIndex)
-                .orderByAsc(OrderRecordDetail::getLineNo));
+        return buildOrderResponse(order, loadDetails(orderId), loadPackingDetails(orderId));
+    }
+
+    @Override
+    @Transactional
+    public OrderRecordResponse recognizePacking(Long orderId) {
+        OrderRecord order = getRequiredOrder(orderId);
+        try {
+            StoredFile storedFile = storedFileFromOrder(order);
+            deletePackingDetailRows(orderId);
+            List<OrderPackingDetail> packingDetails = orderExcelImportService.importPackingDetails(
+                    storedFile.getPath(),
+                    order,
+                    FileStorageUtil.newBusinessNo("SF")
+            );
+            if (packingDetails.isEmpty()) {
+                throw new BusinessException("装箱单未解析到明细行");
+            }
+            for (OrderPackingDetail detail : packingDetails) {
+                detail.setOrderId(order.getId());
+                orderPackingDetailMapper.insert(detail);
+            }
+            fillTotalsFromPackingDetails(order, packingDetails);
+            order.setPackingRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
+            order.setPackingErrorMessage(null);
+            order.setUpdatedAt(LocalDateTime.now());
+            syncLegacyRecognitionFields(order);
+            orderRecordMapper.updateById(order);
+        } catch (RuntimeException ex) {
+            markRecognitionFailed(order, false, ex);
+        }
+        return buildOrderResponse(order, loadDetails(orderId), loadPackingDetails(orderId));
+    }
+
+    @Override
+    public List<OrderRecordDetailResponse> listOrderDetails(Long orderId) {
+        getRequiredOrder(orderId);
+        List<OrderRecordDetail> details = loadDetails(orderId);
         if (details.isEmpty()) {
             return Collections.emptyList();
         }
@@ -156,15 +199,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public List<OrderPackingDetailResponse> listOrderPackingDetails(Long orderId) {
-        OrderRecord order = orderRecordMapper.selectById(orderId);
-        if (order == null) {
-            throw new BusinessException("订单不存在: " + orderId);
-        }
-        return orderPackingDetailMapper.selectList(new LambdaQueryWrapper<OrderPackingDetail>()
-                        .eq(OrderPackingDetail::getOrderId, orderId)
-                        .orderByAsc(OrderPackingDetail::getRowIndex)
-                        .orderByAsc(OrderPackingDetail::getLineNo))
-                .stream()
+        getRequiredOrder(orderId);
+        return loadPackingDetails(orderId).stream()
                 .map(OrderPackingDetailResponse::from)
                 .toList();
     }
@@ -175,7 +211,6 @@ public class OrderServiceImpl implements OrderService {
         if (detail == null || detail.getStyleImagePath() == null || detail.getStyleImagePath().isBlank()) {
             throw new BusinessException("订单图片不存在: " + detailId);
         }
-        // 数据库里存绝对路径，真正返回给前端前仍要通过 FileStorageUtil 做路径白名单检查。
         Path imagePath = fileStorageUtil.resolvePath(detail.getStyleImagePath());
         fileStorageUtil.ensureExists(imagePath);
         return imagePath;
@@ -192,14 +227,65 @@ public class OrderServiceImpl implements OrderService {
         return imagePath;
     }
 
-    private OrderUploadResponse buildUploadResponse(OrderRecord orderRecord, List<OrderRecordDetail> details) {
+    private OrderRecord readUploadSummary(StoredFile storedFile, String fileNo) {
+        try {
+            return orderExcelImportService.readOrderSummary(
+                    fileStorageUtil.resolvePath(storedFile.getPath().toString()),
+                    storedFile
+            );
+        } catch (RuntimeException ex) {
+            OrderRecord fallback = new OrderRecord();
+            fallback.setOriginalFileName(storedFile.getOriginalName());
+            fallback.setOriginalFilePath(storedFile.getPath().toString());
+            fallback.setOrderNo(fileNo);
+            fallback.setCustomerName(null);
+            fallback.setOrderPrinted(false);
+            fallback.setPackingPrinted(false);
+            fallback.setTotalQuantity(0);
+            fallback.setTotalCartonCount(0);
+            fallback.setSourceType(OrderSourceType.EXCEL.getCode());
+            fallback.setCreatedAt(LocalDateTime.now());
+            fallback.setUpdatedAt(LocalDateTime.now());
+            return fallback;
+        }
+    }
+
+    private void initializeRecognitionFields(OrderRecord order) {
+        if (!hasText(order.getOrderNo())) {
+            order.setOrderNo(FileStorageUtil.newBusinessNo("SF"));
+        }
+        if (order.getOrderPrinted() == null) {
+            order.setOrderPrinted(false);
+        }
+        if (order.getPackingPrinted() == null) {
+            order.setPackingPrinted(false);
+        }
+        if (order.getTotalQuantity() == null) {
+            order.setTotalQuantity(0);
+        }
+        if (order.getTotalCartonCount() == null) {
+            order.setTotalCartonCount(0);
+        }
+        order.setSourceType(OrderSourceType.EXCEL.getCode());
+        order.setOrderRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
+        order.setPackingRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
+        order.setOrderErrorMessage(null);
+        order.setPackingErrorMessage(null);
+        syncLegacyRecognitionFields(order);
+        LocalDateTime now = LocalDateTime.now();
+        if (order.getCreatedAt() == null) {
+            order.setCreatedAt(now);
+        }
+        order.setUpdatedAt(now);
+    }
+
+    private OrderUploadResponse buildUploadResponse(OrderRecord orderRecord, int lineCount) {
         OrderUploadResponse response = new OrderUploadResponse();
         response.setOrderId(orderRecord.getId());
         response.setOrderNo(orderRecord.getOrderNo());
         response.setCustomerName(orderRecord.getCustomerName());
-        response.setLineCount(details.size());
+        response.setLineCount(lineCount);
         response.setTotalPairs(orderRecord.getTotalQuantity());
-        // 兼容前端历史字段：打印列表现在直接用订单 id。
         response.setPrintTaskId(orderRecord.getId());
         response.setPrintTaskNo(orderRecord.getOrderNo());
         return response;
@@ -209,13 +295,124 @@ public class OrderServiceImpl implements OrderService {
         try {
             return FileType.fromExtension(extension);
         } catch (IllegalArgumentException ex) {
-            // FileType 还认识图片扩展名，但业务中 V1 会在 uploadOrderSource 里继续拦截。
             throw new BusinessException("订单原稿仅支持 Excel 或图片文件: " + extension, ex);
         }
     }
 
+    private OrderRecord getRequiredOrder(Long orderId) {
+        OrderRecord order = orderRecordMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException("订单不存在: " + orderId);
+        }
+        return order;
+    }
+
+    private StoredFile storedFileFromOrder(OrderRecord order) {
+        if (!hasText(order.getOriginalFilePath())) {
+            throw new BusinessException("订单原稿路径为空，不能识别");
+        }
+        Path path = fileStorageUtil.resolvePath(order.getOriginalFilePath());
+        String originalName = hasText(order.getOriginalFileName())
+                ? order.getOriginalFileName()
+                : path.getFileName().toString();
+        String extension = fileStorageUtil.extractExtension(originalName);
+        return new StoredFile(originalName, extension, null, 0, path);
+    }
+
+    private void deleteOrderDetailRows(Long orderId) {
+        orderDetailProcessMapper.delete(new LambdaQueryWrapper<OrderDetailProcess>()
+                .eq(OrderDetailProcess::getOrderId, orderId));
+        orderRecordDetailMapper.delete(new LambdaQueryWrapper<OrderRecordDetail>()
+                .eq(OrderRecordDetail::getOrderId, orderId));
+    }
+
+    private void deletePackingDetailRows(Long orderId) {
+        orderPackingDetailMapper.delete(new LambdaQueryWrapper<OrderPackingDetail>()
+                .eq(OrderPackingDetail::getOrderId, orderId));
+    }
+
+    private void applyOrderSummary(OrderRecord target, OrderRecord parsed) {
+        if (parsed == null) {
+            return;
+        }
+        if (hasText(parsed.getOrderNo())) {
+            target.setOrderNo(parsed.getOrderNo());
+        }
+        if (hasText(parsed.getCustomerName())) {
+            target.setCustomerName(parsed.getCustomerName());
+        }
+        target.setDevelopmentNos(parsed.getDevelopmentNos());
+        target.setTotalQuantity(nullToZero(parsed.getTotalQuantity()));
+        target.setTotalCartonCount(nullToZero(parsed.getTotalCartonCount()));
+        target.setSourceType(OrderSourceType.EXCEL.getCode());
+    }
+
+    private void markRecognitionFailed(OrderRecord order, boolean orderRecognition, RuntimeException ex) {
+        String message = ex.getMessage();
+        if (!hasText(message)) {
+            message = ex.getClass().getSimpleName();
+        }
+        if (orderRecognition) {
+            order.setOrderRecognitionStatus(OrderRecognitionStatus.FAILED.getCode());
+            order.setOrderErrorMessage(message);
+        } else {
+            order.setPackingRecognitionStatus(OrderRecognitionStatus.FAILED.getCode());
+            order.setPackingErrorMessage(message);
+        }
+        order.setUpdatedAt(LocalDateTime.now());
+        syncLegacyRecognitionFields(order);
+        orderRecordMapper.updateById(order);
+    }
+
+    private void syncLegacyRecognitionFields(OrderRecord order) {
+        int orderStatus = statusOrPending(order.getOrderRecognitionStatus());
+        int packingStatus = statusOrPending(order.getPackingRecognitionStatus());
+        int failed = OrderRecognitionStatus.FAILED.getCode();
+        int manual = OrderRecognitionStatus.PENDING_MANUAL.getCode();
+        int recognized = OrderRecognitionStatus.RECOGNIZED.getCode();
+        if (orderStatus == failed || packingStatus == failed) {
+            order.setRecognitionStatus(failed);
+        } else if (orderStatus == manual || packingStatus == manual) {
+            order.setRecognitionStatus(manual);
+        } else if (orderStatus == recognized && packingStatus == recognized) {
+            order.setRecognitionStatus(recognized);
+        } else {
+            order.setRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
+        }
+        order.setErrorMessage(firstText(order.getOrderErrorMessage(), order.getPackingErrorMessage()));
+    }
+
+    private int statusOrPending(Integer status) {
+        return status == null ? OrderRecognitionStatus.PENDING.getCode() : status;
+    }
+
+    private String firstText(String left, String right) {
+        if (hasText(left)) {
+            return left;
+        }
+        return hasText(right) ? right : null;
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private int nullToZero(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private List<OrderRecordDetail> loadDetails(Long orderId) {
+        return orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                .eq(OrderRecordDetail::getOrderId, orderId)
+                .orderByAsc(OrderRecordDetail::getRowIndex)
+                .orderByAsc(OrderRecordDetail::getLineNo));
+    }
+
+    private List<OrderPackingDetail> loadPackingDetails(Long orderId) {
+        return orderPackingDetailMapper.selectList(new LambdaQueryWrapper<OrderPackingDetail>()
+                .eq(OrderPackingDetail::getOrderId, orderId)
+                .orderByAsc(OrderPackingDetail::getRowIndex)
+                .orderByAsc(OrderPackingDetail::getLineNo));
     }
 
     private Map<Long, List<OrderRecordDetail>> loadDetailsByOrderId(List<OrderRecord> orders) {
@@ -298,6 +495,16 @@ public class OrderServiceImpl implements OrderService {
             }
         }
         return new DetailTotals(quantity, cartonCount);
+    }
+
+    private void fillTotalsFromDetails(OrderRecord order, List<OrderRecordDetail> details) {
+        DetailTotals totals = summarizeDetails(details);
+        if (totals.quantity() > 0) {
+            order.setTotalQuantity(totals.quantity());
+        }
+        if (totals.cartonCount() > 0) {
+            order.setTotalCartonCount(totals.cartonCount());
+        }
     }
 
     private void fillTotalsFromPackingDetails(OrderRecord order, List<OrderPackingDetail> packingDetails) {

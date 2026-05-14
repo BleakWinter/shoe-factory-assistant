@@ -25,9 +25,13 @@ CREATE TABLE IF NOT EXISTS `order_record` (
 
   `source_type` tinyint DEFAULT NULL COMMENT '订单来源: 1 Excel, 2 图片, 3 手动录入',
   `recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
+  `order_recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '订单识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
+  `packing_recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '装箱单识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
 
   `remark` varchar(1024) DEFAULT NULL COMMENT '备注',
   `error_message` varchar(1024) DEFAULT NULL COMMENT '识别或处理错误信息',
+  `order_error_message` varchar(1024) DEFAULT NULL COMMENT '订单识别错误信息',
+  `packing_error_message` varchar(1024) DEFAULT NULL COMMENT '装箱单识别错误信息',
 
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -130,25 +134,11 @@ CREATE TABLE IF NOT EXISTS `order_packing_detail` (
   `trademark` varchar(255) DEFAULT NULL COMMENT '商标',
   `size_quantities_json` json DEFAULT NULL COMMENT '尺码数量JSON，例如 {"6.5/36":10}',
 
-  `pairs` int NOT NULL DEFAULT 0 COMMENT 'PRS',
   `carton_count` int NOT NULL DEFAULT 0 COMMENT 'CTNS',
   `total_pairs` int NOT NULL DEFAULT 0 COMMENT 'TTL PRS',
   `carton_start` varchar(128) DEFAULT NULL COMMENT 'CTN START/开始箱号',
   `carton_end` varchar(128) DEFAULT NULL COMMENT 'CTN END/结束箱号',
 
-  `length_value` varchar(64) DEFAULT NULL COMMENT 'L',
-  `width_value` varchar(64) DEFAULT NULL COMMENT 'W',
-  `height_value` varchar(64) DEFAULT NULL COMMENT 'H',
-  `net_weight` varchar(64) DEFAULT NULL COMMENT 'NW(KGS)/净重',
-  `gross_weight` varchar(64) DEFAULT NULL COMMENT 'GW(KGS)/毛重',
-  `measurement` varchar(64) DEFAULT NULL COMMENT 'MEA',
-  `total_net_weight` varchar(64) DEFAULT NULL COMMENT 'TOTAL NW/总净重',
-  `total_gross_weight` varchar(64) DEFAULT NULL COMMENT 'TOTAL GW/总毛重',
-  `total_cbm` varchar(64) DEFAULT NULL COMMENT 'TOTAL CBM/总体积',
-  `gender` varchar(64) DEFAULT NULL COMMENT 'GENDER/鞋类',
-  `product_type` varchar(128) DEFAULT NULL COMMENT 'PRODUCT TYPE/产品类型',
-  `upper_material` varchar(255) DEFAULT NULL COMMENT 'UPPER MATERIAL/鞋帮材质',
-  `sole_material` varchar(255) DEFAULT NULL COMMENT 'SOLE MATERIAL/鞋底材质',
 
   `source_sheet_name` varchar(128) DEFAULT NULL COMMENT '来源sheet',
   `row_index` int DEFAULT NULL COMMENT 'Excel行号',

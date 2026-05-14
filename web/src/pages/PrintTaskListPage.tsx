@@ -115,9 +115,7 @@ export default function PrintTaskListPage() {
         const file = options.file as File;
         const result = await uploadOrderFile(file);
         options.onSuccess?.(result);
-        message.success(
-          `订单已上传，打印列表已生成任务 ${result.printTaskNo || ""}，共 ${result.totalPairs || 0} 双`,
-        );
+        message.success(`订单已上传，打印任务 ${result.printTaskNo || ""} 已创建，明细待手动识别`);
         await loadTasks();
       } catch (error) {
         const err = error instanceof Error ? error : new Error("上传失败");

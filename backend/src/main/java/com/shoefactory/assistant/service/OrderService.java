@@ -20,10 +20,15 @@ public interface OrderService {
             String orderNo,
             String customerName,
             String developmentNo,
-            String recognitionStatus,
+            String orderRecognitionStatus,
+            String packingRecognitionStatus,
             long page,
             long size
     );
+
+    OrderRecordResponse recognizeOrder(Long orderId);
+
+    OrderRecordResponse recognizePacking(Long orderId);
 
     // 查询某个订单下的明细，并附带每条明细的处理状态。
     List<OrderRecordDetailResponse> listOrderDetails(Long orderId);

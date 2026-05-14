@@ -8,7 +8,6 @@ import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.enums.OrderExcelColumn;
 import com.shoefactory.assistant.enums.OrderExcelTemplate;
-import com.shoefactory.assistant.enums.OrderRecognitionStatus;
 import com.shoefactory.assistant.enums.OrderSourceType;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
@@ -42,11 +41,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiPredicate;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 @Service
 public class OrderExcelImportServiceImpl implements OrderExcelImportService {
+
+    private static final LocalDate MIN_SUPPORTED_DATE = LocalDate.of(2000, 1, 1);
+    private static final LocalDate MAX_SUPPORTED_DATE = LocalDate.of(2100, 12, 31);
 
     private final DataFormatter formatter = new DataFormatter(Locale.CHINA);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -57,34 +60,72 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     @Override
-    public OrderImportResult importOrder(Path sourceExcel, StoredFile storedFile, String fileNo) {
+    public OrderRecord readOrderSummary(Path sourceExcel, StoredFile storedFile) {
         try (Workbook workbook = WorkbookFactory.create(sourceExcel.toFile())) {
-            Sheet sheet = workbook.getSheet(OrderExcelTemplate.DEFAULT.getOrderSheetName());
-            if (sheet == null) {
-                throw new BusinessException("Excel 中未找到“订单”sheet");
-            }
-            Row header = findHeaderRow(sheet);
-            if (header == null) {
-                throw new BusinessException("订单 sheet 未找到明细表头行");
-            }
-            // TableColumns 会把“图片、楦头、开发编号...”这些业务字段映射成真实列号。
-            TableColumns columns = TableColumns.from(header);
-            int firstDataRowIndex = header.getRowNum() + 1;
-            Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet, columns.image(), firstDataRowIndex);
-            OrderRecord order = buildOrderRecord(sheet, storedFile, columns);
-            List<OrderRecordDetail> details = buildDetails(sheet, fileNo, order, picturesByRow, columns, firstDataRowIndex);
-            if (details.isEmpty()) {
-                throw new BusinessException("订单 sheet 未解析到明细行");
-            }
-            order.setDevelopmentNos(joinDevelopmentNos(details));
-            fillTotalsFromDetails(order, details);
-            List<OrderPackingDetail> packingDetails = buildPackingDetails(workbook, fileNo, order);
-            return new OrderImportResult(order, details, packingDetails);
+            return parseOrderSummary(workbook, storedFile);
         } catch (BusinessException ex) {
             throw ex;
         } catch (IOException ex) {
             throw new BusinessException("读取 Excel 订单失败", ex);
         }
+    }
+
+    @Override
+    public OrderImportResult importOrderDetails(Path sourceExcel, StoredFile storedFile, String fileNo) {
+        try (Workbook workbook = WorkbookFactory.create(sourceExcel.toFile())) {
+            OrderSheetImport orderSheet = parseOrderSheet(workbook, storedFile, fileNo);
+            return new OrderImportResult(orderSheet.order(), orderSheet.details());
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw new BusinessException("读取 Excel 订单失败", ex);
+        }
+    }
+
+    @Override
+    public List<OrderPackingDetail> importPackingDetails(Path sourceExcel, OrderRecord order, String fileNo) {
+        try (Workbook workbook = WorkbookFactory.create(sourceExcel.toFile())) {
+            return parsePackingSheet(workbook, fileNo, order);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw new BusinessException("读取 Excel 装箱单失败", ex);
+        }
+    }
+
+    private OrderRecord parseOrderSummary(Workbook workbook, StoredFile storedFile) {
+        Sheet sheet = workbook.getSheet(OrderExcelTemplate.DEFAULT.getOrderSheetName());
+        if (sheet == null) {
+            throw new BusinessException("Excel 中未找到“订单”sheet");
+        }
+        Row header = findHeaderRow(sheet);
+        if (header == null) {
+            throw new BusinessException("订单 sheet 未找到明细表头行");
+        }
+        return buildOrderRecord(sheet, storedFile, TableColumns.from(header));
+    }
+
+    private OrderSheetImport parseOrderSheet(Workbook workbook, StoredFile storedFile, String fileNo) {
+        Sheet sheet = workbook.getSheet(OrderExcelTemplate.DEFAULT.getOrderSheetName());
+        if (sheet == null) {
+            throw new BusinessException("Excel 中未找到“订单”sheet");
+        }
+        Row header = findHeaderRow(sheet);
+        if (header == null) {
+            throw new BusinessException("订单 sheet 未找到明细表头行");
+        }
+        // TableColumns 会把“图片、楦头、开发编号...”这些业务字段映射成真实列号。
+        TableColumns columns = TableColumns.from(header);
+        int firstDataRowIndex = header.getRowNum() + 1;
+        Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(sheet, columns.image(), firstDataRowIndex);
+        OrderRecord order = buildOrderRecord(sheet, storedFile, columns);
+        List<OrderRecordDetail> details = buildOrderDetails(sheet, fileNo, order, picturesByRow, columns, firstDataRowIndex);
+        if (details.isEmpty()) {
+            throw new BusinessException("订单 sheet 未解析到明细行");
+        }
+        order.setDevelopmentNos(joinDevelopmentNos(details));
+        fillTotalsFromDetails(order, details);
+        return new OrderSheetImport(order, details);
     }
 
     private OrderRecord buildOrderRecord(Sheet sheet, StoredFile storedFile, TableColumns columns) {
@@ -97,7 +138,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         order.setOrderPrinted(false);
         order.setPackingPrinted(false);
         order.setSourceType(OrderSourceType.EXCEL.getCode());
-        order.setRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
         // 订单总双数和箱数以“合计行”为准，避免逐行累加时遇到空行/重复表头出错。
@@ -212,7 +252,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return matcher.find() ? matcher.group(1) : "";
     }
 
-    private List<OrderRecordDetail> buildDetails(
+    private List<OrderRecordDetail> buildOrderDetails(
             Sheet sheet,
             String fileNo,
             OrderRecord order,
@@ -220,66 +260,87 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             TableColumns columns,
             int firstDataRowIndex
     ) {
-        List<OrderRecordDetail> details = new ArrayList<>();
         Row header = sheet.getRow(columns.headerRowIndex());
         LocalDateTime now = LocalDateTime.now();
-        for (int rowIndex = firstDataRowIndex; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-            Row row = sheet.getRow(rowIndex);
-            if (row == null || isTotalRow(row, columns)) {
-                break;
-            }
-            if (isBlankRow(row, columns) || isRepeatedHeaderRow(row, columns)) {
-                continue;
-            }
-            // 这里是一行 Excel 明细 -> 一条 order_record_detail，字段名和 SQL 明细表对齐。
-            OrderRecordDetail detail = new OrderRecordDetail();
-            detail.setLineNo(details.size() + 1);
-            detail.setCustomerName(blankToNull(text(row, columns.customer())));
-            detail.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
-            detail.setLastNo(blankToNull(text(row, columns.lastNo())));
-            detail.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
-            detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
-            detail.setPoNo(blankToNull(text(row, columns.po())));
-            detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
-            detail.setEnglishColor(blankToNull(text(row, columns.englishColor())));
-            detail.setEnglishMaterial(blankToNull(text(row, columns.englishMaterial())));
-            detail.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
-            detail.setLiningMaterial(blankToNull(text(row, columns.liningMaterial())));
-            detail.setAccessory(blankToNull(text(row, columns.accessory())));
-            detail.setInsolePlatform(blankToNull(text(row, columns.insolePlatform())));
-            detail.setOutsole(blankToNull(text(row, columns.outsole())));
-            detail.setTrademark(blankToNull(text(row, columns.trademark())));
-            Map<String, Integer> sizeQuantities = readSizeQuantities(header, row, columns);
-            int sizeQuantityTotal = sizeQuantities.values().stream()
-                    .filter(value -> value != null && value > 0)
-                    .mapToInt(Integer::intValue)
-                    .sum();
-            detail.setQuantity(sizeQuantityTotal > 0 ? sizeQuantityTotal : nullToZero(integerValue(row, columns.quantity())));
-            detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
-            detail.setSizeQuantitiesJson(toJson(sizeQuantities));
-            detail.setSourceSheetName(sheet.getSheetName());
-            detail.setRowIndex(rowIndex + 1);
-            detail.setCreatedAt(now);
-            detail.setUpdatedAt(now);
-
-            // POI 图片锚点里的行号按 0 开始，picturesByRow 存的是 Excel 可见行号，所以这里 +1。
-            PictureInfo picture = picturesByRow.get(rowIndex + 1);
-            if (picture != null) {
-                Path imagePath = fileStorageUtil.saveOrderDetailImage(
-                        picture.bytes(),
+        return parseDataRows(
+                sheet,
+                columns,
+                firstDataRowIndex,
+                true,
+                this::isTotalRow,
+                this::isBlankRow,
+                this::isRepeatedHeaderRow,
+                (row, rowIndex, lineNo) -> buildOrderDetailRow(
+                        sheet,
+                        header,
                         fileNo,
-                        order.getOrderNo(),
-                        rowIndex + 1,
-                        picture.extension()
-                );
-                detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
-            }
-            details.add(detail);
-        }
-        return details;
+                        order,
+                        picturesByRow,
+                        columns,
+                        now,
+                        row,
+                        rowIndex,
+                        lineNo
+                )
+        );
     }
 
-    private List<OrderPackingDetail> buildPackingDetails(Workbook workbook, String fileNo, OrderRecord order) {
+    private OrderRecordDetail buildOrderDetailRow(
+            Sheet sheet,
+            Row header,
+            String fileNo,
+            OrderRecord order,
+            Map<Integer, PictureInfo> picturesByRow,
+            TableColumns columns,
+            LocalDateTime now,
+            Row row,
+            int rowIndex,
+            int lineNo
+    ) {
+        OrderRecordDetail detail = new OrderRecordDetail();
+        detail.setLineNo(lineNo);
+        detail.setCustomerName(blankToNull(text(row, columns.customer())));
+        detail.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
+        detail.setLastNo(blankToNull(text(row, columns.lastNo())));
+        detail.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
+        detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
+        detail.setPoNo(blankToNull(text(row, columns.po())));
+        detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
+        detail.setEnglishColor(blankToNull(text(row, columns.englishColor())));
+        detail.setEnglishMaterial(blankToNull(text(row, columns.englishMaterial())));
+        detail.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
+        detail.setLiningMaterial(blankToNull(text(row, columns.liningMaterial())));
+        detail.setAccessory(blankToNull(text(row, columns.accessory())));
+        detail.setInsolePlatform(blankToNull(text(row, columns.insolePlatform())));
+        detail.setOutsole(blankToNull(text(row, columns.outsole())));
+        detail.setTrademark(blankToNull(text(row, columns.trademark())));
+
+        Map<String, Integer> sizeQuantities = readSizeQuantities(header, row, columns);
+        int sizeQuantityTotal = sumPositiveValues(sizeQuantities);
+        detail.setQuantity(sizeQuantityTotal > 0 ? sizeQuantityTotal : nullToZero(integerValue(row, columns.quantity())));
+        detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
+        detail.setSizeQuantitiesJson(toJson(sizeQuantities));
+        detail.setSourceSheetName(sheet.getSheetName());
+        detail.setRowIndex(rowIndex + 1);
+        detail.setCreatedAt(now);
+        detail.setUpdatedAt(now);
+
+        // POI 图片锚点里的行号按 0 开始，picturesByRow 存的是 Excel 可见行号，所以这里 +1。
+        PictureInfo picture = picturesByRow.get(rowIndex + 1);
+        if (picture != null) {
+            Path imagePath = fileStorageUtil.saveOrderDetailImage(
+                    picture.bytes(),
+                    fileNo,
+                    order.getOrderNo(),
+                    rowIndex + 1,
+                    picture.extension()
+            );
+            detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
+        }
+        return detail;
+    }
+
+    private List<OrderPackingDetail> parsePackingSheet(Workbook workbook, String fileNo, OrderRecord order) {
         Sheet packingSheet = findPackingSheet(workbook);
         if (packingSheet == null) {
             return List.of();
@@ -291,67 +352,104 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         PackingColumns columns = PackingColumns.from(header);
         int firstDataRowIndex = header.getRowNum() + 1;
         Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(packingSheet, columns.image(), firstDataRowIndex);
-        List<OrderPackingDetail> details = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
-        for (int rowIndex = firstDataRowIndex; rowIndex <= packingSheet.getLastRowNum(); rowIndex++) {
-            Row row = packingSheet.getRow(rowIndex);
+        return parseDataRows(
+                packingSheet,
+                columns,
+                firstDataRowIndex,
+                false,
+                this::isPackingTotalRow,
+                this::isPackingBlankRow,
+                this::isPackingRepeatedHeaderRow,
+                (row, rowIndex, lineNo) -> buildPackingDetailRow(
+                        packingSheet,
+                        header,
+                        fileNo,
+                        order,
+                        picturesByRow,
+                        columns,
+                        now,
+                        row,
+                        rowIndex,
+                        lineNo
+                )
+        );
+    }
+
+    private OrderPackingDetail buildPackingDetailRow(
+            Sheet sheet,
+            Row header,
+            String fileNo,
+            OrderRecord order,
+            Map<Integer, PictureInfo> picturesByRow,
+            PackingColumns columns,
+            LocalDateTime now,
+            Row row,
+            int rowIndex,
+            int lineNo
+    ) {
+        OrderPackingDetail detail = new OrderPackingDetail();
+        detail.setLineNo(lineNo);
+        detail.setCompanyStyleNo(blankToNull(text(row, columns.companyStyleNo())));
+        detail.setCustomerName(blankToNull(text(row, columns.customer())));
+        detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
+        detail.setWarehouseStoreNo(blankToNull(text(row, columns.warehouseStoreNo())));
+        detail.setPoNo(blankToNull(text(row, columns.po())));
+        detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
+        detail.setCustomerColor(blankToNull(text(row, columns.customerColor())));
+        detail.setMaterial(blankToNull(text(row, columns.material())));
+        detail.setItemNumber(blankToNull(text(row, columns.itemNumber())));
+        detail.setTrademark(blankToNull(text(row, columns.trademark())));
+        detail.setSizeQuantitiesJson(toJson(readPackingSizeQuantities(header, row, columns)));
+        detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
+        detail.setTotalPairs(nullToZero(integerValue(row, columns.totalPairs())));
+        detail.setCartonStart(blankToNull(text(row, columns.cartonStart())));
+        detail.setCartonEnd(blankToNull(text(row, columns.cartonEnd())));
+        detail.setSourceSheetName(sheet.getSheetName());
+        detail.setRowIndex(rowIndex + 1);
+        detail.setCreatedAt(now);
+        detail.setUpdatedAt(now);
+
+        PictureInfo picture = picturesByRow.get(rowIndex + 1);
+        if (picture != null) {
+            Path imagePath = fileStorageUtil.saveOrderDetailImage(
+                    picture.bytes(),
+                    fileNo + "-packing",
+                    order.getOrderNo(),
+                    rowIndex + 1,
+                    picture.extension()
+            );
+            detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
+        }
+        return detail;
+    }
+
+    private <C, D> List<D> parseDataRows(
+            Sheet sheet,
+            C columns,
+            int firstDataRowIndex,
+            boolean stopOnMissingRow,
+            BiPredicate<Row, C> totalRowMatcher,
+            BiPredicate<Row, C> blankRowMatcher,
+            BiPredicate<Row, C> repeatedHeaderMatcher,
+            DetailRowMapper<D> rowMapper
+    ) {
+        List<D> details = new ArrayList<>();
+        for (int rowIndex = firstDataRowIndex; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
             if (row == null) {
+                if (stopOnMissingRow) {
+                    break;
+                }
                 continue;
             }
-            if (isPackingTotalRow(row, columns)) {
+            if (totalRowMatcher.test(row, columns)) {
                 break;
             }
-            if (isPackingBlankRow(row, columns) || isPackingRepeatedHeaderRow(row, columns)) {
+            if (blankRowMatcher.test(row, columns) || repeatedHeaderMatcher.test(row, columns)) {
                 continue;
             }
-            OrderPackingDetail detail = new OrderPackingDetail();
-            detail.setLineNo(details.size() + 1);
-            detail.setCompanyStyleNo(blankToNull(text(row, columns.companyStyleNo())));
-            detail.setCustomerName(blankToNull(text(row, columns.customer())));
-            detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
-            detail.setWarehouseStoreNo(blankToNull(text(row, columns.warehouseStoreNo())));
-            detail.setPoNo(blankToNull(text(row, columns.po())));
-            detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
-            detail.setCustomerColor(blankToNull(text(row, columns.customerColor())));
-            detail.setMaterial(blankToNull(text(row, columns.material())));
-            detail.setItemNumber(blankToNull(text(row, columns.itemNumber())));
-            detail.setTrademark(blankToNull(text(row, columns.trademark())));
-            detail.setSizeQuantitiesJson(toJson(readPackingSizeQuantities(header, row, columns)));
-            detail.setPairs(nullToZero(integerValue(row, columns.pairs())));
-            detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
-            detail.setTotalPairs(nullToZero(integerValue(row, columns.totalPairs())));
-            detail.setCartonStart(blankToNull(text(row, columns.cartonStart())));
-            detail.setCartonEnd(blankToNull(text(row, columns.cartonEnd())));
-            detail.setLengthValue(blankToNull(text(row, columns.lengthValue())));
-            detail.setWidthValue(blankToNull(text(row, columns.widthValue())));
-            detail.setHeightValue(blankToNull(text(row, columns.heightValue())));
-            detail.setNetWeight(blankToNull(text(row, columns.netWeight())));
-            detail.setGrossWeight(blankToNull(text(row, columns.grossWeight())));
-            detail.setMeasurement(blankToNull(text(row, columns.measurement())));
-            detail.setTotalNetWeight(blankToNull(text(row, columns.totalNetWeight())));
-            detail.setTotalGrossWeight(blankToNull(text(row, columns.totalGrossWeight())));
-            detail.setTotalCbm(blankToNull(text(row, columns.totalCbm())));
-            detail.setGender(blankToNull(text(row, columns.gender())));
-            detail.setProductType(blankToNull(text(row, columns.productType())));
-            detail.setUpperMaterial(blankToNull(text(row, columns.upperMaterial())));
-            detail.setSoleMaterial(blankToNull(text(row, columns.soleMaterial())));
-            detail.setSourceSheetName(packingSheet.getSheetName());
-            detail.setRowIndex(rowIndex + 1);
-            detail.setCreatedAt(now);
-            detail.setUpdatedAt(now);
-
-            PictureInfo picture = picturesByRow.get(rowIndex + 1);
-            if (picture != null) {
-                Path imagePath = fileStorageUtil.saveOrderDetailImage(
-                        picture.bytes(),
-                        fileNo + "-packing",
-                        order.getOrderNo(),
-                        rowIndex + 1,
-                        picture.extension()
-                );
-                detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
-            }
-            details.add(detail);
+            details.add(rowMapper.map(row, rowIndex, details.size() + 1));
         }
         return details;
     }
@@ -471,6 +569,13 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         if (detailCartonTotal > 0) {
             order.setTotalCartonCount(detailCartonTotal);
         }
+    }
+
+    private int sumPositiveValues(Map<String, Integer> values) {
+        return values.values().stream()
+                .filter(value -> value != null && value > 0)
+                .mapToInt(Integer::intValue)
+                .sum();
     }
 
     private Map<String, Integer> readSizeQuantities(Row header, Row row, TableColumns columns) {
@@ -645,7 +750,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         if (cell.getCellType() == CellType.NUMERIC) {
             double numericValue = cell.getNumericCellValue();
             if (DateUtil.isCellDateFormatted(cell) || DateUtil.isValidExcelDate(numericValue)) {
-                return DateUtil.getJavaDate(numericValue).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+                return supportedDateOrNull(DateUtil.getJavaDate(numericValue)
+                        .toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate());
             }
         }
         String value = formatter.formatCellValue(cell);
@@ -666,7 +774,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         );
         for (DateTimeFormatter dateFormatter : formatters) {
             try {
-                return LocalDate.parse(normalized, dateFormatter);
+                LocalDate parsedDate = LocalDate.parse(normalized, dateFormatter);
+                if (isSupportedDate(parsedDate)) {
+                    return parsedDate;
+                }
             } catch (DateTimeParseException ignored) {
                 // Try the next supported date format.
             }
@@ -674,12 +785,23 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         try {
             double serial = Double.parseDouble(normalized);
             if (DateUtil.isValidExcelDate(serial)) {
-                return DateUtil.getJavaDate(serial).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+                return supportedDateOrNull(DateUtil.getJavaDate(serial)
+                        .toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate());
             }
         } catch (NumberFormatException ignored) {
             // Not an Excel serial date.
         }
         return null;
+    }
+
+    private LocalDate supportedDateOrNull(LocalDate date) {
+        return isSupportedDate(date) ? date : null;
+    }
+
+    private boolean isSupportedDate(LocalDate date) {
+        return date != null && !date.isBefore(MIN_SUPPORTED_DATE) && !date.isAfter(MAX_SUPPORTED_DATE);
     }
 
     private String toJson(Map<String, Integer> value) {
@@ -880,19 +1002,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int totalPairs,
             int cartonStart,
             int cartonEnd,
-            int lengthValue,
-            int widthValue,
-            int heightValue,
-            int netWeight,
-            int grossWeight,
-            int measurement,
-            int totalNetWeight,
-            int totalGrossWeight,
-            int totalCbm,
-            int gender,
-            int productType,
-            int upperMaterial,
-            int soleMaterial,
             int sizeStart,
             int sizeEnd,
             int dataEnd
@@ -914,26 +1023,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int totalPairs = findColumnContains(header, "TTLPRS", "TOTALPRS", "总数量");
             int cartonStart = findColumnContains(header, "CTNSTART", "开始箱号");
             int cartonEnd = findColumnContains(header, "CTNEND", "结束箱号");
-            int lengthValue = findColumnExact(header, "L");
-            int widthValue = findColumnExact(header, "W");
-            int heightValue = findColumnExact(header, "H");
-            int netWeight = findColumnContains(header, "NW(KGS)", "净重");
-            int grossWeight = findColumnContains(header, "GW(KGS)", "毛重");
-            int measurement = findColumnExact(header, "MEA");
-            int totalNetWeight = findColumnContains(header, "TOTALNW", "总净重");
-            int totalGrossWeight = findColumnContains(header, "TOTALGW", "总毛重");
-            int totalCbm = findColumnContains(header, "TOTALCBM", "总体积");
-            int gender = findColumnContains(header, "GENDER", "鞋类");
-            int productType = findColumnContains(header, "PRODUCTTYPE", "产品类型");
-            int upperMaterial = findColumnContains(header, "UPPERMATERIAL", "鞋邦材质", "鞋帮材质");
-            int soleMaterial = findColumnContains(header, "SOLEMATERIAL", "鞋底材质");
             int firstSummary = firstPositive(pairs, cartonCount, totalPairs, cartonStart, cartonEnd);
             int sizeStart = trademark >= 0 ? trademark + 1 : -1;
             int sizeEnd = sizeStart >= 0 && firstSummary > sizeStart ? firstSummary - 1 : sizeStart - 1;
-            int dataEnd = Math.max(
-                    firstPositive(Integer.MAX_VALUE, soleMaterial),
-                    Math.max(cartonEnd, Math.max(totalPairs, Math.max(cartonCount, Math.max(pairs, sizeEnd))))
-            );
+            int dataEnd = Math.max(cartonEnd, Math.max(totalPairs, Math.max(cartonCount, Math.max(pairs, sizeEnd))));
             if (dataEnd == Integer.MAX_VALUE || dataEnd < 0) {
                 dataEnd = header == null ? 0 : Math.max(0, header.getLastCellNum() - 1);
             }
@@ -954,19 +1047,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                     totalPairs,
                     cartonStart,
                     cartonEnd,
-                    lengthValue,
-                    widthValue,
-                    heightValue,
-                    netWeight,
-                    grossWeight,
-                    measurement,
-                    totalNetWeight,
-                    totalGrossWeight,
-                    totalCbm,
-                    gender,
-                    productType,
-                    upperMaterial,
-                    soleMaterial,
                     sizeStart,
                     sizeEnd,
                     dataEnd
@@ -977,6 +1057,14 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int first = firstPositive(image, companyStyleNo, customer, customerOrderNo);
             return first < 0 ? 0 : first;
         }
+    }
+
+    private record OrderSheetImport(OrderRecord order, List<OrderRecordDetail> details) {
+    }
+
+    @FunctionalInterface
+    private interface DetailRowMapper<D> {
+        D map(Row row, int rowIndex, int lineNo);
     }
 
     private record PictureInfo(byte[] bytes, String extension) {

@@ -57,7 +57,8 @@ public class OrderController {
             @RequestParam(required = false) String orderNo,
             @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String developmentNo,
-            @RequestParam(required = false) String recognitionStatus,
+            @RequestParam(required = false) String orderRecognitionStatus,
+            @RequestParam(required = false) String packingRecognitionStatus,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size
     ) {
@@ -66,10 +67,21 @@ public class OrderController {
                 orderNo,
                 customerName,
                 developmentNo,
-                recognitionStatus,
+                orderRecognitionStatus,
+                packingRecognitionStatus,
                 page,
                 size
         ));
+    }
+
+    @PostMapping("/{id}/recognize-order")
+    public ApiResponse<OrderRecordResponse> recognizeOrder(@PathVariable Long id) {
+        return ApiResponse.ok(orderService.recognizeOrder(id));
+    }
+
+    @PostMapping("/{id}/recognize-packing")
+    public ApiResponse<OrderRecordResponse> recognizePacking(@PathVariable Long id) {
+        return ApiResponse.ok(orderService.recognizePacking(id));
     }
 
     @GetMapping("/{id}/details")

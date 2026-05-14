@@ -1,7 +1,8 @@
-import { EyeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { EyeOutlined, FileSearchOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
+  Collapse,
   Form,
   Image,
   Input,
@@ -14,7 +15,14 @@ import {
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders, toAssetUrl } from "../api/orderApi";
+import {
+  fetchOrderDetails,
+  fetchOrderPackingDetails,
+  fetchOrders,
+  recognizeOrder,
+  recognizePacking,
+  toAssetUrl,
+} from "../api/orderApi";
 import type {
   OrderDetailProcess,
   OrderPackingDetail,
@@ -25,17 +33,24 @@ import type {
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
-  // 筛选表单字段，提交时会转换成后端查询参数。
   orderNo?: string;
   customerName?: string;
   developmentNo?: string;
-  recognitionStatus?: string;
+  orderRecognitionStatus?: string;
+  packingRecognitionStatus?: string;
 }
 
-type DetailMode = "ORDER" | "PACKING";
+const RECOGNIZED_STATUS = 1;
+const FAILED_STATUS = 3;
+
+const recognitionOptions = [
+  { label: "待识别", value: "0" },
+  { label: "已识别", value: "1" },
+  { label: "待人工处理", value: "2" },
+  { label: "识别失败", value: "3" },
+];
 
 function renderDevelopmentNos(values?: string[]) {
-  // 开发编号在主表里是汇总字段，页面拆成标签便于扫读。
   if (!values || values.length === 0) {
     return "-";
   }
@@ -50,7 +65,7 @@ function renderDevelopmentNos(values?: string[]) {
 
 function renderRecognitionStatus(statusText?: string, errorMessage?: string) {
   if (errorMessage) {
-    return <Tag color="red">{statusText || "异常"}</Tag>;
+    return <Tag color="red">{statusText || "识别失败"}</Tag>;
   }
   const color = statusText === "已识别" ? "green" : statusText === "识别失败" ? "red" : "gold";
   return <Tag color={color}>{statusText || "待识别"}</Tag>;
@@ -66,7 +81,6 @@ function renderPrintFlags(record: OrderRecord) {
 }
 
 function renderSizeQuantities(value?: Record<string, number>) {
-  // 尺码数量由后端 JSON 转成对象，例如 {"35": 10, "36": 20}。
   const entries = Object.entries(value || {})
     .filter(([, count]) => Number(count) > 0)
     .sort(([left], [right]) => compareSizes(left, right));
@@ -95,7 +109,7 @@ function compareSizes(left: string, right: string) {
 }
 
 function parseSizeValue(value: string) {
-  const normalized = value.trim().replace("½", ".5");
+  const normalized = value.trim().replace("陆", ".5");
   const match = normalized.match(/\d+(?:\.\d+)?/);
   return match ? Number(match[0]) : null;
 }
@@ -123,14 +137,15 @@ export default function OrderWorkspacePage() {
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
   const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
   const [loading, setLoading] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
+  const [packingDetailLoading, setPackingDetailLoading] = useState(false);
   const [activeOrder, setActiveOrder] = useState<OrderRecord | null>(null);
-  const [activeDetailMode, setActiveDetailMode] = useState<DetailMode>("ORDER");
+  const [activePanelKeys, setActivePanelKeys] = useState<string[]>([]);
+  const [recognizingKey, setRecognizingKey] = useState("");
   const [query, setQuery] = useState<OrderRecordQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
 
   const loadOrders = useCallback(async (params: OrderRecordQueryParams) => {
-    // 按当前筛选和分页参数加载订单主表。
     setLoading(true);
     try {
       const page = await fetchOrders(params);
@@ -154,7 +169,8 @@ export default function OrderWorkspacePage() {
       orderNo: values.orderNo,
       customerName: values.customerName,
       developmentNo: values.developmentNo,
-      recognitionStatus: values.recognitionStatus,
+      orderRecognitionStatus: values.orderRecognitionStatus,
+      packingRecognitionStatus: values.packingRecognitionStatus,
       page: 1,
       size: query.size ?? 20,
     });
@@ -165,107 +181,147 @@ export default function OrderWorkspacePage() {
     setQuery({ page: 1, size: query.size ?? 20 });
   };
 
-  const openOrderDetails = useCallback(async (order: OrderRecord) => {
+  const updateOrderInList = useCallback((next: OrderRecord) => {
+    setOrders((prev) => prev.map((item) => (item.id === next.id ? { ...item, ...next } : item)));
+    setActiveOrder((prev) => (prev && prev.id === next.id ? { ...prev, ...next } : prev));
+  }, []);
+
+  const runRecognition = useCallback(async (order: OrderRecord, type: "ORDER" | "PACKING") => {
+    const key = `${order.id}-${type}`;
+    setRecognizingKey(key);
+    try {
+      const next = type === "ORDER" ? await recognizeOrder(order.id) : await recognizePacking(order.id);
+      updateOrderInList(next);
+      if (type === "ORDER") {
+        setDetails([]);
+      } else {
+        setPackingDetails([]);
+      }
+      const failed = type === "ORDER"
+        ? next.orderRecognitionStatus === FAILED_STATUS
+        : next.packingRecognitionStatus === FAILED_STATUS;
+      const errorMessage = type === "ORDER" ? next.orderErrorMessage : next.packingErrorMessage;
+      if (failed) {
+        message.error(errorMessage || `${type === "ORDER" ? "订单" : "装箱单"}识别失败`);
+      } else {
+        message.success(`${type === "ORDER" ? "订单" : "装箱单"}识别完成`);
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "识别失败");
+    } finally {
+      setRecognizingKey("");
+    }
+  }, [message, updateOrderInList]);
+
+  const openDetails = useCallback((order: OrderRecord) => {
     setActiveOrder(order);
-    setActiveDetailMode("ORDER");
     setDetails([]);
     setPackingDetails([]);
-    setDetailLoading(true);
+    setActivePanelKeys([]);
+  }, []);
+
+  const loadOrderDetails = useCallback(async (order: OrderRecord) => {
+    setOrderDetailLoading(true);
     try {
       setDetails(await fetchOrderDetails(order.id));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "订单详情加载失败");
+      setDetails([]);
+      message.error(error instanceof Error ? error.message : "订单明细加载失败");
     } finally {
-      setDetailLoading(false);
+      setOrderDetailLoading(false);
     }
   }, [message]);
 
-  const openPackingDetails = useCallback(async (order: OrderRecord) => {
-    setActiveOrder(order);
-    setActiveDetailMode("PACKING");
-    setDetails([]);
-    setPackingDetails([]);
-    setDetailLoading(true);
+  const loadPackingDetails = useCallback(async (order: OrderRecord) => {
+    setPackingDetailLoading(true);
     try {
       setPackingDetails(await fetchOrderPackingDetails(order.id));
     } catch (error) {
+      setPackingDetails([]);
       message.error(error instanceof Error ? error.message : "装箱单明细加载失败");
     } finally {
-      setDetailLoading(false);
+      setPackingDetailLoading(false);
     }
   }, [message]);
 
+  const handleDetailPanelsChange = useCallback((keys: string | string[]) => {
+    const nextKeys = Array.isArray(keys) ? keys : [keys];
+    setActivePanelKeys(nextKeys);
+    if (!activeOrder) {
+      return;
+    }
+    if (nextKeys.includes("ORDER") && details.length === 0 && !orderDetailLoading) {
+      void loadOrderDetails(activeOrder);
+    }
+    if (nextKeys.includes("PACKING") && packingDetails.length === 0 && !packingDetailLoading) {
+      void loadPackingDetails(activeOrder);
+    }
+  }, [
+    activeOrder,
+    details.length,
+    loadOrderDetails,
+    loadPackingDetails,
+    orderDetailLoading,
+    packingDetailLoading,
+    packingDetails.length,
+  ]);
+
   const columns = useMemo<ColumnsType<OrderRecord>>(
     () => [
+      { title: "订单流水号", dataIndex: "orderNo", width: 170, fixed: "left", render: formatEmpty },
+      { title: "客户", dataIndex: "customerName", width: 140, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNoList", minWidth: 220, render: renderDevelopmentNos },
+      { title: "订单总双数", dataIndex: "totalQuantity", width: 120, align: "right", render: formatEmpty },
+      { title: "总箱数", dataIndex: "totalCartonCount", width: 100, align: "right", render: formatEmpty },
       {
-        title: "订单流水号",
-        dataIndex: "orderNo",
-        width: 150,
-        fixed: "left",
-        render: formatEmpty,
-      },
-      {
-        title: "客户",
-        dataIndex: "customerName",
-        width: 150,
-        render: formatEmpty,
-      },
-      {
-        title: "开发编号",
-        dataIndex: "developmentNoList",
-        minWidth: 260,
-        render: renderDevelopmentNos,
-      },
-      {
-        title: "订单总对数",
-        dataIndex: "totalQuantity",
+        title: "订单识别",
+        dataIndex: "orderRecognitionStatusText",
         width: 120,
-        align: "right",
-        render: formatEmpty,
+        render: (value: string, record) => renderRecognitionStatus(value, record.orderErrorMessage),
       },
       {
-        title: "总箱数",
-        dataIndex: "totalCartonCount",
-        width: 100,
-        align: "right",
-        render: formatEmpty,
+        title: "装箱单识别",
+        dataIndex: "packingRecognitionStatusText",
+        width: 130,
+        render: (value: string, record) => renderRecognitionStatus(value, record.packingErrorMessage),
       },
-      {
-        title: "识别状态",
-        dataIndex: "recognitionStatusText",
-        width: 120,
-        render: (value: string, record) => renderRecognitionStatus(value, record.errorMessage),
-      },
-      {
-        title: "打印",
-        key: "printed",
-        width: 140,
-        render: (_, record) => renderPrintFlags(record),
-      },
-      {
-        title: "上传时间",
-        dataIndex: "createdAt",
-        width: 170,
-        render: formatDateTime,
-      },
+      { title: "打印", key: "printed", width: 140, render: (_, record) => renderPrintFlags(record) },
+      { title: "上传时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
       {
         title: "操作",
         key: "actions",
-        width: 240,
+        width: 430,
         fixed: "right",
-        render: (_, record) => (
-          <Space>
-            <Button icon={<EyeOutlined />} onClick={() => void openOrderDetails(record)}>
-              订单明细
-            </Button>
-            <Button icon={<EyeOutlined />} onClick={() => void openPackingDetails(record)}>
-              装箱单明细
-            </Button>
-          </Space>
-        ),
+        render: (_, record) => {
+          const orderRecognized = record.orderRecognitionStatus === RECOGNIZED_STATUS;
+          const packingRecognized = record.packingRecognitionStatus === RECOGNIZED_STATUS;
+          return (
+            <Space wrap>
+              <Button
+                icon={<FileSearchOutlined />}
+                loading={recognizingKey === `${record.id}-ORDER`}
+                disabled={Boolean(recognizingKey) && recognizingKey !== `${record.id}-ORDER`}
+                onClick={() => void runRecognition(record, "ORDER")}
+              >
+                {orderRecognized ? "重新识别订单" : "识别订单"}
+              </Button>
+              <Button
+                icon={<FileSearchOutlined />}
+                loading={recognizingKey === `${record.id}-PACKING`}
+                disabled={Boolean(recognizingKey) && recognizingKey !== `${record.id}-PACKING`}
+                onClick={() => void runRecognition(record, "PACKING")}
+              >
+                {packingRecognized ? "重新识别装箱单" : "识别装箱单"}
+              </Button>
+              <Button icon={<EyeOutlined />} onClick={() => openDetails(record)}>
+                查看明细
+              </Button>
+            </Space>
+          );
+        },
       },
     ],
-    [openOrderDetails, openPackingDetails],
+    [openDetails, recognizingKey, runRecognition],
   );
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
@@ -277,13 +333,7 @@ export default function OrderWorkspacePage() {
         fixed: "left",
         render: (value: string) =>
           value ? (
-            <Image
-              src={toAssetUrl(value)}
-              width={58}
-              height={44}
-              className="order-image"
-              preview={{ mask: "查看" }}
-            />
+            <Image src={toAssetUrl(value)} width={58} height={44} className="order-image" preview={{ mask: "查看" }} />
           ) : (
             <Tag>无图</Tag>
           ),
@@ -303,12 +353,7 @@ export default function OrderWorkspacePage() {
       { title: "中底/包中底", dataIndex: "insolePlatform", width: 150, render: formatEmpty },
       { title: "大底", dataIndex: "outsole", width: 260, render: formatEmpty },
       { title: "商标", dataIndex: "trademark", width: 150, render: formatEmpty },
-      {
-        title: "尺码数量",
-        dataIndex: "sizeQuantities",
-        width: 240,
-        render: renderSizeQuantities,
-      },
+      { title: "尺码数量", dataIndex: "sizeQuantities", width: 240, render: renderSizeQuantities },
       { title: "双数", dataIndex: "quantity", width: 90, align: "right", render: formatEmpty },
       { title: "箱数", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
       { title: "盒规", dataIndex: "boxSpec", width: 120, render: formatEmpty },
@@ -325,13 +370,7 @@ export default function OrderWorkspacePage() {
         fixed: "left",
         render: (value: string) =>
           value ? (
-            <Image
-              src={toAssetUrl(value)}
-              width={58}
-              height={44}
-              className="order-image"
-              preview={{ mask: "查看" }}
-            />
+            <Image src={toAssetUrl(value)} width={58} height={44} className="order-image" preview={{ mask: "查看" }} />
           ) : (
             <Tag>无图</Tag>
           ),
@@ -346,13 +385,7 @@ export default function OrderWorkspacePage() {
       { title: "面料材质", dataIndex: "material", width: 150, render: formatEmpty },
       { title: "项目编号", dataIndex: "itemNumber", width: 130, render: formatEmpty },
       { title: "商标", dataIndex: "trademark", width: 120, render: formatEmpty },
-      {
-        title: "尺码数量",
-        dataIndex: "sizeQuantities",
-        width: 260,
-        render: renderSizeQuantities,
-      },
-      { title: "PRS", dataIndex: "pairs", width: 80, align: "right", render: formatEmpty },
+      { title: "尺码数量", dataIndex: "sizeQuantities", width: 260, render: renderSizeQuantities },
       { title: "CTNS", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
       { title: "TTL PRS", dataIndex: "totalPairs", width: 100, align: "right", render: formatEmpty },
       { title: "开始箱号", dataIndex: "cartonStart", width: 120, render: formatEmpty },
@@ -369,28 +402,19 @@ export default function OrderWorkspacePage() {
     showTotal: (count) => `共 ${count} 条`,
   };
 
-  const detailTitle = activeOrder
-    ? `${activeDetailMode === "PACKING" ? "装箱单明细" : "订单明细"}：${activeOrder.orderNo || activeOrder.id}`
-    : "订单明细";
-
   return (
     <div className="workspace">
       <div className="toolbar-band">
         <div>
           <Typography.Title level={3}>订单列表</Typography.Title>
           <Typography.Text type="secondary">
-            主表展示订单汇总，可分别查看订单明细和装箱单明细。
+            上传后先进入待识别状态，按需要分别识别订单明细和装箱单明细。
           </Typography.Text>
         </div>
       </div>
 
       <div className="page-panel">
-        <Form
-          form={form}
-          layout="inline"
-          className="filter-form"
-          onFinish={submitFilters}
-        >
+        <Form form={form} layout="inline" className="filter-form" onFinish={submitFilters}>
           <Form.Item name="orderNo" label="订单流水号">
             <Input allowClear placeholder="订单流水号" />
           </Form.Item>
@@ -400,18 +424,11 @@ export default function OrderWorkspacePage() {
           <Form.Item name="developmentNo" label="开发编号">
             <Input allowClear placeholder="开发编号" />
           </Form.Item>
-          <Form.Item name="recognitionStatus" label="识别状态">
-            <Select
-              allowClear
-              className="status-select"
-              placeholder="全部"
-              options={[
-                { label: "待识别", value: "0" },
-                { label: "已识别", value: "1" },
-                { label: "待人工处理", value: "2" },
-                { label: "识别失败", value: "3" },
-              ]}
-            />
+          <Form.Item name="orderRecognitionStatus" label="订单识别">
+            <Select allowClear className="status-select" placeholder="全部" options={recognitionOptions} />
+          </Form.Item>
+          <Form.Item name="packingRecognitionStatus" label="装箱单识别">
+            <Select allowClear className="status-select" placeholder="全部" options={recognitionOptions} />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -432,10 +449,9 @@ export default function OrderWorkspacePage() {
           columns={columns}
           dataSource={orders}
           pagination={pagination}
-          scroll={{ x: 1440 }}
+          scroll={{ x: 1710 }}
           className="data-table"
           onChange={(nextPagination) => {
-            // Ant Design 分页变化后，只更新 page/size，保留当前筛选条件。
             setQuery((prev) => ({
               ...prev,
               page: nextPagination.current ?? 1,
@@ -447,42 +463,58 @@ export default function OrderWorkspacePage() {
 
       <Modal
         open={Boolean(activeOrder)}
-        title={detailTitle}
+        title={activeOrder ? `订单明细：${activeOrder.orderNo || activeOrder.id}` : "订单明细"}
         onCancel={() => {
           setActiveOrder(null);
           setDetails([]);
           setPackingDetails([]);
+          setActivePanelKeys([]);
         }}
-        width="82vw"
+        width="84vw"
         footer={null}
         className="order-detail-modal"
         destroyOnClose
       >
-        {activeDetailMode === "PACKING" ? (
-          <Table
-            rowKey="id"
-            loading={detailLoading}
-            columns={packingDetailColumns}
-            dataSource={packingDetails}
-            pagination={false}
-            scroll={{ x: 2220 }}
-            className="data-table"
-          />
-        ) : (
-          <Table
-            rowKey="id"
-            loading={detailLoading}
-            columns={detailColumns}
-            dataSource={details}
-            pagination={false}
-            scroll={{ x: 3090 }}
-            className="data-table"
-            expandable={{
-              expandedRowRender: (record) => renderProcesses(record.processes),
-              rowExpandable: () => true,
-            }}
-          />
-        )}
+        <Collapse
+          activeKey={activePanelKeys}
+          onChange={handleDetailPanelsChange}
+          items={[
+            {
+              key: "ORDER",
+              label: "订单明细",
+              children: (
+                <Table
+                  rowKey="id"
+                  loading={orderDetailLoading}
+                  columns={detailColumns}
+                  dataSource={details}
+                  pagination={{ pageSize: 5, showSizeChanger: false }}
+                  scroll={{ x: 3090 }}
+                  className="data-table"
+                  expandable={{
+                    expandedRowRender: (record) => renderProcesses(record.processes),
+                    rowExpandable: () => true,
+                  }}
+                />
+              ),
+            },
+            {
+              key: "PACKING",
+              label: "装箱单明细",
+              children: (
+                <Table
+                  rowKey="id"
+                  loading={packingDetailLoading}
+                  columns={packingDetailColumns}
+                  dataSource={packingDetails}
+                  pagination={{ pageSize: 5, showSizeChanger: false }}
+                  scroll={{ x: 2140 }}
+                  className="data-table"
+                />
+              ),
+            },
+          ]}
+        />
       </Modal>
     </div>
   );

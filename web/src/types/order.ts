@@ -60,8 +60,14 @@ export interface OrderRecord {
   sourceTypeText?: string;
   recognitionStatus?: number;
   recognitionStatusText?: string;
+  orderRecognitionStatus?: number;
+  orderRecognitionStatusText?: string;
+  packingRecognitionStatus?: number;
+  packingRecognitionStatusText?: string;
   remark?: string;
   errorMessage?: string;
+  orderErrorMessage?: string;
+  packingErrorMessage?: string;
   createdAt?: string;
 }
 
@@ -70,7 +76,8 @@ export interface OrderRecordQueryParams {
   orderNo?: string;
   customerName?: string;
   developmentNo?: string;
-  recognitionStatus?: string;
+  orderRecognitionStatus?: string;
+  packingRecognitionStatus?: string;
   page?: number;
   size?: number;
 }
@@ -140,24 +147,10 @@ export interface OrderPackingDetail {
   itemNumber?: string;
   trademark?: string;
   sizeQuantities?: Record<string, number>;
-  pairs?: number;
   cartonCount?: number;
   totalPairs?: number;
   cartonStart?: string;
   cartonEnd?: string;
-  lengthValue?: string;
-  widthValue?: string;
-  heightValue?: string;
-  netWeight?: string;
-  grossWeight?: string;
-  measurement?: string;
-  totalNetWeight?: string;
-  totalGrossWeight?: string;
-  totalCbm?: string;
-  gender?: string;
-  productType?: string;
-  upperMaterial?: string;
-  soleMaterial?: string;
   sourceSheetName?: string;
   rowIndex?: number;
   remark?: string;

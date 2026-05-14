@@ -1,0 +1,15 @@
+ALTER TABLE `order_packing_detail`
+  DROP COLUMN `pairs`,
+  DROP COLUMN `length_value`,
+  DROP COLUMN `width_value`,
+  DROP COLUMN `height_value`,
+  DROP COLUMN `net_weight`,
+  DROP COLUMN `gross_weight`,
+  DROP COLUMN `measurement`,
+  DROP COLUMN `total_net_weight`,
+  DROP COLUMN `total_gross_weight`,
+  DROP COLUMN `total_cbm`,
+  DROP COLUMN `gender`,
+  DROP COLUMN `product_type`,
+  DROP COLUMN `upper_material`,
+  DROP COLUMN `sole_material`;
