@@ -23,94 +23,185 @@ a {
   text-decoration: none;
 }
 
-/* App shell and top navigation. */
+/* App shell: sidebar, top path bar, and tab strip. */
 .app-shell {
   min-height: 100vh;
-  background: #f4f6f8;
+  background: #f3f5f8;
 }
 
-.app-header {
+.app-sider {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+  background: #061524;
+  border-right: 1px solid #102235;
+}
+
+.app-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-sider .ant-menu {
+  flex: 1;
+  padding: 6px 8px;
+  background: transparent;
+}
+
+.app-sider .ant-menu-item {
+  height: 42px;
+  margin: 4px 0;
+  border-radius: 4px;
+}
+
+.app-sider .ant-menu-item-selected {
+  background: #2f63c7;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 16px 18px;
+  color: #ffffff;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  background: #2f6df6;
+  border-radius: 4px;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-title.ant-typography {
+  margin: 0;
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.brand-subtitle {
+  display: block;
+  margin-top: 3px;
+  color: #8da0b8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ant-layout-sider-collapsed .brand {
+  justify-content: center;
+  padding: 16px 0;
+}
+
+.ant-layout-sider-collapsed .brand-copy {
+  display: none;
+}
+
+.main-shell {
+  min-width: 0;
+  background: #f3f5f8;
+}
+
+.app-topbar {
   position: sticky;
   top: 0;
   z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  height: auto;
-  min-height: 76px;
-  padding: 14px 28px;
+  height: 52px;
+  padding: 0 18px;
   background: #ffffff;
-  border-bottom: 1px solid #e1e6ee;
-  line-height: 1.2;
+  border-bottom: 1px solid #dde3eb;
+  line-height: 1;
 }
 
-.brand {
+.topbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-width: 260px;
+  gap: 10px;
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  color: #ffffff;
-  font-size: 20px;
-  font-weight: 700;
-  background: #1f6feb;
-  border-radius: 8px;
+.topbar-title {
+  color: #344054;
+  font-weight: 600;
 }
 
-.brand-title.ant-typography {
+.app-tabs {
+  position: sticky;
+  top: 52px;
+  z-index: 19;
+  padding: 6px 18px 0;
+  background: #ffffff;
+  border-bottom: 1px solid #dde3eb;
+}
+
+.app-tabs .ant-tabs-nav {
   margin: 0;
 }
 
-.brand-subtitle {
-  display: block;
-  margin-top: 4px;
-  color: #667085;
-  font-size: 13px;
+.app-tabs .ant-tabs-tab {
+  padding: 8px 14px;
+  border-radius: 4px 4px 0 0;
 }
 
-.top-nav {
-  justify-content: flex-end;
+.app-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin-left: 6px;
 }
 
 .app-content {
-  width: min(1480px, 100%);
-  margin: 0 auto;
-  padding: 24px 28px 36px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 18px 28px;
 }
 
 /* Shared page layout used by the order list and print task list. */
 .workspace {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 
 .toolbar-band {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 4px 0;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid #dde3eb;
+  border-radius: 4px;
 }
 
 .toolbar-band .ant-typography {
   margin-top: 0;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.toolbar-band h3.ant-typography {
+  font-size: 18px;
+  line-height: 1.35;
 }
 
 .page-panel {
-  padding: 18px;
+  padding: 10px;
   background: #ffffff;
-  border: 1px solid #e3e8ef;
-  border-radius: 8px;
+  border: 1px solid #dde3eb;
+  border-radius: 4px;
 }
 
 .page-alert {
@@ -118,33 +209,65 @@ a {
 }
 
 .filter-form {
-  gap: 10px 0;
-  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 10px 18px;
+  margin-bottom: 10px;
 }
 
 .filter-form .ant-form-item {
   margin-bottom: 0;
+  margin-inline-end: 0;
+}
+
+.filter-form .ant-form-item-label > label {
+  font-weight: 600;
+}
+
+.filter-form .ant-form-item-control {
+  min-width: 0;
 }
 
 /* Fixed widths keep filter controls from jumping when text changes. */
 .status-select {
-  width: 130px;
+  width: 100%;
 }
 
 .style-cascader {
-  min-width: 190px;
+  min-width: 100%;
+}
+
+.filter-form .ant-input,
+.filter-form .ant-select,
+.filter-form .ant-picker,
+.filter-form .ant-cascader {
+  width: 100%;
 }
 
 .data-table {
-  border: 1px solid #e5eaf1;
-  border-radius: 8px;
+  border: 1px solid #dde3eb;
+  border-radius: 4px;
   overflow: hidden;
 }
 
+.data-table .ant-table {
+  font-size: 14px;
+}
+
+.data-table .ant-table-thead > tr > th,
+.data-table .ant-table-tbody > tr > td {
+  padding: 12px 14px;
+}
+
 .data-table .ant-table-thead > tr > th {
-  color: #344054;
+  color: #111827;
   font-weight: 700;
-  background: #f8fafc;
+  background: #f3f4f6;
+  border-color: #d9dee7;
+}
+
+.data-table .ant-table-tbody > tr > td {
+  border-color: #e1e5ec;
 }
 
 .order-detail-modal {
@@ -165,7 +288,7 @@ a {
 }
 
 .order-detail-modal .ant-modal-body {
-  padding: 30px;
+  padding: 22px;
 }
 
 .order-detail-modal .ant-modal-close {
@@ -255,16 +378,23 @@ a {
   border-radius: 8px;
 }
 
-/* Mobile layout: stack toolbar, nav, and filters into one column. */
+/* Mobile layout: keep the same shell but let controls stack cleanly. */
 @media (max-width: 920px) {
-  .app-header {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 14px 16px;
+  .app-topbar {
+    padding: 0 12px;
+  }
+
+  .topbar-title {
+    display: none;
+  }
+
+  .app-tabs {
+    top: 52px;
+    padding: 6px 12px 0;
   }
 
   .app-content {
-    padding: 18px 14px 28px;
+    padding: 10px 12px 24px;
   }
 
   .toolbar-band {
@@ -272,24 +402,16 @@ a {
     flex-direction: column;
   }
 
-  .top-nav,
   .toolbar-band .ant-upload,
   .toolbar-band button {
     width: 100%;
   }
 
-  .top-nav .ant-space-item,
-  .top-nav a,
-  .top-nav button {
-    width: 100%;
-  }
-
   .page-panel {
-    padding: 14px;
+    padding: 10px;
   }
 
   .filter-form {
-    display: grid;
     grid-template-columns: 1fr;
   }
 

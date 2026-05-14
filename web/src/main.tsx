@@ -14,19 +14,19 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       theme={{
         token: {
           colorPrimary: "#1677ff",
-          borderRadius: 6,
-          fontSize: 16,
+          borderRadius: 4,
+          fontSize: 14,
         },
         components: {
           Button: {
-            controlHeight: 44,
-            paddingInline: 18,
+            controlHeight: 32,
+            paddingInline: 14,
           },
           Input: {
-            controlHeight: 42,
+            controlHeight: 32,
           },
           Select: {
-            controlHeight: 42,
+            controlHeight: 32,
           },
         },
       }}

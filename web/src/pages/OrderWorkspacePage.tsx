@@ -1,8 +1,9 @@
-import { EyeOutlined, FileSearchOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { DownOutlined, EyeOutlined, FileSearchOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   App,
   Button,
   Collapse,
+  Dropdown,
   Form,
   Image,
   Input,
@@ -13,6 +14,7 @@ import {
   Tag,
   Typography,
 } from "antd";
+import type { MenuProps } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -40,7 +42,6 @@ interface FilterValues {
   packingRecognitionStatus?: string;
 }
 
-const RECOGNIZED_STATUS = 1;
 const FAILED_STATUS = 3;
 
 const recognitionOptions = [
@@ -63,12 +64,38 @@ function renderDevelopmentNos(values?: string[]) {
   );
 }
 
-function renderRecognitionStatus(statusText?: string, errorMessage?: string) {
-  if (errorMessage) {
-    return <Tag color="red">{statusText || "识别失败"}</Tag>;
+function getRecognitionStatusColor(statusText?: string, errorMessage?: string) {
+  if (errorMessage || statusText === "识别失败") {
+    return "red";
   }
-  const color = statusText === "已识别" ? "green" : statusText === "识别失败" ? "red" : "gold";
-  return <Tag color={color}>{statusText || "待识别"}</Tag>;
+  if (statusText === "已识别") {
+    return "green";
+  }
+  if (statusText === "待人工处理") {
+    return "orange";
+  }
+  return "gold";
+}
+
+function renderRecognitionFlags(record: OrderRecord) {
+  const orderStatusText = record.orderRecognitionStatusText || "待识别";
+  const packingStatusText = record.packingRecognitionStatusText || "待识别";
+  return (
+    <Space size={[4, 4]} wrap>
+      <Tag
+        color={getRecognitionStatusColor(orderStatusText, record.orderErrorMessage)}
+        title={record.orderErrorMessage || undefined}
+      >
+        订单：{orderStatusText}
+      </Tag>
+      <Tag
+        color={getRecognitionStatusColor(packingStatusText, record.packingErrorMessage)}
+        title={record.packingErrorMessage || undefined}
+      >
+        装箱单：{packingStatusText}
+      </Tag>
+    </Space>
+  );
 }
 
 function renderPrintFlags(record: OrderRecord) {
@@ -274,45 +301,38 @@ export default function OrderWorkspacePage() {
       { title: "订单总双数", dataIndex: "totalQuantity", width: 120, align: "right", render: formatEmpty },
       { title: "总箱数", dataIndex: "totalCartonCount", width: 100, align: "right", render: formatEmpty },
       {
-        title: "订单识别",
-        dataIndex: "orderRecognitionStatusText",
-        width: 120,
-        render: (value: string, record) => renderRecognitionStatus(value, record.orderErrorMessage),
-      },
-      {
-        title: "装箱单识别",
-        dataIndex: "packingRecognitionStatusText",
-        width: 130,
-        render: (value: string, record) => renderRecognitionStatus(value, record.packingErrorMessage),
+        title: "识别状态",
+        key: "recognitionStatus",
+        width: 220,
+        render: (_, record) => renderRecognitionFlags(record),
       },
       { title: "打印", key: "printed", width: 140, render: (_, record) => renderPrintFlags(record) },
       { title: "上传时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
       {
         title: "操作",
         key: "actions",
-        width: 430,
+        width: 240,
         fixed: "right",
         render: (_, record) => {
-          const orderRecognized = record.orderRecognitionStatus === RECOGNIZED_STATUS;
-          const packingRecognized = record.packingRecognitionStatus === RECOGNIZED_STATUS;
+          const recognitionLoading =
+            recognizingKey === `${record.id}-ORDER` || recognizingKey === `${record.id}-PACKING`;
+          const recognitionDisabled = Boolean(recognizingKey) && !recognitionLoading;
+          const recognitionMenu: MenuProps = {
+            items: [
+              { key: "ORDER", icon: <FileSearchOutlined />, label: "订单" },
+              { key: "PACKING", icon: <FileSearchOutlined />, label: "装箱单" },
+            ],
+            onClick: ({ key }) => {
+              void runRecognition(record, key === "PACKING" ? "PACKING" : "ORDER");
+            },
+          };
           return (
             <Space wrap>
-              <Button
-                icon={<FileSearchOutlined />}
-                loading={recognizingKey === `${record.id}-ORDER`}
-                disabled={Boolean(recognizingKey) && recognizingKey !== `${record.id}-ORDER`}
-                onClick={() => void runRecognition(record, "ORDER")}
-              >
-                {orderRecognized ? "重新识别订单" : "识别订单"}
-              </Button>
-              <Button
-                icon={<FileSearchOutlined />}
-                loading={recognizingKey === `${record.id}-PACKING`}
-                disabled={Boolean(recognizingKey) && recognizingKey !== `${record.id}-PACKING`}
-                onClick={() => void runRecognition(record, "PACKING")}
-              >
-                {packingRecognized ? "重新识别装箱单" : "识别装箱单"}
-              </Button>
+              <Dropdown menu={recognitionMenu} trigger={["click"]} disabled={recognitionDisabled}>
+                <Button icon={<FileSearchOutlined />} loading={recognitionLoading} disabled={recognitionDisabled}>
+                  识别 <DownOutlined />
+                </Button>
+              </Dropdown>
               <Button icon={<EyeOutlined />} onClick={() => openDetails(record)}>
                 查看明细
               </Button>
@@ -449,7 +469,7 @@ export default function OrderWorkspacePage() {
           columns={columns}
           dataSource={orders}
           pagination={pagination}
-          scroll={{ x: 1710 }}
+          scroll={{ x: 1490 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({

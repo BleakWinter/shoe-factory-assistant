@@ -306,7 +306,6 @@ export default function PrintTaskListPage() {
           <Upload {...uploadProps}>
             <Button
               type="primary"
-              size="large"
               loading={uploading}
               icon={<InboxOutlined />}
             >
