@@ -1,5 +1,6 @@
 package com.shoefactory.assistant.service;
 
+import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.StyleConfigResponse;
 import com.shoefactory.assistant.dto.StyleConfigSaveRequest;
@@ -10,7 +11,7 @@ import java.util.List;
 public interface StyleConfigService {
 
     PageResponse<StyleConfigResponse> listStyleConfigs(
-            String developmentNo,
+            String developmentNos,
             Boolean incompleteOnly,
             long page,
             long size
@@ -21,6 +22,8 @@ public interface StyleConfigService {
     StyleConfigResponse updateStyleConfig(Long id, StyleConfigSaveRequest request);
 
     List<String> listUnconfiguredDevelopmentNos();
+
+    List<DevelopmentNoOptionResponse> listDevelopmentNoOptions();
 
     void ensureConfigsForDevelopmentNos(Collection<String> developmentNos);
 }

@@ -74,15 +74,16 @@ export interface OrderRecord {
 export interface OrderRecordQueryParams {
   // 订单主表筛选参数，字段名和后端 /api/orders 对齐。
   orderNo?: string;
-  developmentNo?: string;
+  developmentNos?: string;
   recognitionStatus?: string;
   page?: number;
   size?: number;
 }
 
 export interface DevelopmentNoOption {
-  orderNo?: string;
-  developmentNoList?: string[];
+  value: string;
+  label: string;
+  children?: DevelopmentNoOption[];
 }
 
 export interface OrderDetailProcess {

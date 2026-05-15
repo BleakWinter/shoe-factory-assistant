@@ -1,4 +1,5 @@
 import request from "../utils/request";
+import type { DevelopmentNoOption } from "../types/order";
 import type {
   StyleConfig,
   StyleConfigPage,
@@ -33,6 +34,11 @@ export async function fetchStyleConfigs(params: StyleConfigQueryParams) {
 
 export async function fetchUnconfiguredDevelopmentNos() {
   const { data } = await request.get<string[]>("/style-configs/unconfigured-development-nos");
+  return data || [];
+}
+
+export async function fetchStyleConfigDevelopmentNoOptions() {
+  const { data } = await request.get<DevelopmentNoOption[]>("/style-configs/development-options");
   return data || [];
 }
 

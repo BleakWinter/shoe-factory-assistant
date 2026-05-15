@@ -1,6 +1,7 @@
 package com.shoefactory.assistant.controller;
 
 import com.shoefactory.assistant.common.ApiResponse;
+import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.StyleConfigResponse;
 import com.shoefactory.assistant.dto.StyleConfigSaveRequest;
@@ -29,13 +30,13 @@ public class StyleConfigController {
 
     @GetMapping
     public ApiResponse<PageResponse<StyleConfigResponse>> listStyleConfigs(
-            @RequestParam(required = false) String developmentNo,
+            @RequestParam(required = false) String developmentNos,
             @RequestParam(required = false) Boolean incompleteOnly,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size
     ) {
         return ApiResponse.ok(styleConfigService.listStyleConfigs(
-                developmentNo,
+                developmentNos,
                 incompleteOnly,
                 page,
                 size
@@ -60,5 +61,10 @@ public class StyleConfigController {
     @GetMapping("/unconfigured-development-nos")
     public ApiResponse<List<String>> listUnconfiguredDevelopmentNos() {
         return ApiResponse.ok(styleConfigService.listUnconfiguredDevelopmentNos());
+    }
+
+    @GetMapping("/development-options")
+    public ApiResponse<List<DevelopmentNoOptionResponse>> listDevelopmentNoOptions() {
+        return ApiResponse.ok(styleConfigService.listDevelopmentNoOptions());
     }
 }

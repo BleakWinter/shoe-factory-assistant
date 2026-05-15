@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.shoefactory.assistant.common.BusinessException;
+import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.StyleConfigResponse;
 import com.shoefactory.assistant.dto.StyleConfigSaveRequest;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -46,15 +48,16 @@ public class StyleConfigServiceImpl implements StyleConfigService {
 
     @Override
     public PageResponse<StyleConfigResponse> listStyleConfigs(
-            String developmentNo,
+            String developmentNos,
             Boolean incompleteOnly,
             long page,
             long size
     ) {
+        List<String> parsedDevelopmentNos = splitDevelopmentNos(developmentNos);
         Page<ShoeStyleConfig> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
         LambdaQueryWrapper<ShoeStyleConfig> wrapper = new LambdaQueryWrapper<ShoeStyleConfig>()
-                .like(hasText(developmentNo), ShoeStyleConfig::getDevelopmentNo, developmentNo)
                 .orderByAsc(ShoeStyleConfig::getDevelopmentNo);
+        applyDevelopmentNoFilter(wrapper, parsedDevelopmentNos);
         if (Boolean.TRUE.equals(incompleteOnly)) {
             wrapper.and(nested -> nested
                     .isNull(ShoeStyleConfig::getBoxSpec)
@@ -70,6 +73,23 @@ public class StyleConfigServiceImpl implements StyleConfigService {
                 .map(StyleConfigResponse::from)
                 .toList();
         return PageResponse.from(resultPage, records);
+    }
+
+    private void applyDevelopmentNoFilter(
+            LambdaQueryWrapper<ShoeStyleConfig> wrapper,
+            List<String> developmentNos
+    ) {
+        if (developmentNos.isEmpty()) {
+            return;
+        }
+        wrapper.and(nested -> {
+            for (int index = 0; index < developmentNos.size(); index++) {
+                if (index > 0) {
+                    nested.or();
+                }
+                nested.like(ShoeStyleConfig::getDevelopmentNo, developmentNos.get(index));
+            }
+        });
     }
 
     @Override
@@ -139,6 +159,24 @@ public class StyleConfigServiceImpl implements StyleConfigService {
     }
 
     @Override
+    public List<DevelopmentNoOptionResponse> listDevelopmentNoOptions() {
+        List<DevelopmentNoOptionResponse> options = new ArrayList<>();
+        shoeStyleConfigMapper.selectList(new LambdaQueryWrapper<ShoeStyleConfig>()
+                        .select(ShoeStyleConfig::getDevelopmentNo)
+                        .isNotNull(ShoeStyleConfig::getDevelopmentNo)
+                        .ne(ShoeStyleConfig::getDevelopmentNo, ""))
+                .stream()
+                .map(ShoeStyleConfig::getDevelopmentNo)
+                .map(this::normalizeDevelopmentNo)
+                .filter(this::hasText)
+                .distinct()
+                .forEach(developmentNo ->
+                        appendDevelopmentNoOption(options, parseDevelopmentNoParts(developmentNo), List.of()));
+        sortDevelopmentNoOptions(options);
+        return options;
+    }
+
+    @Override
     @Transactional
     public void ensureConfigsForDevelopmentNos(Collection<String> developmentNos) {
         List<String> normalizedDevelopmentNos = normalizeDevelopmentNos(developmentNos);
@@ -188,6 +226,76 @@ public class StyleConfigServiceImpl implements StyleConfigService {
                     }
                 });
         return developmentNos;
+    }
+
+    private List<String> parseDevelopmentNoParts(String value) {
+        List<String> parts = Arrays.stream(value.trim().split("-"))
+                .map(String::trim)
+                .filter(this::hasText)
+                .toList();
+        if (parts.size() >= 3) {
+            return parts.subList(parts.size() - 3, parts.size());
+        }
+        return parts;
+    }
+
+    private void appendDevelopmentNoOption(
+            List<DevelopmentNoOptionResponse> nodes,
+            List<String> parts,
+            List<String> path
+    ) {
+        if (parts.isEmpty()) {
+            return;
+        }
+        String part = parts.get(0);
+        List<String> nextPath = new ArrayList<>(path);
+        nextPath.add(part);
+        DevelopmentNoOptionResponse node = findDevelopmentNoNode(nodes, part);
+        if (node == null) {
+            node = new DevelopmentNoOptionResponse(String.join("-", nextPath), part,
+                    parts.size() > 1 ? new ArrayList<>() : null);
+            nodes.add(node);
+        }
+        if (parts.size() > 1) {
+            if (node.getChildren() == null) {
+                node.setChildren(new ArrayList<>());
+            }
+            appendDevelopmentNoOption(node.getChildren(), parts.subList(1, parts.size()), nextPath);
+        }
+    }
+
+    private DevelopmentNoOptionResponse findDevelopmentNoNode(
+            List<DevelopmentNoOptionResponse> nodes,
+            String label
+    ) {
+        return nodes.stream()
+                .filter(node -> label.equals(node.getLabel()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void sortDevelopmentNoOptions(List<DevelopmentNoOptionResponse> options) {
+        options.sort((left, right) -> compareDevelopmentNoLabel(left.getLabel(), right.getLabel()));
+        options.stream()
+                .filter(option -> option.getChildren() != null)
+                .forEach(option -> sortDevelopmentNoOptions(option.getChildren()));
+    }
+
+    private int compareDevelopmentNoLabel(String left, String right) {
+        Integer leftNumber = parseInteger(left);
+        Integer rightNumber = parseInteger(right);
+        if (leftNumber != null && rightNumber != null && !leftNumber.equals(rightNumber)) {
+            return leftNumber.compareTo(rightNumber);
+        }
+        return left.compareToIgnoreCase(right);
+    }
+
+    private Integer parseInteger(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private void applyEditableFields(ShoeStyleConfig config, StyleConfigSaveRequest request) {

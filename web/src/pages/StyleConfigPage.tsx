@@ -7,6 +7,7 @@ import {
 import {
   App,
   Button,
+  Cascader,
   Checkbox,
   Form,
   Input,
@@ -23,9 +24,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createStyleConfig,
   fetchStyleConfigs,
+  fetchStyleConfigDevelopmentNoOptions,
   fetchUnconfiguredDevelopmentNos,
   updateStyleConfig,
 } from "../api/styleConfigApi";
+import type { DevelopmentNoOption } from "../types/order";
 import type {
   StyleConfig,
   StyleConfigQueryParams,
@@ -34,7 +37,7 @@ import type {
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
-  developmentNo?: string;
+  developmentNoPaths?: string[][];
   incompleteOnly?: boolean;
 }
 
@@ -73,6 +76,7 @@ export default function StyleConfigPage() {
   const [saving, setSaving] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<StyleConfig | null>(null);
+  const [developmentNoOptions, setDevelopmentNoOptions] = useState<DevelopmentNoOption[]>([]);
   const [unconfiguredDevelopmentNos, setUnconfiguredDevelopmentNos] = useState<string[]>([]);
   const [optionLoading, setOptionLoading] = useState(false);
 
@@ -95,6 +99,12 @@ export default function StyleConfigPage() {
     void loadConfigs(query);
   }, [loadConfigs, query]);
 
+  useEffect(() => {
+    fetchStyleConfigDevelopmentNoOptions()
+      .then(setDevelopmentNoOptions)
+      .catch(() => setDevelopmentNoOptions([]));
+  }, []);
+
   const loadUnconfiguredOptions = useCallback(async () => {
     setOptionLoading(true);
     try {
@@ -108,8 +118,12 @@ export default function StyleConfigPage() {
   }, [message]);
 
   const submitFilters = (values: FilterValues) => {
+    const developmentNos = (values.developmentNoPaths || [])
+      .map((path) => path[path.length - 1])
+      .filter(Boolean)
+      .join(",");
     setQuery({
-      developmentNo: values.developmentNo,
+      developmentNos,
       incompleteOnly: values.incompleteOnly,
       page: 1,
       size: query.size ?? 20,
@@ -230,8 +244,18 @@ export default function StyleConfigPage() {
 
       <div className="page-panel">
         <Form form={filterForm} layout="inline" className="filter-form" onFinish={submitFilters}>
-          <Form.Item name="developmentNo" label="开发编号">
-            <Input allowClear placeholder="输入开发编号" />
+          <Form.Item name="developmentNoPaths" label="开发编号">
+            <Cascader
+              allowClear
+              className="style-cascader"
+              displayRender={(labels) => labels.join("-")}
+              maxTagCount="responsive"
+              multiple
+              options={developmentNoOptions}
+              placeholder="开发编号：253 / 1 / 20"
+              showCheckedStrategy={Cascader.SHOW_CHILD}
+              showSearch
+            />
           </Form.Item>
           <Form.Item name="incompleteOnly" valuePropName="checked">
             <Checkbox>只看待完善</Checkbox>

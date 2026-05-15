@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.common.BusinessException;
+import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
@@ -33,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -104,18 +106,19 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public PageResponse<OrderRecordResponse> listOrders(
             String orderNo,
-            String developmentNo,
+            String developmentNos,
             String recognitionStatus,
             long page,
             long size
     ) {
         List<RecognitionFilter> parsedRecognitionFilters = parseRecognitionFilters(recognitionStatus);
-        List<Long> developmentOrderIds = findOrderIdsByDevelopmentNo(developmentNo);
+        List<String> parsedDevelopmentNos = splitDevelopmentNos(developmentNos);
+        List<Long> developmentOrderIds = findOrderIdsByDevelopmentNos(parsedDevelopmentNos);
         Page<OrderRecord> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
         LambdaQueryWrapper<OrderRecord> wrapper = new LambdaQueryWrapper<OrderRecord>()
                 .like(hasText(orderNo), OrderRecord::getOrderNo, orderNo)
                 .orderByDesc(OrderRecord::getCreatedAt);
-        applyDevelopmentNoFilter(wrapper, developmentNo, developmentOrderIds);
+        applyDevelopmentNoFilter(wrapper, parsedDevelopmentNos, developmentOrderIds);
         applyRecognitionFilters(wrapper, parsedRecognitionFilters);
         Page<OrderRecord> resultPage = orderRecordMapper.selectPage(pageRequest, wrapper);
         Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(resultPage.getRecords());
@@ -130,12 +133,20 @@ public class OrderServiceImpl implements OrderService {
         return PageResponse.from(resultPage, records);
     }
 
-    private List<Long> findOrderIdsByDevelopmentNo(String developmentNo) {
-        if (!hasText(developmentNo)) {
+    private List<Long> findOrderIdsByDevelopmentNos(List<String> developmentNos) {
+        if (developmentNos.isEmpty()) {
             return List.of();
         }
-        return orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
-                        .like(OrderRecordDetail::getDevelopmentNo, developmentNo))
+        LambdaQueryWrapper<OrderRecordDetail> wrapper = new LambdaQueryWrapper<OrderRecordDetail>()
+                .and(nested -> {
+                    for (int index = 0; index < developmentNos.size(); index++) {
+                        if (index > 0) {
+                            nested.or();
+                        }
+                        nested.like(OrderRecordDetail::getDevelopmentNo, developmentNos.get(index));
+                    }
+                });
+        return orderRecordDetailMapper.selectList(wrapper)
                 .stream()
                 .map(OrderRecordDetail::getOrderId)
                 .filter(id -> id != null)
@@ -145,14 +156,19 @@ public class OrderServiceImpl implements OrderService {
 
     private void applyDevelopmentNoFilter(
             LambdaQueryWrapper<OrderRecord> wrapper,
-            String developmentNo,
+            List<String> developmentNos,
             List<Long> developmentOrderIds
     ) {
-        if (!hasText(developmentNo)) {
+        if (developmentNos.isEmpty()) {
             return;
         }
         wrapper.and(nested -> {
-            nested.like(OrderRecord::getDevelopmentNos, developmentNo);
+            for (int index = 0; index < developmentNos.size(); index++) {
+                if (index > 0) {
+                    nested.or();
+                }
+                nested.like(OrderRecord::getDevelopmentNos, developmentNos.get(index));
+            }
             if (!developmentOrderIds.isEmpty()) {
                 nested.or().in(OrderRecord::getId, developmentOrderIds);
             }
@@ -206,28 +222,98 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public List<OrderRecordResponse> listDevelopmentNoOptions() {
-        List<OrderRecord> orders = orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
-                .orderByAsc(OrderRecord::getOrderNo));
-        Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(orders);
-        return orders.stream()
-                .map(order -> buildDevelopmentNoOption(order, detailsByOrderId.getOrDefault(order.getId(), List.of())))
-                .filter(response -> response.getDevelopmentNoList() != null && !response.getDevelopmentNoList().isEmpty())
-                .toList();
-    }
-
-    private OrderRecordResponse buildDevelopmentNoOption(OrderRecord order, List<OrderRecordDetail> details) {
-        Set<String> developmentNos = new LinkedHashSet<>(splitDevelopmentNos(order.getDevelopmentNos()));
-        details.stream()
+    public List<DevelopmentNoOptionResponse> listDevelopmentNoOptions() {
+        Set<String> developmentNos = new LinkedHashSet<>();
+        orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
+                        .isNotNull(OrderRecord::getDevelopmentNos)
+                        .ne(OrderRecord::getDevelopmentNos, ""))
+                .stream()
+                .flatMap(order -> splitDevelopmentNos(order.getDevelopmentNos()).stream())
+                .forEach(developmentNos::add);
+        orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                        .isNotNull(OrderRecordDetail::getDevelopmentNo)
+                        .ne(OrderRecordDetail::getDevelopmentNo, ""))
+                .stream()
                 .map(OrderRecordDetail::getDevelopmentNo)
                 .filter(this::hasText)
                 .map(String::trim)
                 .forEach(developmentNos::add);
-        OrderRecordResponse response = OrderRecordResponse.from(order);
-        List<String> developmentNoList = developmentNos.stream().toList();
-        response.setDevelopmentNoList(developmentNoList);
-        response.setDevelopmentNos(String.join(",", developmentNoList));
-        return response;
+
+        List<DevelopmentNoOptionResponse> options = new ArrayList<>();
+        developmentNos.forEach(developmentNo ->
+                appendDevelopmentNoOption(options, parseDevelopmentNoParts(developmentNo), List.of()));
+        sortDevelopmentNoOptions(options);
+        return options;
+    }
+
+    private List<String> parseDevelopmentNoParts(String value) {
+        List<String> parts = Arrays.stream(value.trim().split("-"))
+                .map(String::trim)
+                .filter(this::hasText)
+                .toList();
+        if (parts.size() >= 3) {
+            return parts.subList(parts.size() - 3, parts.size());
+        }
+        return parts;
+    }
+
+    private void appendDevelopmentNoOption(
+            List<DevelopmentNoOptionResponse> nodes,
+            List<String> parts,
+            List<String> path
+    ) {
+        if (parts.isEmpty()) {
+            return;
+        }
+        String part = parts.get(0);
+        List<String> nextPath = new ArrayList<>(path);
+        nextPath.add(part);
+        DevelopmentNoOptionResponse node = findDevelopmentNoNode(nodes, part);
+        if (node == null) {
+            node = new DevelopmentNoOptionResponse(String.join("-", nextPath), part,
+                    parts.size() > 1 ? new ArrayList<>() : null);
+            nodes.add(node);
+        }
+        if (parts.size() > 1) {
+            if (node.getChildren() == null) {
+                node.setChildren(new ArrayList<>());
+            }
+            appendDevelopmentNoOption(node.getChildren(), parts.subList(1, parts.size()), nextPath);
+        }
+    }
+
+    private DevelopmentNoOptionResponse findDevelopmentNoNode(
+            List<DevelopmentNoOptionResponse> nodes,
+            String label
+    ) {
+        return nodes.stream()
+                .filter(node -> label.equals(node.getLabel()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void sortDevelopmentNoOptions(List<DevelopmentNoOptionResponse> options) {
+        options.sort((left, right) -> compareDevelopmentNoLabel(left.getLabel(), right.getLabel()));
+        options.stream()
+                .filter(option -> option.getChildren() != null)
+                .forEach(option -> sortDevelopmentNoOptions(option.getChildren()));
+    }
+
+    private int compareDevelopmentNoLabel(String left, String right) {
+        Integer leftNumber = parseInteger(left);
+        Integer rightNumber = parseInteger(right);
+        if (leftNumber != null && rightNumber != null && !leftNumber.equals(rightNumber)) {
+            return leftNumber.compareTo(rightNumber);
+        }
+        return left.compareToIgnoreCase(right);
+    }
+
+    private Integer parseInteger(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     @Override

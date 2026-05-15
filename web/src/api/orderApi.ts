@@ -57,8 +57,58 @@ export async function fetchDevelopmentNoOptions() {
     return data || [];
   } catch {
     const page = await fetchOrders({ page: 1, size: 100 });
-    return page.records;
+    return buildDevelopmentNoOptions(page.records);
   }
+}
+
+function parseDevelopmentNoParts(value: string) {
+  const parts = value
+    .trim()
+    .split("-")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length >= 3) {
+    return parts.slice(-3);
+  }
+  return parts;
+}
+
+function appendDevelopmentNoOption(nodes: DevelopmentNoOption[], parts: string[], path: string[] = []) {
+  if (parts.length === 0) {
+    return;
+  }
+  const [part, ...rest] = parts;
+  const nextPath = [...path, part];
+  let node = nodes.find((item) => item.label === part);
+  if (!node) {
+    node = {
+      value: nextPath.join("-"),
+      label: part,
+      children: rest.length > 0 ? [] : undefined,
+    };
+    nodes.push(node);
+    nodes.sort(sortDevelopmentNoOptions);
+  }
+  if (rest.length > 0) {
+    if (!node.children) {
+      node.children = [];
+    }
+    appendDevelopmentNoOption(node.children, rest, nextPath);
+  }
+}
+
+function sortDevelopmentNoOptions(left: DevelopmentNoOption, right: DevelopmentNoOption) {
+  return left.label.localeCompare(right.label, "zh-CN", { numeric: true });
+}
+
+function buildDevelopmentNoOptions(records: OrderRecord[]) {
+  const options: DevelopmentNoOption[] = [];
+  records.forEach((record) => {
+    record.developmentNoList
+      ?.filter((item) => item && item.trim())
+      .forEach((developmentNo) => appendDevelopmentNoOption(options, parseDevelopmentNoParts(developmentNo)));
+  });
+  return options;
 }
 
 export async function fetchOrderDetails(orderId: number) {

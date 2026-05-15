@@ -1,5 +1,6 @@
 package com.shoefactory.assistant.service;
 
+import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
@@ -18,13 +19,13 @@ public interface OrderService {
     // 查询订单主表，页面订单列表和打印列表都以它为入口。
     PageResponse<OrderRecordResponse> listOrders(
             String orderNo,
-            String developmentNo,
+            String developmentNos,
             String recognitionStatus,
             long page,
             long size
     );
 
-    List<OrderRecordResponse> listDevelopmentNoOptions();
+    List<DevelopmentNoOptionResponse> listDevelopmentNoOptions();
 
     OrderRecordResponse recognizeOrder(Long orderId);
 

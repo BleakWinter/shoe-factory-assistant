@@ -12,7 +12,7 @@ export interface StyleConfig {
 }
 
 export interface StyleConfigQueryParams {
-  developmentNo?: string;
+  developmentNos?: string;
   incompleteOnly?: boolean;
   page?: number;
   size?: number;

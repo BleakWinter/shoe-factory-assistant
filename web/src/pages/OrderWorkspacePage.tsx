@@ -40,7 +40,7 @@ import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
   orderNo?: string;
-  developmentNoPath?: string[];
+  developmentNoPaths?: string[][];
   recognitionStatuses?: string[];
 }
 
@@ -53,41 +53,6 @@ const recognitionOptions = [
   { label: "已识别装箱单", value: "PACKING_RECOGNIZED" },
   { label: "识别失败", value: "FAILED" },
 ];
-
-interface CascaderNode {
-  value: string;
-  label: string;
-  children?: CascaderNode[];
-}
-
-function optionKey(value?: string) {
-  return value && value.trim() ? value.trim() : "未填写";
-}
-
-function buildDevelopmentNoOptions(records: DevelopmentNoOption[]): CascaderNode[] {
-  const orderMap = new Map<string, Set<string>>();
-  for (const record of records) {
-    const orderNo = optionKey(record.orderNo);
-    const developmentNos = record.developmentNoList?.filter((item) => item && item.trim()) || [];
-    if (developmentNos.length === 0) {
-      continue;
-    }
-    if (!orderMap.has(orderNo)) {
-      orderMap.set(orderNo, new Set());
-    }
-    const developmentSet = orderMap.get(orderNo)!;
-    developmentNos.forEach((developmentNo) => developmentSet.add(developmentNo.trim()));
-  }
-
-  return Array.from(orderMap.entries()).map(([orderNo, developmentSet]) => ({
-    value: orderNo,
-    label: orderNo,
-    children: Array.from(developmentSet).map((developmentNo) => ({
-      value: developmentNo,
-      label: developmentNo,
-    })),
-  }));
-}
 
 function renderDevelopmentNos(values?: string[]) {
   if (!values || values.length === 0) {
@@ -208,7 +173,7 @@ export default function OrderWorkspacePage() {
   const [activeOrder, setActiveOrder] = useState<OrderRecord | null>(null);
   const [activePanelKeys, setActivePanelKeys] = useState<string[]>([]);
   const [recognizingKey, setRecognizingKey] = useState("");
-  const [developmentOptionRecords, setDevelopmentOptionRecords] = useState<DevelopmentNoOption[]>([]);
+  const [developmentNoOptions, setDevelopmentNoOptions] = useState<DevelopmentNoOption[]>([]);
   const [query, setQuery] = useState<OrderRecordQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
 
@@ -233,19 +198,18 @@ export default function OrderWorkspacePage() {
 
   useEffect(() => {
     fetchDevelopmentNoOptions()
-      .then(setDevelopmentOptionRecords)
-      .catch(() => setDevelopmentOptionRecords([]));
+      .then(setDevelopmentNoOptions)
+      .catch(() => setDevelopmentNoOptions([]));
   }, []);
 
-  const developmentNoOptions = useMemo(
-    () => buildDevelopmentNoOptions(developmentOptionRecords),
-    [developmentOptionRecords],
-  );
-
   const submitFilters = (values: FilterValues) => {
+    const developmentNos = (values.developmentNoPaths || [])
+      .map((path) => path[path.length - 1])
+      .filter(Boolean)
+      .join(",");
     setQuery({
       orderNo: values.orderNo,
-      developmentNo: values.developmentNoPath?.[1],
+      developmentNos,
       recognitionStatus: values.recognitionStatuses?.join(","),
       page: 1,
       size: query.size ?? 20,
@@ -484,12 +448,16 @@ export default function OrderWorkspacePage() {
           <Form.Item name="orderNo" label="订单流水号">
             <Input allowClear placeholder="订单流水号" />
           </Form.Item>
-          <Form.Item name="developmentNoPath" label="开发编号">
+          <Form.Item name="developmentNoPaths" label="开发编号">
             <Cascader
               allowClear
               className="style-cascader"
+              displayRender={(labels) => labels.join("-")}
+              maxTagCount="responsive"
+              multiple
               options={developmentNoOptions}
-              placeholder="订单流水号 / 开发编号"
+              placeholder="开发编号：253 / 1 / 20"
+              showCheckedStrategy={Cascader.SHOW_CHILD}
               showSearch
             />
           </Form.Item>
