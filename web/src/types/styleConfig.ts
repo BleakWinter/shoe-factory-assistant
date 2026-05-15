@@ -6,6 +6,7 @@ export interface StyleConfig {
   boxSpec?: string;
   netWeightPerPair?: number;
   grossWeightPerPair?: number;
+  shoePrice?: number;
   complete?: boolean;
   createdAt?: string;
   updatedAt?: string;

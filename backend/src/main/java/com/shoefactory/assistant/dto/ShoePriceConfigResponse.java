@@ -1,24 +1,29 @@
-package com.shoefactory.assistant.entity;
+package com.shoefactory.assistant.dto;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.shoefactory.assistant.entity.ShoeStyleConfig;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@TableName("shoe_style_config")
-public class ShoeStyleConfig {
+public class ShoePriceConfigResponse {
 
-    @TableId(type = IdType.AUTO)
     private Long id;
     private String developmentNo;
-    private String boxSpec;
-    private BigDecimal netWeightPerPair;
-    private BigDecimal grossWeightPerPair;
     private BigDecimal shoePrice;
+    private Boolean complete;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    public static ShoePriceConfigResponse from(ShoeStyleConfig config) {
+        ShoePriceConfigResponse response = new ShoePriceConfigResponse();
+        response.setId(config.getId());
+        response.setDevelopmentNo(config.getDevelopmentNo());
+        response.setShoePrice(config.getShoePrice());
+        response.setComplete(config.getShoePrice() != null);
+        response.setCreatedAt(config.getCreatedAt());
+        response.setUpdatedAt(config.getUpdatedAt());
+        return response;
+    }
 
     public Long getId() {
         return id;
@@ -36,36 +41,20 @@ public class ShoeStyleConfig {
         this.developmentNo = developmentNo;
     }
 
-    public String getBoxSpec() {
-        return boxSpec;
-    }
-
-    public void setBoxSpec(String boxSpec) {
-        this.boxSpec = boxSpec;
-    }
-
-    public BigDecimal getNetWeightPerPair() {
-        return netWeightPerPair;
-    }
-
-    public void setNetWeightPerPair(BigDecimal netWeightPerPair) {
-        this.netWeightPerPair = netWeightPerPair;
-    }
-
-    public BigDecimal getGrossWeightPerPair() {
-        return grossWeightPerPair;
-    }
-
-    public void setGrossWeightPerPair(BigDecimal grossWeightPerPair) {
-        this.grossWeightPerPair = grossWeightPerPair;
-    }
-
     public BigDecimal getShoePrice() {
         return shoePrice;
     }
 
     public void setShoePrice(BigDecimal shoePrice) {
         this.shoePrice = shoePrice;
+    }
+
+    public Boolean getComplete() {
+        return complete;
+    }
+
+    public void setComplete(Boolean complete) {
+        this.complete = complete;
     }
 
     public LocalDateTime getCreatedAt() {

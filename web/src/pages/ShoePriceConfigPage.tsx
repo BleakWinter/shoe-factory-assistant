@@ -22,18 +22,18 @@ import {
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  createStyleConfig,
-  fetchStyleConfigs,
-  fetchStyleConfigDevelopmentNoOptions,
-  fetchUnconfiguredDevelopmentNos,
-  updateStyleConfig,
-} from "../api/styleConfigApi";
+  createShoePriceConfig,
+  fetchShoePriceConfigDevelopmentNoOptions,
+  fetchShoePriceConfigs,
+  fetchUnpricedDevelopmentNos,
+  updateShoePriceConfig,
+} from "../api/priceConfigApi";
 import type { DevelopmentNoOption } from "../types/order";
 import type {
-  StyleConfig,
-  StyleConfigQueryParams,
-  StyleConfigSavePayload,
-} from "../types/styleConfig";
+  ShoePriceConfig,
+  ShoePriceConfigQueryParams,
+  ShoePriceConfigSavePayload,
+} from "../types/priceConfig";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
@@ -43,53 +43,49 @@ interface FilterValues {
 
 interface EditorValues {
   developmentNo?: string;
-  boxSpec?: string;
-  netWeightPerPair?: number | null;
-  grossWeightPerPair?: number | null;
+  shoePrice?: number | null;
 }
 
-function renderCompletionStatus(record: StyleConfig) {
-  return record.complete ? <Tag color="green">已完善</Tag> : <Tag color="gold">待完善</Tag>;
+function renderCompletionStatus(record: ShoePriceConfig) {
+  return record.complete ? <Tag color="green">已配置</Tag> : <Tag color="gold">待配置</Tag>;
 }
 
-function normalizeWeight(value?: number | null) {
+function normalizePrice(value?: number | null) {
   return value === undefined ? null : value;
 }
 
-function buildPayload(values: EditorValues): StyleConfigSavePayload {
+function buildPayload(values: EditorValues): ShoePriceConfigSavePayload {
   return {
     developmentNo: values.developmentNo,
-    boxSpec: values.boxSpec?.trim() || null,
-    netWeightPerPair: normalizeWeight(values.netWeightPerPair),
-    grossWeightPerPair: normalizeWeight(values.grossWeightPerPair),
+    shoePrice: normalizePrice(values.shoePrice),
   };
 }
 
-export default function StyleConfigPage() {
+export default function ShoePriceConfigPage() {
   const { message } = App.useApp();
   const [filterForm] = Form.useForm<FilterValues>();
   const [editorForm] = Form.useForm<EditorValues>();
-  const [configs, setConfigs] = useState<StyleConfig[]>([]);
-  const [query, setQuery] = useState<StyleConfigQueryParams>({ page: 1, size: 20 });
+  const [configs, setConfigs] = useState<ShoePriceConfig[]>([]);
+  const [query, setQuery] = useState<ShoePriceConfigQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editingConfig, setEditingConfig] = useState<StyleConfig | null>(null);
+  const [editingConfig, setEditingConfig] = useState<ShoePriceConfig | null>(null);
   const [developmentNoOptions, setDevelopmentNoOptions] = useState<DevelopmentNoOption[]>([]);
-  const [unconfiguredDevelopmentNos, setUnconfiguredDevelopmentNos] = useState<string[]>([]);
+  const [unpricedDevelopmentNos, setUnpricedDevelopmentNos] = useState<string[]>([]);
   const [optionLoading, setOptionLoading] = useState(false);
 
-  const loadConfigs = useCallback(async (params: StyleConfigQueryParams) => {
+  const loadConfigs = useCallback(async (params: ShoePriceConfigQueryParams) => {
     setLoading(true);
     try {
-      const page = await fetchStyleConfigs(params);
+      const page = await fetchShoePriceConfigs(params);
       setConfigs(page.records);
       setTotal(page.total);
     } catch (error) {
       setConfigs([]);
       setTotal(0);
-      message.error(error instanceof Error ? error.message : "配置列表加载失败");
+      message.error(error instanceof Error ? error.message : "价格配置列表加载失败");
     } finally {
       setLoading(false);
     }
@@ -100,18 +96,18 @@ export default function StyleConfigPage() {
   }, [loadConfigs, query]);
 
   useEffect(() => {
-    fetchStyleConfigDevelopmentNoOptions()
+    fetchShoePriceConfigDevelopmentNoOptions()
       .then(setDevelopmentNoOptions)
       .catch(() => setDevelopmentNoOptions([]));
   }, []);
 
-  const loadUnconfiguredOptions = useCallback(async () => {
+  const loadUnpricedOptions = useCallback(async () => {
     setOptionLoading(true);
     try {
-      setUnconfiguredDevelopmentNos(await fetchUnconfiguredDevelopmentNos());
+      setUnpricedDevelopmentNos(await fetchUnpricedDevelopmentNos());
     } catch (error) {
-      setUnconfiguredDevelopmentNos([]);
-      message.error(error instanceof Error ? error.message : "未配置开发编号加载失败");
+      setUnpricedDevelopmentNos([]);
+      message.error(error instanceof Error ? error.message : "未配置价格开发编号加载失败");
     } finally {
       setOptionLoading(false);
     }
@@ -139,17 +135,15 @@ export default function StyleConfigPage() {
     setEditingConfig(null);
     editorForm.resetFields();
     setEditorOpen(true);
-    await loadUnconfiguredOptions();
+    await loadUnpricedOptions();
   };
 
-  const openEditEditor = (record: StyleConfig) => {
+  const openEditEditor = (record: ShoePriceConfig) => {
     setEditingConfig(record);
     setEditorOpen(true);
     editorForm.setFieldsValue({
       developmentNo: record.developmentNo,
-      boxSpec: record.boxSpec,
-      netWeightPerPair: record.netWeightPerPair,
-      grossWeightPerPair: record.grossWeightPerPair,
+      shoePrice: record.shoePrice,
     });
   };
 
@@ -165,41 +159,36 @@ export default function StyleConfigPage() {
     try {
       const payload = buildPayload(values);
       if (editingConfig) {
-        await updateStyleConfig(editingConfig.id, payload);
-        message.success("配置已更新");
+        await updateShoePriceConfig(editingConfig.id, payload);
+        message.success("价格配置已更新");
       } else {
-        await createStyleConfig(payload);
-        message.success("配置已新建");
+        await createShoePriceConfig(payload);
+        message.success("价格配置已新建");
       }
       closeEditor();
       await loadConfigs(query);
+      fetchShoePriceConfigDevelopmentNoOptions()
+        .then(setDevelopmentNoOptions)
+        .catch(() => setDevelopmentNoOptions([]));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "配置保存失败");
+      message.error(error instanceof Error ? error.message : "价格配置保存失败");
     } finally {
       setSaving(false);
     }
   };
 
-  const columns = useMemo<ColumnsType<StyleConfig>>(
+  const columns = useMemo<ColumnsType<ShoePriceConfig>>(
     () => [
-      { title: "开发编号", dataIndex: "developmentNo", width: 190, fixed: "left", render: formatEmpty },
-      { title: "盒规", dataIndex: "boxSpec", minWidth: 180, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNo", width: 220, fixed: "left", render: formatEmpty },
       {
-        title: "净重/双 kg",
-        dataIndex: "netWeightPerPair",
-        width: 130,
+        title: "鞋子单价",
+        dataIndex: "shoePrice",
+        minWidth: 180,
         align: "right",
         render: formatEmpty,
       },
-      {
-        title: "毛重/双 kg",
-        dataIndex: "grossWeightPerPair",
-        width: 130,
-        align: "right",
-        render: formatEmpty,
-      },
-      { title: "状态", key: "complete", width: 110, render: (_, record) => renderCompletionStatus(record) },
-      { title: "更新时间", dataIndex: "updatedAt", width: 170, render: formatDateTime },
+      { title: "状态", key: "complete", width: 120, render: (_, record) => renderCompletionStatus(record) },
+      { title: "更新时间", dataIndex: "updatedAt", width: 180, render: formatDateTime },
       {
         title: "操作",
         key: "actions",
@@ -227,9 +216,9 @@ export default function StyleConfigPage() {
     <div className="workspace">
       <div className="toolbar-band">
         <div>
-          <Typography.Title level={3}>盒规配置</Typography.Title>
+          <Typography.Title level={3}>价格配置</Typography.Title>
           <Typography.Text type="secondary">
-            按开发编号维护盒规、净重/双、毛重/双；订单上传和识别会自动补待完善配置。
+            按开发编号维护鞋子单价；订单上传和识别会自动补待配置的开发编号。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -258,7 +247,7 @@ export default function StyleConfigPage() {
             />
           </Form.Item>
           <Form.Item name="incompleteOnly" valuePropName="checked">
-            <Checkbox>只看待完善</Checkbox>
+            <Checkbox>只看待配置</Checkbox>
           </Form.Item>
           <Form.Item>
             <Space>
@@ -276,7 +265,7 @@ export default function StyleConfigPage() {
           columns={columns}
           dataSource={configs}
           pagination={pagination}
-          scroll={{ x: 1010 }}
+          scroll={{ x: 810 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({
@@ -290,7 +279,7 @@ export default function StyleConfigPage() {
 
       <Modal
         open={editorOpen}
-        title={editingConfig ? `编辑配置：${editingConfig.developmentNo}` : "新建配置"}
+        title={editingConfig ? `编辑价格：${editingConfig.developmentNo}` : "新建价格配置"}
         onCancel={closeEditor}
         onOk={() => void saveEditor()}
         confirmLoading={saving}
@@ -309,22 +298,16 @@ export default function StyleConfigPage() {
                 allowClear
                 showSearch
                 loading={optionLoading}
-                placeholder="选择未配置开发编号"
-                options={unconfiguredDevelopmentNos.map((developmentNo) => ({
+                placeholder="选择未配置价格的开发编号"
+                options={unpricedDevelopmentNos.map((developmentNo) => ({
                   label: developmentNo,
                   value: developmentNo,
                 }))}
               />
             )}
           </Form.Item>
-          <Form.Item name="boxSpec" label="盒规">
-            <Input allowClear placeholder="例如 30x20x10" />
-          </Form.Item>
-          <Form.Item name="netWeightPerPair" label="净重/双 kg">
-            <InputNumber min={0} precision={3} step={0.001} className="full-width-control" />
-          </Form.Item>
-          <Form.Item name="grossWeightPerPair" label="毛重/双 kg">
-            <InputNumber min={0} precision={3} step={0.001} className="full-width-control" />
+          <Form.Item name="shoePrice" label="鞋子单价">
+            <InputNumber min={0} precision={2} step={0.01} className="full-width-control" placeholder="例如 128.00" />
           </Form.Item>
         </Form>
       </Modal>

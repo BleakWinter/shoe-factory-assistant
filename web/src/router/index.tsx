@@ -3,6 +3,7 @@ import App from "../App";
 import OrderDetailPage from "../pages/OrderDetailPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
 import PrintTaskListPage from "../pages/PrintTaskListPage";
+import ShoePriceConfigPage from "../pages/ShoePriceConfigPage";
 import StyleConfigPage from "../pages/StyleConfigPage";
 
 export const router = createBrowserRouter([
@@ -16,6 +17,7 @@ export const router = createBrowserRouter([
       { path: "orders/:id/details", element: <OrderDetailPage /> },
       { path: "tasks", element: <PrintTaskListPage /> },
       { path: "style-configs", element: <StyleConfigPage /> },
+      { path: "price-configs", element: <ShoePriceConfigPage /> },
       { path: "*", element: <Navigate to="/orders" replace /> },
     ],
   },

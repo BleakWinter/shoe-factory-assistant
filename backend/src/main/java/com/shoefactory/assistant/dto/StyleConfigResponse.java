@@ -12,6 +12,7 @@ public class StyleConfigResponse {
     private String boxSpec;
     private BigDecimal netWeightPerPair;
     private BigDecimal grossWeightPerPair;
+    private BigDecimal shoePrice;
     private Boolean complete;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -23,6 +24,7 @@ public class StyleConfigResponse {
         response.setBoxSpec(config.getBoxSpec());
         response.setNetWeightPerPair(config.getNetWeightPerPair());
         response.setGrossWeightPerPair(config.getGrossWeightPerPair());
+        response.setShoePrice(config.getShoePrice());
         response.setComplete(isComplete(config));
         response.setCreatedAt(config.getCreatedAt());
         response.setUpdatedAt(config.getUpdatedAt());
@@ -74,6 +76,14 @@ public class StyleConfigResponse {
 
     public void setGrossWeightPerPair(BigDecimal grossWeightPerPair) {
         this.grossWeightPerPair = grossWeightPerPair;
+    }
+
+    public BigDecimal getShoePrice() {
+        return shoePrice;
+    }
+
+    public void setShoePrice(BigDecimal shoePrice) {
+        this.shoePrice = shoePrice;
     }
 
     public Boolean getComplete() {

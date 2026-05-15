@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.PageResponse;
+import com.shoefactory.assistant.dto.ShoePriceConfigResponse;
+import com.shoefactory.assistant.dto.ShoePriceConfigSaveRequest;
 import com.shoefactory.assistant.dto.StyleConfigResponse;
 import com.shoefactory.assistant.dto.StyleConfigSaveRequest;
 import com.shoefactory.assistant.entity.OrderRecord;
@@ -19,6 +21,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -137,6 +140,91 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         config.setGrossWeightPerPair(request.getGrossWeightPerPair());
         config.setUpdatedAt(now);
         return StyleConfigResponse.from(config);
+    }
+
+    @Override
+    public PageResponse<ShoePriceConfigResponse> listShoePriceConfigs(
+            String developmentNos,
+            Boolean incompleteOnly,
+            long page,
+            long size
+    ) {
+        List<String> parsedDevelopmentNos = splitDevelopmentNos(developmentNos);
+        Page<ShoeStyleConfig> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
+        LambdaQueryWrapper<ShoeStyleConfig> wrapper = new LambdaQueryWrapper<ShoeStyleConfig>()
+                .orderByAsc(ShoeStyleConfig::getDevelopmentNo);
+        applyDevelopmentNoFilter(wrapper, parsedDevelopmentNos);
+        if (Boolean.TRUE.equals(incompleteOnly)) {
+            wrapper.isNull(ShoeStyleConfig::getShoePrice);
+        }
+        Page<ShoeStyleConfig> resultPage = shoeStyleConfigMapper.selectPage(pageRequest, wrapper);
+        List<ShoePriceConfigResponse> records = resultPage.getRecords().stream()
+                .map(ShoePriceConfigResponse::from)
+                .toList();
+        return PageResponse.from(resultPage, records);
+    }
+
+    @Override
+    @Transactional
+    public ShoePriceConfigResponse createShoePriceConfig(ShoePriceConfigSaveRequest request) {
+        String developmentNo = normalizeDevelopmentNo(request.getDevelopmentNo());
+        if (!hasText(developmentNo)) {
+            throw new BusinessException("开发编号不能为空");
+        }
+        ShoeStyleConfig existingConfig = shoeStyleConfigMapper.selectOne(new LambdaQueryWrapper<ShoeStyleConfig>()
+                .eq(ShoeStyleConfig::getDevelopmentNo, developmentNo));
+        if (existingConfig != null) {
+            return applyShoePrice(existingConfig, request.getShoePrice());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        ShoeStyleConfig config = new ShoeStyleConfig();
+        config.setDevelopmentNo(developmentNo);
+        config.setShoePrice(request.getShoePrice());
+        config.setCreatedAt(now);
+        config.setUpdatedAt(now);
+        try {
+            shoeStyleConfigMapper.insert(config);
+        } catch (DuplicateKeyException ex) {
+            ShoeStyleConfig configCreatedByOtherRequest = shoeStyleConfigMapper.selectOne(
+                    new LambdaQueryWrapper<ShoeStyleConfig>()
+                            .eq(ShoeStyleConfig::getDevelopmentNo, developmentNo));
+            if (configCreatedByOtherRequest == null) {
+                throw new BusinessException("开发编号已存在: " + developmentNo, ex);
+            }
+            return applyShoePrice(configCreatedByOtherRequest, request.getShoePrice());
+        }
+        return ShoePriceConfigResponse.from(config);
+    }
+
+    @Override
+    @Transactional
+    public ShoePriceConfigResponse updateShoePriceConfig(Long id, ShoePriceConfigSaveRequest request) {
+        ShoeStyleConfig config = shoeStyleConfigMapper.selectById(id);
+        if (config == null) {
+            throw new BusinessException("开发编号配置不存在: " + id);
+        }
+        return applyShoePrice(config, request.getShoePrice());
+    }
+
+    @Override
+    public List<String> listUnpricedDevelopmentNos() {
+        Set<String> discoveredDevelopmentNos = collectKnownDevelopmentNos();
+        if (discoveredDevelopmentNos.isEmpty()) {
+            return List.of();
+        }
+        Set<String> pricedDevelopmentNos = shoeStyleConfigMapper.selectList(new LambdaQueryWrapper<ShoeStyleConfig>()
+                        .select(ShoeStyleConfig::getDevelopmentNo, ShoeStyleConfig::getShoePrice)
+                        .in(ShoeStyleConfig::getDevelopmentNo, discoveredDevelopmentNos)
+                        .isNotNull(ShoeStyleConfig::getShoePrice))
+                .stream()
+                .map(ShoeStyleConfig::getDevelopmentNo)
+                .map(this::normalizeDevelopmentNo)
+                .filter(this::hasText)
+                .collect(Collectors.toSet());
+        return discoveredDevelopmentNos.stream()
+                .filter(developmentNo -> !pricedDevelopmentNos.contains(developmentNo))
+                .toList();
     }
 
     @Override
@@ -302,6 +390,17 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         config.setBoxSpec(blankToNull(request.getBoxSpec()));
         config.setNetWeightPerPair(request.getNetWeightPerPair());
         config.setGrossWeightPerPair(request.getGrossWeightPerPair());
+    }
+
+    private ShoePriceConfigResponse applyShoePrice(ShoeStyleConfig config, BigDecimal shoePrice) {
+        LocalDateTime now = LocalDateTime.now();
+        shoeStyleConfigMapper.update(null, new LambdaUpdateWrapper<ShoeStyleConfig>()
+                .eq(ShoeStyleConfig::getId, config.getId())
+                .set(ShoeStyleConfig::getShoePrice, shoePrice)
+                .set(ShoeStyleConfig::getUpdatedAt, now));
+        config.setShoePrice(shoePrice);
+        config.setUpdatedAt(now);
+        return ShoePriceConfigResponse.from(config);
     }
 
     private boolean exists(String developmentNo) {

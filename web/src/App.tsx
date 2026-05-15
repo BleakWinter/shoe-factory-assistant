@@ -1,4 +1,5 @@
 import {
+  DollarOutlined,
   FileDoneOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -13,11 +14,12 @@ import type { ReactNode } from "react";
 
 const { Header, Content, Sider } = Layout;
 
-// 左侧导航固定两个核心工作台：订单台账和打印任务。
+// 左侧导航固定常用工作台和配置入口。
 const navItems = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/tasks", label: "打印列表", icon: <FileDoneOutlined /> },
-  { path: "/style-configs", label: "配置管理", icon: <SettingOutlined /> },
+  { path: "/style-configs", label: "盒规配置", icon: <SettingOutlined /> },
+  { path: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
 ];
 
 interface WorkspaceTab {
