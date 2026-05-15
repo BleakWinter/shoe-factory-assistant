@@ -181,9 +181,16 @@ export default function ShoePriceConfigPage() {
     () => [
       { title: "开发编号", dataIndex: "developmentNo", width: 220, fixed: "left", render: formatEmpty },
       {
+        title: "面料",
+        dataIndex: "upperMaterial",
+        width: 300,
+        ellipsis: true,
+        render: formatEmpty,
+      },
+      {
         title: "鞋子单价",
         dataIndex: "shoePrice",
-        minWidth: 180,
+        width: 160,
         align: "right",
         render: formatEmpty,
       },
@@ -265,7 +272,7 @@ export default function ShoePriceConfigPage() {
           columns={columns}
           dataSource={configs}
           pagination={pagination}
-          scroll={{ x: 810 }}
+          scroll={{ x: 1070 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({

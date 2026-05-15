@@ -26,8 +26,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -161,6 +163,7 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         List<ShoePriceConfigResponse> records = resultPage.getRecords().stream()
                 .map(ShoePriceConfigResponse::from)
                 .toList();
+        attachUpperMaterials(records);
         return PageResponse.from(resultPage, records);
     }
 
@@ -401,6 +404,43 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         config.setShoePrice(shoePrice);
         config.setUpdatedAt(now);
         return ShoePriceConfigResponse.from(config);
+    }
+
+    private void attachUpperMaterials(List<ShoePriceConfigResponse> records) {
+        List<String> developmentNos = records.stream()
+                .map(ShoePriceConfigResponse::getDevelopmentNo)
+                .map(this::normalizeDevelopmentNo)
+                .filter(this::hasText)
+                .distinct()
+                .toList();
+        Map<String, String> upperMaterialsByDevelopmentNo = collectUpperMaterialsByDevelopmentNo(developmentNos);
+        records.forEach(record -> record.setUpperMaterial(
+                upperMaterialsByDevelopmentNo.get(normalizeDevelopmentNo(record.getDevelopmentNo()))));
+    }
+
+    private Map<String, String> collectUpperMaterialsByDevelopmentNo(Collection<String> developmentNos) {
+        if (developmentNos == null || developmentNos.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, LinkedHashSet<String>> materialSets = new LinkedHashMap<>();
+        orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                        .select(OrderRecordDetail::getDevelopmentNo, OrderRecordDetail::getUpperMaterial)
+                        .in(OrderRecordDetail::getDevelopmentNo, developmentNos)
+                        .isNotNull(OrderRecordDetail::getUpperMaterial)
+                        .ne(OrderRecordDetail::getUpperMaterial, ""))
+                .forEach(detail -> {
+                    String developmentNo = normalizeDevelopmentNo(detail.getDevelopmentNo());
+                    String upperMaterial = blankToNull(detail.getUpperMaterial());
+                    if (hasText(developmentNo) && hasText(upperMaterial)) {
+                        materialSets.computeIfAbsent(developmentNo, key -> new LinkedHashSet<>()).add(upperMaterial);
+                    }
+                });
+        return materialSets.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> String.join(" / ", entry.getValue()),
+                        (left, right) -> left,
+                        LinkedHashMap::new));
     }
 
     private boolean exists(String developmentNo) {

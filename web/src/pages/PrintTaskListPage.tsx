@@ -86,7 +86,7 @@ export default function PrintTaskListPage() {
       setTasks(data);
     } catch (error) {
       setTasks([]);
-      message.error(error instanceof Error ? error.message : "打印列表加载失败");
+      message.error(error instanceof Error ? error.message : "打印订单加载失败");
     } finally {
       setLoading(false);
     }
@@ -297,9 +297,9 @@ export default function PrintTaskListPage() {
     <div className="workspace">
       <div className="toolbar-band">
         <div>
-          <Typography.Title level={3}>打印列表</Typography.Title>
+          <Typography.Title level={3}>打印订单</Typography.Title>
           <Typography.Text type="secondary">
-            在这里上传订单 Excel，系统会生成待打印记录；点打印后选择订单或装箱单预览。
+            上传订单 Excel 后生成待打印记录，可预览订单和装箱单。
           </Typography.Text>
         </div>
         <Space wrap>

@@ -14,12 +14,83 @@ import type { ReactNode } from "react";
 
 const { Header, Content, Sider } = Layout;
 
-// 左侧导航固定常用工作台和配置入口。
-const navItems = [
+interface NavLeafItem {
+  path: string;
+  label: string;
+  icon: ReactNode;
+  parentKey?: string;
+  parentLabel?: string;
+}
+
+// 左侧导航固定常用工作台、打印中心和配置中心入口。
+const navLeafItems: NavLeafItem[] = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
-  { path: "/tasks", label: "打印列表", icon: <FileDoneOutlined /> },
-  { path: "/style-configs", label: "盒规配置", icon: <SettingOutlined /> },
-  { path: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
+  {
+    path: "/tasks/order",
+    label: "打印订单",
+    icon: <FileDoneOutlined />,
+    parentKey: "print-center",
+    parentLabel: "打印中心",
+  },
+  {
+    path: "/tasks/outer-carton-label",
+    label: "打印外箱贴标",
+    icon: <FileDoneOutlined />,
+    parentKey: "print-center",
+    parentLabel: "打印中心",
+  },
+  {
+    path: "/tasks/inner-box-label",
+    label: "打印内盒贴标",
+    icon: <FileDoneOutlined />,
+    parentKey: "print-center",
+    parentLabel: "打印中心",
+  },
+  {
+    path: "/tasks/shipping-note",
+    label: "打印出货单",
+    icon: <FileDoneOutlined />,
+    parentKey: "print-center",
+    parentLabel: "打印中心",
+  },
+  {
+    path: "/style-configs",
+    label: "盒规配置",
+    icon: <SettingOutlined />,
+    parentKey: "config-center",
+    parentLabel: "配置中心",
+  },
+  {
+    path: "/price-configs",
+    label: "价格配置",
+    icon: <DollarOutlined />,
+    parentKey: "config-center",
+    parentLabel: "配置中心",
+  },
+];
+
+const menuItems: MenuProps["items"] = [
+  { key: "/orders", label: "订单列表", icon: <TableOutlined /> },
+  {
+    key: "print-center",
+    label: "打印中心",
+    icon: <FileDoneOutlined />,
+    children: [
+      { key: "/tasks/order", label: "打印订单" },
+      { key: "/tasks/outer-carton-label", label: "打印外箱贴标" },
+      { key: "/tasks/inner-box-label", label: "打印内盒贴标" },
+      { key: "/tasks/shipping-note", label: "打印出货单" },
+    ],
+  },
+  {
+    key: "config-center",
+    label: "配置中心",
+    icon: <SettingOutlined />,
+    children: [
+      { key: "/style-configs", label: "盒规配置", icon: <SettingOutlined /> },
+      { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
+    ],
+  },
 ];
 
 interface WorkspaceTab {
@@ -35,8 +106,12 @@ export default function App() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([]);
+  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>([]);
 
-  const currentItem = navItems.find((item) => location.pathname.startsWith(item.path)) || navItems[0];
+  const currentItem =
+    navLeafItems.find(
+      (item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`),
+    ) || navLeafItems[0];
   const isOrderDetailPage = /^\/orders\/[^/]+\/details/.test(location.pathname);
   const routeState = location.state as { order?: { orderNo?: string; id?: number } } | null;
   const pageTitle = isOrderDetailPage ? "订单明细" : currentItem.label;
@@ -69,26 +144,31 @@ export default function App() {
     });
   }, [currentTab]);
 
+  useEffect(() => {
+    if (!currentItem.parentKey) {
+      return;
+    }
+    setOpenMenuKeys((prev) =>
+      prev.includes(currentItem.parentKey as string) ? prev : [...prev, currentItem.parentKey as string],
+    );
+  }, [currentItem.parentKey]);
+
   const breadcrumbItems = isOrderDetailPage
     ? [
         { title: "首页" },
         { title: <a onClick={() => navigate("/orders")}>订单列表</a> },
         { title: "订单明细" },
       ]
+    : currentItem.parentLabel
+      ? [
+          { title: "首页" },
+          { title: currentItem.parentLabel },
+          { title: currentItem.label },
+        ]
     : [
         { title: "首页" },
         { title: currentItem.label },
       ];
-
-  const menuItems = useMemo<MenuProps["items"]>(
-    () =>
-      navItems.map((item) => ({
-        key: item.path,
-        icon: item.icon,
-        label: item.label,
-      })),
-    [],
-  );
 
   const tabItems = useMemo<TabsProps["items"]>(
     () =>
@@ -150,8 +230,14 @@ export default function App() {
           theme="dark"
           mode="inline"
           selectedKeys={[currentItem.path]}
+          openKeys={collapsed ? [] : openMenuKeys}
           items={menuItems}
-          onClick={({ key }) => navigate(key)}
+          onClick={({ key }) => {
+            if (typeof key === "string" && key.startsWith("/")) {
+              navigate(key);
+            }
+          }}
+          onOpenChange={setOpenMenuKeys}
         />
       </Sider>
 

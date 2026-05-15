@@ -49,7 +49,8 @@ a {
   background: transparent;
 }
 
-.app-sider .ant-menu-item {
+.app-sider .ant-menu-item,
+.app-sider .ant-menu-submenu-title {
   height: 42px;
   margin: 4px 0;
   border-radius: 4px;
@@ -334,6 +335,50 @@ a {
   gap: 16px;
 }
 
+.print-order-select {
+  min-width: 260px;
+}
+
+.print-transfer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.print-transfer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.print-transfer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.print-transfer-heading h4.ant-typography {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.print-transfer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.print-transfer-actions .ant-btn {
+  width: 40px;
+  height: 40px;
+}
+
 .print-options {
   width: 100%;
 }
@@ -409,6 +454,18 @@ a {
   .toolbar-band .ant-upload,
   .toolbar-band button {
     width: 100%;
+  }
+
+  .print-order-select {
+    width: 100%;
+  }
+
+  .print-transfer-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .print-transfer-actions {
+    flex-direction: row;
   }
 
   .page-panel {

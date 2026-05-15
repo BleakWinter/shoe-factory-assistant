@@ -9,6 +9,7 @@ public class ShoePriceConfigResponse {
 
     private Long id;
     private String developmentNo;
+    private String upperMaterial;
     private BigDecimal shoePrice;
     private Boolean complete;
     private LocalDateTime createdAt;
@@ -39,6 +40,14 @@ public class ShoePriceConfigResponse {
 
     public void setDevelopmentNo(String developmentNo) {
         this.developmentNo = developmentNo;
+    }
+
+    public String getUpperMaterial() {
+        return upperMaterial;
+    }
+
+    public void setUpperMaterial(String upperMaterial) {
+        this.upperMaterial = upperMaterial;
     }
 
     public BigDecimal getShoePrice() {
