@@ -24,6 +24,7 @@ import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.service.OrderService;
+import com.shoefactory.assistant.service.StyleConfigService;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.StoredFile;
 import org.springframework.stereotype.Service;
@@ -32,9 +33,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,12 +49,21 @@ public class OrderServiceImpl implements OrderService {
     private static final TypeReference<Map<String, Integer>> SIZE_MAP_TYPE = new TypeReference<>() {
     };
 
+    private enum RecognitionFilter {
+        ORDER_PENDING,
+        PACKING_PENDING,
+        ORDER_RECOGNIZED,
+        PACKING_RECOGNIZED,
+        FAILED
+    }
+
     private final OrderRecordMapper orderRecordMapper;
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderDetailProcessMapper orderDetailProcessMapper;
     private final FileStorageUtil fileStorageUtil;
     private final OrderExcelImportService orderExcelImportService;
+    private final StyleConfigService styleConfigService;
 
     public OrderServiceImpl(
             OrderRecordMapper orderRecordMapper,
@@ -57,7 +71,8 @@ public class OrderServiceImpl implements OrderService {
             OrderPackingDetailMapper orderPackingDetailMapper,
             OrderDetailProcessMapper orderDetailProcessMapper,
             FileStorageUtil fileStorageUtil,
-            OrderExcelImportService orderExcelImportService
+            OrderExcelImportService orderExcelImportService,
+            StyleConfigService styleConfigService
     ) {
         this.orderRecordMapper = orderRecordMapper;
         this.orderRecordDetailMapper = orderRecordDetailMapper;
@@ -65,6 +80,7 @@ public class OrderServiceImpl implements OrderService {
         this.orderDetailProcessMapper = orderDetailProcessMapper;
         this.fileStorageUtil = fileStorageUtil;
         this.orderExcelImportService = orderExcelImportService;
+        this.styleConfigService = styleConfigService;
     }
 
     @Override
@@ -81,31 +97,26 @@ public class OrderServiceImpl implements OrderService {
         OrderRecord orderRecord = readUploadSummary(storedFile, fileNo);
         initializeRecognitionFields(orderRecord);
         orderRecordMapper.insert(orderRecord);
+        styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
         return buildUploadResponse(orderRecord, 0);
     }
 
     @Override
     public PageResponse<OrderRecordResponse> listOrders(
             String orderNo,
-            String customerName,
             String developmentNo,
-            String orderRecognitionStatus,
-            String packingRecognitionStatus,
+            String recognitionStatus,
             long page,
             long size
     ) {
-        OrderRecognitionStatus parsedOrderStatus = OrderRecognitionStatus.parseNullable(orderRecognitionStatus);
-        OrderRecognitionStatus parsedPackingStatus = OrderRecognitionStatus.parseNullable(packingRecognitionStatus);
+        List<RecognitionFilter> parsedRecognitionFilters = parseRecognitionFilters(recognitionStatus);
+        List<Long> developmentOrderIds = findOrderIdsByDevelopmentNo(developmentNo);
         Page<OrderRecord> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
         LambdaQueryWrapper<OrderRecord> wrapper = new LambdaQueryWrapper<OrderRecord>()
                 .like(hasText(orderNo), OrderRecord::getOrderNo, orderNo)
-                .like(hasText(customerName), OrderRecord::getCustomerName, customerName)
-                .like(hasText(developmentNo), OrderRecord::getDevelopmentNos, developmentNo)
-                .eq(parsedOrderStatus != null, OrderRecord::getOrderRecognitionStatus,
-                        parsedOrderStatus == null ? null : parsedOrderStatus.getCode())
-                .eq(parsedPackingStatus != null, OrderRecord::getPackingRecognitionStatus,
-                        parsedPackingStatus == null ? null : parsedPackingStatus.getCode())
                 .orderByDesc(OrderRecord::getCreatedAt);
+        applyDevelopmentNoFilter(wrapper, developmentNo, developmentOrderIds);
+        applyRecognitionFilters(wrapper, parsedRecognitionFilters);
         Page<OrderRecord> resultPage = orderRecordMapper.selectPage(pageRequest, wrapper);
         Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(resultPage.getRecords());
         Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderId(resultPage.getRecords());
@@ -117,6 +128,106 @@ public class OrderServiceImpl implements OrderService {
                 ))
                 .toList();
         return PageResponse.from(resultPage, records);
+    }
+
+    private List<Long> findOrderIdsByDevelopmentNo(String developmentNo) {
+        if (!hasText(developmentNo)) {
+            return List.of();
+        }
+        return orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                        .like(OrderRecordDetail::getDevelopmentNo, developmentNo))
+                .stream()
+                .map(OrderRecordDetail::getOrderId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+    }
+
+    private void applyDevelopmentNoFilter(
+            LambdaQueryWrapper<OrderRecord> wrapper,
+            String developmentNo,
+            List<Long> developmentOrderIds
+    ) {
+        if (!hasText(developmentNo)) {
+            return;
+        }
+        wrapper.and(nested -> {
+            nested.like(OrderRecord::getDevelopmentNos, developmentNo);
+            if (!developmentOrderIds.isEmpty()) {
+                nested.or().in(OrderRecord::getId, developmentOrderIds);
+            }
+        });
+    }
+
+    private List<RecognitionFilter> parseRecognitionFilters(String values) {
+        if (!hasText(values)) {
+            return List.of();
+        }
+        return Arrays.stream(values.split(","))
+                .map(String::trim)
+                .filter(this::hasText)
+                .map(this::parseRecognitionFilter)
+                .distinct()
+                .toList();
+    }
+
+    private RecognitionFilter parseRecognitionFilter(String value) {
+        return RecognitionFilter.valueOf(value.toUpperCase(Locale.ROOT));
+    }
+
+    private void applyRecognitionFilters(
+            LambdaQueryWrapper<OrderRecord> wrapper,
+            List<RecognitionFilter> filters
+    ) {
+        if (filters.isEmpty()) {
+            return;
+        }
+        int pending = OrderRecognitionStatus.PENDING.getCode();
+        int recognized = OrderRecognitionStatus.RECOGNIZED.getCode();
+        int failed = OrderRecognitionStatus.FAILED.getCode();
+        wrapper.and(nested -> {
+            for (int index = 0; index < filters.size(); index++) {
+                if (index > 0) {
+                    nested.or();
+                }
+                RecognitionFilter filter = filters.get(index);
+                switch (filter) {
+                    case ORDER_PENDING -> nested.eq(OrderRecord::getOrderRecognitionStatus, pending);
+                    case PACKING_PENDING -> nested.eq(OrderRecord::getPackingRecognitionStatus, pending);
+                    case ORDER_RECOGNIZED -> nested.eq(OrderRecord::getOrderRecognitionStatus, recognized);
+                    case PACKING_RECOGNIZED -> nested.eq(OrderRecord::getPackingRecognitionStatus, recognized);
+                    case FAILED -> nested.and(failedWrapper -> failedWrapper
+                            .eq(OrderRecord::getOrderRecognitionStatus, failed)
+                            .or()
+                            .eq(OrderRecord::getPackingRecognitionStatus, failed));
+                }
+            }
+        });
+    }
+
+    @Override
+    public List<OrderRecordResponse> listDevelopmentNoOptions() {
+        List<OrderRecord> orders = orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
+                .orderByAsc(OrderRecord::getOrderNo));
+        Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(orders);
+        return orders.stream()
+                .map(order -> buildDevelopmentNoOption(order, detailsByOrderId.getOrDefault(order.getId(), List.of())))
+                .filter(response -> response.getDevelopmentNoList() != null && !response.getDevelopmentNoList().isEmpty())
+                .toList();
+    }
+
+    private OrderRecordResponse buildDevelopmentNoOption(OrderRecord order, List<OrderRecordDetail> details) {
+        Set<String> developmentNos = new LinkedHashSet<>(splitDevelopmentNos(order.getDevelopmentNos()));
+        details.stream()
+                .map(OrderRecordDetail::getDevelopmentNo)
+                .filter(this::hasText)
+                .map(String::trim)
+                .forEach(developmentNos::add);
+        OrderRecordResponse response = OrderRecordResponse.from(order);
+        List<String> developmentNoList = developmentNos.stream().toList();
+        response.setDevelopmentNoList(developmentNoList);
+        response.setDevelopmentNos(String.join(",", developmentNoList));
+        return response;
     }
 
     @Override
@@ -136,6 +247,9 @@ public class OrderServiceImpl implements OrderService {
                 detail.setOrderId(order.getId());
                 orderRecordDetailMapper.insert(detail);
             }
+            styleConfigService.ensureConfigsForDevelopmentNos(importResult.getDetails().stream()
+                    .map(OrderRecordDetail::getDevelopmentNo)
+                    .toList());
             fillTotalsFromDetails(order, importResult.getDetails());
             fillTotalsFromPackingDetails(order, loadPackingDetails(orderId));
             order.setOrderRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
@@ -391,6 +505,16 @@ public class OrderServiceImpl implements OrderService {
             return left;
         }
         return hasText(right) ? right : null;
+    }
+
+    private List<String> splitDevelopmentNos(String value) {
+        if (!hasText(value)) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(this::hasText)
+                .toList();
     }
 
     private boolean hasText(String value) {

@@ -2,6 +2,7 @@ import { DownOutlined, EyeOutlined, FileSearchOutlined, ReloadOutlined, SearchOu
 import {
   App,
   Button,
+  Cascader,
   Collapse,
   Dropdown,
   Form,
@@ -20,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   fetchOrderDetails,
+  fetchDevelopmentNoOptions,
   fetchOrderPackingDetails,
   fetchOrders,
   recognizeOrder,
@@ -27,6 +29,7 @@ import {
   toAssetUrl,
 } from "../api/orderApi";
 import type {
+  DevelopmentNoOption,
   OrderDetailProcess,
   OrderPackingDetail,
   OrderRecord,
@@ -37,20 +40,54 @@ import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface FilterValues {
   orderNo?: string;
-  customerName?: string;
-  developmentNo?: string;
-  orderRecognitionStatus?: string;
-  packingRecognitionStatus?: string;
+  developmentNoPath?: string[];
+  recognitionStatuses?: string[];
 }
 
 const FAILED_STATUS = 3;
 
 const recognitionOptions = [
-  { label: "待识别", value: "0" },
-  { label: "已识别", value: "1" },
-  { label: "待人工处理", value: "2" },
-  { label: "识别失败", value: "3" },
+  { label: "待识别订单", value: "ORDER_PENDING" },
+  { label: "待识别装箱单", value: "PACKING_PENDING" },
+  { label: "已识别订单", value: "ORDER_RECOGNIZED" },
+  { label: "已识别装箱单", value: "PACKING_RECOGNIZED" },
+  { label: "识别失败", value: "FAILED" },
 ];
+
+interface CascaderNode {
+  value: string;
+  label: string;
+  children?: CascaderNode[];
+}
+
+function optionKey(value?: string) {
+  return value && value.trim() ? value.trim() : "未填写";
+}
+
+function buildDevelopmentNoOptions(records: DevelopmentNoOption[]): CascaderNode[] {
+  const orderMap = new Map<string, Set<string>>();
+  for (const record of records) {
+    const orderNo = optionKey(record.orderNo);
+    const developmentNos = record.developmentNoList?.filter((item) => item && item.trim()) || [];
+    if (developmentNos.length === 0) {
+      continue;
+    }
+    if (!orderMap.has(orderNo)) {
+      orderMap.set(orderNo, new Set());
+    }
+    const developmentSet = orderMap.get(orderNo)!;
+    developmentNos.forEach((developmentNo) => developmentSet.add(developmentNo.trim()));
+  }
+
+  return Array.from(orderMap.entries()).map(([orderNo, developmentSet]) => ({
+    value: orderNo,
+    label: orderNo,
+    children: Array.from(developmentSet).map((developmentNo) => ({
+      value: developmentNo,
+      label: developmentNo,
+    })),
+  }));
+}
 
 function renderDevelopmentNos(values?: string[]) {
   if (!values || values.length === 0) {
@@ -171,6 +208,7 @@ export default function OrderWorkspacePage() {
   const [activeOrder, setActiveOrder] = useState<OrderRecord | null>(null);
   const [activePanelKeys, setActivePanelKeys] = useState<string[]>([]);
   const [recognizingKey, setRecognizingKey] = useState("");
+  const [developmentOptionRecords, setDevelopmentOptionRecords] = useState<DevelopmentNoOption[]>([]);
   const [query, setQuery] = useState<OrderRecordQueryParams>({ page: 1, size: 20 });
   const [total, setTotal] = useState(0);
 
@@ -193,13 +231,22 @@ export default function OrderWorkspacePage() {
     void loadOrders(query);
   }, [loadOrders, query]);
 
+  useEffect(() => {
+    fetchDevelopmentNoOptions()
+      .then(setDevelopmentOptionRecords)
+      .catch(() => setDevelopmentOptionRecords([]));
+  }, []);
+
+  const developmentNoOptions = useMemo(
+    () => buildDevelopmentNoOptions(developmentOptionRecords),
+    [developmentOptionRecords],
+  );
+
   const submitFilters = (values: FilterValues) => {
     setQuery({
       orderNo: values.orderNo,
-      customerName: values.customerName,
-      developmentNo: values.developmentNo,
-      orderRecognitionStatus: values.orderRecognitionStatus,
-      packingRecognitionStatus: values.packingRecognitionStatus,
+      developmentNo: values.developmentNoPath?.[1],
+      recognitionStatus: values.recognitionStatuses?.join(","),
       page: 1,
       size: query.size ?? 20,
     });
@@ -437,17 +484,24 @@ export default function OrderWorkspacePage() {
           <Form.Item name="orderNo" label="订单流水号">
             <Input allowClear placeholder="订单流水号" />
           </Form.Item>
-          <Form.Item name="customerName" label="客户">
-            <Input allowClear placeholder="客户" />
+          <Form.Item name="developmentNoPath" label="开发编号">
+            <Cascader
+              allowClear
+              className="style-cascader"
+              options={developmentNoOptions}
+              placeholder="订单流水号 / 开发编号"
+              showSearch
+            />
           </Form.Item>
-          <Form.Item name="developmentNo" label="开发编号">
-            <Input allowClear placeholder="开发编号" />
-          </Form.Item>
-          <Form.Item name="orderRecognitionStatus" label="订单识别">
-            <Select allowClear className="status-select" placeholder="全部" options={recognitionOptions} />
-          </Form.Item>
-          <Form.Item name="packingRecognitionStatus" label="装箱单识别">
-            <Select allowClear className="status-select" placeholder="全部" options={recognitionOptions} />
+          <Form.Item name="recognitionStatuses" label="识别状态">
+            <Select
+              allowClear
+              className="status-select"
+              maxTagCount="responsive"
+              mode="multiple"
+              options={recognitionOptions}
+              placeholder="全部"
+            />
           </Form.Item>
           <Form.Item>
             <Space>

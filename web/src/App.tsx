@@ -2,6 +2,7 @@ import {
   FileDoneOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SettingOutlined,
   TableOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Button, Layout, Menu, Tabs, Typography } from "antd";
@@ -16,6 +17,7 @@ const { Header, Content, Sider } = Layout;
 const navItems = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/tasks", label: "打印列表", icon: <FileDoneOutlined /> },
+  { path: "/style-configs", label: "配置管理", icon: <SettingOutlined /> },
 ];
 
 interface WorkspaceTab {

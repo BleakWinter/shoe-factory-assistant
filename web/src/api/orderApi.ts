@@ -1,5 +1,6 @@
 import request from "../utils/request";
 import type {
+  DevelopmentNoOption,
   OrderPackingDetail,
   OrderRecord,
   OrderRecordDetail,
@@ -48,6 +49,16 @@ export async function fetchOrders(params: OrderRecordQueryParams) {
   >("/orders", { params });
 
   return normalizePage(data, params.page, params.size);
+}
+
+export async function fetchDevelopmentNoOptions() {
+  try {
+    const { data } = await request.get<DevelopmentNoOption[]>("/orders/development-options");
+    return data || [];
+  } catch {
+    const page = await fetchOrders({ page: 1, size: 100 });
+    return page.records;
+  }
 }
 
 export async function fetchOrderDetails(orderId: number) {

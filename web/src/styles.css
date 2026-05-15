@@ -342,6 +342,10 @@ a {
   width: 180px;
 }
 
+.full-width-control {
+  width: 100%;
+}
+
 /* PDF preview modal. */
 .pdf-preview {
   position: relative;

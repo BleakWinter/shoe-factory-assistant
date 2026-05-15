@@ -55,23 +55,24 @@ public class OrderController {
     @GetMapping
     public ApiResponse<PageResponse<OrderRecordResponse>> listOrders(
             @RequestParam(required = false) String orderNo,
-            @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String developmentNo,
-            @RequestParam(required = false) String orderRecognitionStatus,
-            @RequestParam(required = false) String packingRecognitionStatus,
+            @RequestParam(required = false) String recognitionStatus,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size
     ) {
         // 订单列表展示 order_record 主表数据。
         return ApiResponse.ok(orderService.listOrders(
                 orderNo,
-                customerName,
                 developmentNo,
-                orderRecognitionStatus,
-                packingRecognitionStatus,
+                recognitionStatus,
                 page,
                 size
         ));
+    }
+
+    @GetMapping("/development-options")
+    public ApiResponse<List<OrderRecordResponse>> listDevelopmentNoOptions() {
+        return ApiResponse.ok(orderService.listDevelopmentNoOptions());
     }
 
     @PostMapping("/{id}/recognize-order")

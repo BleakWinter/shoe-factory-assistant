@@ -18,13 +18,13 @@ public interface OrderService {
     // 查询订单主表，页面订单列表和打印列表都以它为入口。
     PageResponse<OrderRecordResponse> listOrders(
             String orderNo,
-            String customerName,
             String developmentNo,
-            String orderRecognitionStatus,
-            String packingRecognitionStatus,
+            String recognitionStatus,
             long page,
             long size
     );
+
+    List<OrderRecordResponse> listDevelopmentNoOptions();
 
     OrderRecordResponse recognizeOrder(Long orderId);
 
