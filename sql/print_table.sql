@@ -97,8 +97,6 @@ CREATE TABLE IF NOT EXISTS `order_record_detail` (
 
   `carton_end` varchar(128) DEFAULT NULL COMMENT 'CTN END/结束箱号',
 
-  `box_spec` varchar(128) DEFAULT NULL COMMENT '盒子规模，例如 30×20×10',
-
   `source_sheet_name` varchar(128) DEFAULT NULL COMMENT '来源sheet',
 
   `row_index` int DEFAULT NULL COMMENT 'Excel行号',

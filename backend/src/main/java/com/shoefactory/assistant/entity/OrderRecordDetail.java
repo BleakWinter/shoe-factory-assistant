@@ -38,7 +38,6 @@ public class OrderRecordDetail {
     private Integer cartonCount;
     private String cartonStart;
     private String cartonEnd;
-    private String boxSpec;
     private String sourceSheetName;
     private Integer rowIndex;
     private String remark;
@@ -97,8 +96,6 @@ public class OrderRecordDetail {
     public void setCartonStart(String cartonStart) { this.cartonStart = cartonStart; }
     public String getCartonEnd() { return cartonEnd; }
     public void setCartonEnd(String cartonEnd) { this.cartonEnd = cartonEnd; }
-    public String getBoxSpec() { return boxSpec; }
-    public void setBoxSpec(String boxSpec) { this.boxSpec = boxSpec; }
     public String getSourceSheetName() { return sourceSheetName; }
     public void setSourceSheetName(String sourceSheetName) { this.sourceSheetName = sourceSheetName; }
     public Integer getRowIndex() { return rowIndex; }

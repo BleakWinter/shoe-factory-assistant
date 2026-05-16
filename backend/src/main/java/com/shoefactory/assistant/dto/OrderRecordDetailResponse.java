@@ -51,6 +51,14 @@ public class OrderRecordDetailResponse {
     private LocalDateTime createdAt;
 
     public static OrderRecordDetailResponse from(OrderRecordDetail detail, List<OrderDetailProcess> processes) {
+        return from(detail, processes, null);
+    }
+
+    public static OrderRecordDetailResponse from(
+            OrderRecordDetail detail,
+            List<OrderDetailProcess> processes,
+            String boxSpec
+    ) {
         OrderRecordDetailResponse response = new OrderRecordDetailResponse();
         response.setId(detail.getId());
         response.setOrderId(detail.getOrderId());
@@ -77,7 +85,7 @@ public class OrderRecordDetailResponse {
         response.setCartonCount(detail.getCartonCount());
         response.setCartonStart(detail.getCartonStart());
         response.setCartonEnd(detail.getCartonEnd());
-        response.setBoxSpec(detail.getBoxSpec());
+        response.setBoxSpec(boxSpec);
         response.setSourceSheetName(detail.getSourceSheetName());
         response.setRowIndex(detail.getRowIndex());
         response.setRemark(detail.getRemark());
