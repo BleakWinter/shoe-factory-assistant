@@ -207,8 +207,8 @@ export default function App() {
     <Layout className="app-shell">
       <Sider
         className="app-sider"
-        width={248}
-        collapsedWidth={68}
+        width={200}
+        collapsedWidth={60}
         breakpoint="lg"
         collapsed={collapsed}
         onBreakpoint={setCollapsed}

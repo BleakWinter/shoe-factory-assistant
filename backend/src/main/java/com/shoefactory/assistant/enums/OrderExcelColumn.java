@@ -27,6 +27,8 @@ public enum OrderExcelColumn {
     TRADEMARK(20, 0, "商标"),
     QUANTITY(38, 1, "双数", "数量"),
     CARTON_COUNT(39, 0, "箱数"),
+    CARTON_START(-1, 0, "CTN START", "CTNSTART", "CTN START/开始箱号", "CTNSTART开始箱号", "开始箱号", "起始箱号"),
+    CARTON_END(-1, 0, "CTN END", "CTNEND", "CTN END/结束箱号", "CTNEND结束箱号", "结束箱号"),
     TOTAL_QUANTITY(40, 0, "总数量", "总数");
 
     private final int fallbackIndex;

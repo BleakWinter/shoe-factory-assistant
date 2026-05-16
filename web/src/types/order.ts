@@ -126,6 +126,8 @@ export interface OrderRecordDetail {
   sizeQuantities?: Record<string, number>;
   quantity?: number;
   cartonCount?: number;
+  cartonStart?: string;
+  cartonEnd?: string;
   boxSpec?: string;
   sourceSheetName?: string;
   rowIndex?: number;

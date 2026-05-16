@@ -371,6 +371,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         int sizeQuantityTotal = sumPositiveValues(sizeQuantities);
         detail.setQuantity(sizeQuantityTotal > 0 ? sizeQuantityTotal : nullToZero(integerValue(row, columns.quantity())));
         detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
+        detail.setCartonStart(blankToNull(text(row, columns.cartonStart())));
+        detail.setCartonEnd(blankToNull(text(row, columns.cartonEnd())));
         detail.setSizeQuantitiesJson(toJson(sizeQuantities));
         detail.setSourceSheetName(sheet.getSheetName());
         detail.setRowIndex(rowIndex + 1);
@@ -675,6 +677,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                 || normalizedSecondary.contains("商标")
                 || normalizedSecondary.contains("双数")
                 || normalizedSecondary.contains("箱数")
+                || normalizedSecondary.contains("CTNSTART")
+                || normalizedSecondary.contains("CTNEND")
+                || normalizedSecondary.contains("开始箱号")
+                || normalizedSecondary.contains("结束箱号")
                 || normalizedSecondary.contains("总数量")) {
             return false;
         }
@@ -902,7 +908,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             String name = normalizeHeader(new DataFormatter(Locale.CHINA).formatCellValue(cell));
             for (String alias : column.getAliases()) {
                 String normalizedAlias = normalizeHeader(alias);
-                if (name.equals(normalizedAlias)) {
+                if (name.equalsIgnoreCase(normalizedAlias)) {
                     return col;
                 }
             }
@@ -974,6 +980,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int trademark,
             int quantity,
             int cartonCount,
+            int cartonStart,
+            int cartonEnd,
             int totalQuantity,
             int sizeStart,
             int sizeEnd,
@@ -1000,14 +1008,16 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int trademark = findColumn(header, OrderExcelColumn.TRADEMARK);
             int quantity = findColumn(header, OrderExcelColumn.QUANTITY);
             int cartonCount = findColumn(header, OrderExcelColumn.CARTON_COUNT);
+            int cartonStart = findColumn(header, OrderExcelColumn.CARTON_START);
+            int cartonEnd = findColumn(header, OrderExcelColumn.CARTON_END);
             int totalQuantity = findColumn(header, OrderExcelColumn.TOTAL_QUANTITY);
-            int firstSummary = firstPositive(quantity, cartonCount, totalQuantity);
+            int firstSummary = firstPositive(quantity, cartonCount, totalQuantity, cartonStart, cartonEnd);
             // 尺码从商标后一列开始；如果商标列识别异常，再退回样本订单的尺码起始列。
             int sizeStart = Math.max(OrderExcelColumn.TRADEMARK.getFallbackIndex() + 1, trademark + 1);
             int sizeEnd = firstSummary > sizeStart
                     ? firstSummary - 1
                     : Math.max(sizeStart - 1, header == null ? OrderExcelColumn.QUANTITY.getFallbackIndex() - 1 : header.getLastCellNum() - 1);
-            int dataEnd = Math.max(totalQuantity, Math.max(cartonCount, Math.max(quantity, sizeEnd)));
+            int dataEnd = Math.max(totalQuantity, Math.max(cartonEnd, Math.max(cartonStart, Math.max(cartonCount, Math.max(quantity, sizeEnd)))));
             return new TableColumns(
                     image,
                     lastNo,
@@ -1027,6 +1037,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                     trademark,
                     quantity,
                     cartonCount,
+                    cartonStart,
+                    cartonEnd,
                     totalQuantity,
                     sizeStart,
                     sizeEnd,

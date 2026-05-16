@@ -127,6 +127,8 @@ export default function OrderDetailPage() {
       { title: "尺码数量", dataIndex: "sizeQuantities", width: 240, render: renderSizeQuantities },
       { title: "双数", dataIndex: "quantity", width: 90, align: "right", render: formatEmpty },
       { title: "箱数", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
+      { title: "开始箱号", dataIndex: "cartonStart", width: 120, render: formatEmpty },
+      { title: "结束箱号", dataIndex: "cartonEnd", width: 120, render: formatEmpty },
       { title: "盒规", dataIndex: "boxSpec", width: 120, render: formatEmpty },
     ],
     [],
@@ -197,7 +199,7 @@ export default function OrderDetailPage() {
                   columns={detailColumns}
                   dataSource={details}
                   pagination={{ pageSize: 20, showSizeChanger: true }}
-                  scroll={{ x: 3090 }}
+                  scroll={{ x: 3330 }}
                   className="data-table"
                   expandable={{
                     expandedRowRender: (record) => renderProcesses(record.processes),

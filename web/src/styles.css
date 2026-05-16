@@ -45,13 +45,13 @@ a {
 
 .app-sider .ant-menu {
   flex: 1;
-  padding: 6px 8px;
+  padding: 6px;
   background: transparent;
 }
 
 .app-sider .ant-menu-item,
 .app-sider .ant-menu-submenu-title {
-  height: 42px;
+  height: 40px;
   margin: 4px 0;
   border-radius: 4px;
 }
@@ -63,9 +63,9 @@ a {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 72px;
-  padding: 16px 18px;
+  gap: 8px;
+  min-height: 64px;
+  padding: 14px 12px;
   color: #ffffff;
   border-bottom: 1px solid rgb(255 255 255 / 10%);
 }
@@ -73,11 +73,11 @@ a {
 .brand-mark {
   display: grid;
   place-items: center;
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
   color: #ffffff;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   background: #2f6df6;
   border-radius: 4px;
@@ -90,7 +90,7 @@ a {
 .brand-title.ant-typography {
   margin: 0;
   color: #ffffff;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -105,7 +105,7 @@ a {
 
 .ant-layout-sider-collapsed .brand {
   justify-content: center;
-  padding: 16px 0;
+  padding: 14px 0;
 }
 
 .ant-layout-sider-collapsed .brand-copy {
@@ -417,6 +417,40 @@ a {
   width: 100%;
 }
 
+.print-format-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.print-format-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d9dee7;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.print-format-option-selected {
+  border-color: #1677ff;
+  background: #f0f6ff;
+}
+
+.print-format-option .ant-radio-wrapper {
+  flex: 1;
+  min-width: 0;
+  margin-inline-end: 0;
+}
+
+.carton-label-print-root {
+  display: none;
+}
+
 .carton-label-preview {
   display: flex;
   justify-content: center;
@@ -507,6 +541,10 @@ a {
 }
 
 .carton-label-empty-line {
+  display: grid;
+  place-items: center;
+  font-size: 2.18cqh;
+  font-weight: 800;
   border-bottom: 1px solid #000000;
 }
 
@@ -554,8 +592,8 @@ a {
 .carton-label-size-grid {
   display: grid;
   grid-template-columns: repeat(16, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  height: 8.45%;
+  grid-template-rows: 4.225fr 4.225fr 3.61fr;
+  height: 12.06%;
   border-bottom: 1px solid #000000;
 }
 
@@ -565,10 +603,20 @@ a {
   min-height: 0;
   font-size: 1.16cqh;
   font-weight: 800;
+  white-space: nowrap;
   border-right: 1px solid #000000;
 }
 
+.carton-label-size-cell:nth-child(16n + 1),
+.carton-label-size-cell:nth-child(16n) {
+  padding-inline: 5px;
+}
+
 .carton-label-size-cell:nth-child(-n + 16) {
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-size-cell:nth-child(n + 17):nth-child(-n + 32) {
   border-bottom: 1px solid #000000;
 }
 
@@ -576,22 +624,22 @@ a {
   border-right: 0;
 }
 
-.carton-label-weight-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  height: 3.61%;
-  font-size: 1.91cqh;
-  font-weight: 800;
-  border-bottom: 1px solid #000000;
-}
-
-.carton-label-weight-row > div {
+.carton-label-weight-cell {
   display: grid;
   place-items: center;
+  grid-row: 3;
+  min-width: 0;
+  font-size: 1.91cqh;
+  font-weight: 800;
 }
 
-.carton-label-weight-row > div:first-child {
+.carton-label-weight-gross {
+  grid-column: 1 / span 8;
   border-right: 1px solid #000000;
+}
+
+.carton-label-weight-net {
+  grid-column: 9 / span 8;
 }
 
 .carton-label-origin {
@@ -741,6 +789,11 @@ a {
 
   body * {
     visibility: hidden;
+  }
+
+  .carton-label-print-root {
+    display: block;
+    visibility: visible;
   }
 
   .carton-label-a4,

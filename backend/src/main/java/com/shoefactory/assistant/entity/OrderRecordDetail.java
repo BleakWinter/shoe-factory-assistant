@@ -36,6 +36,8 @@ public class OrderRecordDetail {
     private String sizeQuantitiesJson;
     private Integer quantity;
     private Integer cartonCount;
+    private String cartonStart;
+    private String cartonEnd;
     private String boxSpec;
     private String sourceSheetName;
     private Integer rowIndex;
@@ -91,6 +93,10 @@ public class OrderRecordDetail {
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
     public Integer getCartonCount() { return cartonCount; }
     public void setCartonCount(Integer cartonCount) { this.cartonCount = cartonCount; }
+    public String getCartonStart() { return cartonStart; }
+    public void setCartonStart(String cartonStart) { this.cartonStart = cartonStart; }
+    public String getCartonEnd() { return cartonEnd; }
+    public void setCartonEnd(String cartonEnd) { this.cartonEnd = cartonEnd; }
     public String getBoxSpec() { return boxSpec; }
     public void setBoxSpec(String boxSpec) { this.boxSpec = boxSpec; }
     public String getSourceSheetName() { return sourceSheetName; }

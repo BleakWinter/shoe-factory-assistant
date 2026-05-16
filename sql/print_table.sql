@@ -93,6 +93,10 @@ CREATE TABLE IF NOT EXISTS `order_record_detail` (
 
   `carton_count` int NOT NULL DEFAULT 0 COMMENT '箱数',
 
+  `carton_start` varchar(128) DEFAULT NULL COMMENT 'CTN START/开始箱号',
+
+  `carton_end` varchar(128) DEFAULT NULL COMMENT 'CTN END/结束箱号',
+
   `box_spec` varchar(128) DEFAULT NULL COMMENT '盒子规模，例如 30×20×10',
 
   `source_sheet_name` varchar(128) DEFAULT NULL COMMENT '来源sheet',
@@ -111,6 +115,7 @@ CREATE TABLE IF NOT EXISTS `order_record_detail` (
   KEY `idx_detail_development_no` (`development_no`),
   KEY `idx_detail_last_no` (`last_no`),
   KEY `idx_detail_delivery_date` (`delivery_date`),
+  KEY `idx_detail_carton_range` (`carton_start`, `carton_end`),
   KEY `idx_detail_row_index` (`order_id`, `row_index`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细表';
 

@@ -4,7 +4,7 @@ import {
   PrinterOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Modal, Select, Space, Table, Typography } from "antd";
+import { App, Button, Cascader, Modal, Radio, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
@@ -19,6 +19,62 @@ interface PrintSelectionPageProps {
 type PrintSelectionItem = OrderRecordDetail & {
   printOrderNo?: string;
 };
+
+type PrintFormatKey = "outer-carton-a4" | "outer-carton-dual-size";
+
+interface CartonLabelTemplateData {
+  customerName: string;
+  storeLine: string;
+  cartonNumber: string;
+  factoryOrderNo: string;
+  style: string;
+  material: string;
+  color: string;
+  number: string;
+  po: string;
+  orderNumber: string;
+  sizeColumns: string[];
+  sizeValues: string[];
+  grossWeight: string;
+  netWeight: string;
+}
+
+const defaultCartonLabelData: CartonLabelTemplateData = {
+  customerName: "客人",
+  storeLine: "仓库号/店铺号",
+  cartonNumber: "开始箱号",
+  factoryOrderNo: "订单流水号",
+  style: "STYLE/客人款号",
+  material: "MATERIAL/面料材质",
+  color: "COLOR/客人颜色",
+  number: "总对数",
+  po: "PO号",
+  orderNumber: "客人订单号",
+  sizeColumns: ["WIDTH", "5", "5.5", "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10", "10.5", "11", "12", "TOTAL"],
+  sizeValues: ["M", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  grossWeight: "毛重",
+  netWeight: "净重",
+};
+
+const printFormatTemplates: Record<PrintFormatKey, { label: string; data: CartonLabelTemplateData }> = {
+  "outer-carton-a4": {
+    label: "外箱贴标-单码-通用版",
+    data: defaultCartonLabelData,
+  },
+  "outer-carton-dual-size": {
+    label: "外箱贴标-双码-通用版",
+    data: {
+      ...defaultCartonLabelData,
+      sizeColumns: ["WIDTH", "", "", "", "35", "36", "37", "38", "39", "40", "41", "", "", "", "", "TOTAL"],
+      sizeValues: ["M", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    },
+  },
+};
+
+const printFormatOptions = Object.entries(printFormatTemplates).map(([value, item]) => ({
+  label: item.label,
+  value: value as PrintFormatKey,
+}));
 
 function renderSizeQuantities(value?: Record<string, number>) {
   const entries = Object.entries(value || {})
@@ -119,7 +175,9 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const [selectedPrintIds, setSelectedPrintIds] = useState<Key[]>([]);
   const [printItems, setPrintItems] = useState<PrintSelectionItem[]>([]);
   const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
+  const [formatModalOpen, setFormatModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [selectedPrintFormat, setSelectedPrintFormat] = useState<PrintFormatKey>("outer-carton-a4");
   const [orderLoading, setOrderLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -227,8 +285,24 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     setSelectedPrintIds([]);
   };
 
-  const printCartonLabel = () => {
-    window.print();
+  const openPrintFormatModal = () => {
+    setFormatModalOpen(true);
+  };
+
+  const printSelectedFormat = () => {
+    setFormatModalOpen(false);
+    window.setTimeout(() => window.print(), 0);
+  };
+
+  const previewSelectedFormat = (format: PrintFormatKey = selectedPrintFormat) => {
+    setSelectedPrintFormat(format);
+    setFormatModalOpen(false);
+    setPreviewOpen(true);
+  };
+
+  const backToPrintFormatModal = () => {
+    setPreviewOpen(false);
+    setFormatModalOpen(true);
   };
 
   const leftRowSelection = {
@@ -274,6 +348,8 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       { title: "尺码数量", dataIndex: "sizeQuantities", width: 220, render: renderSizeQuantities },
       { title: "双数", dataIndex: "quantity", width: 80, align: "right", render: formatEmpty },
       { title: "箱数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
+      { title: "开始箱号", dataIndex: "cartonStart", width: 110, render: formatEmpty },
+      { title: "结束箱号", dataIndex: "cartonEnd", width: 110, render: formatEmpty },
     ],
     [],
   );
@@ -293,6 +369,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     ],
     [detailColumns],
   );
+  const selectedPrintFormatLabel = printFormatTemplates[selectedPrintFormat].label;
 
   return (
     <div className="workspace">
@@ -304,8 +381,8 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           </Typography.Text>
         </div>
         <Space wrap>
-          <Button type="primary" icon={<PrinterOutlined />} onClick={() => setPreviewOpen(true)}>
-            打印预览
+          <Button type="primary" icon={<PrinterOutlined />} onClick={openPrintFormatModal}>
+            打印
           </Button>
         </Space>
       </div>
@@ -359,7 +436,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
             columns={leftColumns}
             dataSource={filteredDetails}
             pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 650 }}
+            scroll={{ x: 870 }}
             className="data-table"
             rowClassName={leftRowClassName}
             rowSelection={leftRowSelection}
@@ -393,7 +470,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
             columns={printColumns}
             dataSource={printItems}
             pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 650 }}
+            scroll={{ x: 870 }}
             className="data-table"
             rowSelection={{
               selectedRowKeys: selectedPrintIds,
@@ -404,35 +481,79 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       </div>
 
       <Modal
-        open={previewOpen}
-        title={`${printTargetTitle}预览`}
-        onCancel={() => setPreviewOpen(false)}
-        width={1120}
+        open={formatModalOpen}
+        title="选择打印格式"
+        onCancel={() => setFormatModalOpen(false)}
         footer={[
-          <Button key="close" onClick={() => setPreviewOpen(false)}>
-            关闭
+          <Button key="close" onClick={() => setFormatModalOpen(false)}>
+            取消
           </Button>,
-          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={printCartonLabel}>
+          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={printSelectedFormat}>
             打印
           </Button>,
         ]}
         destroyOnClose
       >
+        <Radio.Group
+          className="print-format-options"
+          value={selectedPrintFormat}
+          onChange={(event) => setSelectedPrintFormat(event.target.value)}
+        >
+          {printFormatOptions.map((option) => (
+            <div
+              className={`print-format-option${selectedPrintFormat === option.value ? " print-format-option-selected" : ""}`}
+              key={option.value}
+              onClick={() => setSelectedPrintFormat(option.value)}
+            >
+              <Radio value={option.value}>{option.label}</Radio>
+              <Button
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  previewSelectedFormat(option.value);
+                }}
+              >
+                预览
+              </Button>
+            </div>
+          ))}
+        </Radio.Group>
+      </Modal>
+
+      <Modal
+        open={previewOpen}
+        title={`${selectedPrintFormatLabel}预览`}
+        onCancel={backToPrintFormatModal}
+        width={1120}
+        footer={null}
+        destroyOnClose
+      >
         <div className="carton-label-preview">
-          <div className="carton-label-a4">
-            <CartonLabelTemplate />
-            <CartonLabelTemplate />
-          </div>
+          <CartonLabelA4 format={selectedPrintFormat} />
         </div>
       </Modal>
+
+      <div className="carton-label-print-root" aria-hidden>
+        <div className="carton-label-preview">
+          <CartonLabelA4 format={selectedPrintFormat} />
+        </div>
+      </div>
     </div>
   );
 }
 
-function CartonLabelTemplate() {
-  const sizeColumns = ["WIDTH", "5", "5.5", "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10", "10.5", "11", "12", "TOTAL"];
-  const sizeValues = ["M", "", "", "", "3", "6", "3", "", "", "", "", "", "", "", "", "12"];
+function CartonLabelA4({ format }: { format: PrintFormatKey }) {
+  const data = printFormatTemplates[format].data;
 
+  return (
+    <div className="carton-label-a4">
+      <CartonLabelTemplate data={data} />
+      <CartonLabelTemplate data={data} />
+    </div>
+  );
+}
+
+function CartonLabelTemplate({ data }: { data: CartonLabelTemplateData }) {
   return (
     <section className="carton-label-sheet">
       <div className="carton-label-brand">JEFFREY CAMPBELL</div>
@@ -445,37 +566,34 @@ function CartonLabelTemplate() {
           </span>
         </div>
         <div className="carton-label-carton-box">
-          <div className="carton-label-customer">Blue Rose Shoe Group</div>
-          <div className="carton-label-empty-line" />
+          <div className="carton-label-customer">{data.customerName}</div>
+          <div className="carton-label-empty-line">{data.storeLine}</div>
           <div className="carton-label-caption">CARTON NUMBER</div>
-          <div className="carton-label-carton-number">22531</div>
+          <div className="carton-label-carton-number">{data.cartonNumber}</div>
         </div>
       </div>
 
-      <CartonInfoRow label="Factory order NO:" value="26050" />
-      <CartonInfoRow label="STYLE:" value="TRUSTEE" />
-      <CartonInfoRow label="MATERIAL:" value="KID SKIN" />
-      <CartonInfoRow label="COLOR:" value="BLACK" />
-      <CartonInfoRow label="Number:" value="12" />
-      <CartonInfoRow label="PO#:" value="" />
-      <CartonInfoRow label="ORDER NUMBER:" value="CIU07403" />
+      <CartonInfoRow label="Factory order NO:" value={data.factoryOrderNo} />
+      <CartonInfoRow label="STYLE:" value={data.style} />
+      <CartonInfoRow label="MATERIAL:" value={data.material} />
+      <CartonInfoRow label="COLOR:" value={data.color} />
+      <CartonInfoRow label="Number:" value={data.number} />
+      <CartonInfoRow label="PO#:" value={data.po} />
+      <CartonInfoRow label="ORDER NUMBER:" value={data.orderNumber} />
 
       <div className="carton-label-size-grid">
-        {sizeColumns.map((value, index) => (
+        {data.sizeColumns.map((value, index) => (
           <div key={`size-${index}`} className="carton-label-size-cell">
             {value}
           </div>
         ))}
-        {sizeValues.map((value, index) => (
+        {data.sizeValues.map((value, index) => (
           <div key={`value-${index}`} className="carton-label-size-cell">
             {value}
           </div>
         ))}
-      </div>
-
-      <div className="carton-label-weight-row">
-        <div>G.W: 10.32</div>
-        <div>N.W:6.12</div>
+        <div className="carton-label-weight-cell carton-label-weight-gross">G.W: {data.grossWeight}</div>
+        <div className="carton-label-weight-cell carton-label-weight-net">N.W:{data.netWeight}</div>
       </div>
       <div className="carton-label-origin">MADE IN CHINA</div>
     </section>

@@ -41,6 +41,8 @@ public class OrderRecordDetailResponse {
     private Map<String, Integer> sizeQuantities;
     private Integer quantity;
     private Integer cartonCount;
+    private String cartonStart;
+    private String cartonEnd;
     private String boxSpec;
     private String sourceSheetName;
     private Integer rowIndex;
@@ -73,6 +75,8 @@ public class OrderRecordDetailResponse {
         response.setSizeQuantities(parseSizeQuantities(detail.getSizeQuantitiesJson()));
         response.setQuantity(detail.getQuantity());
         response.setCartonCount(detail.getCartonCount());
+        response.setCartonStart(detail.getCartonStart());
+        response.setCartonEnd(detail.getCartonEnd());
         response.setBoxSpec(detail.getBoxSpec());
         response.setSourceSheetName(detail.getSourceSheetName());
         response.setRowIndex(detail.getRowIndex());
@@ -142,6 +146,10 @@ public class OrderRecordDetailResponse {
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
     public Integer getCartonCount() { return cartonCount; }
     public void setCartonCount(Integer cartonCount) { this.cartonCount = cartonCount; }
+    public String getCartonStart() { return cartonStart; }
+    public void setCartonStart(String cartonStart) { this.cartonStart = cartonStart; }
+    public String getCartonEnd() { return cartonEnd; }
+    public void setCartonEnd(String cartonEnd) { this.cartonEnd = cartonEnd; }
     public String getBoxSpec() { return boxSpec; }
     public void setBoxSpec(String boxSpec) { this.boxSpec = boxSpec; }
     public String getSourceSheetName() { return sourceSheetName; }
