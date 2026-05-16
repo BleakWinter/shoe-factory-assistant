@@ -360,10 +360,44 @@ a {
   gap: 10px;
 }
 
+.print-transfer-heading-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
 .print-transfer-heading h4.ant-typography {
   margin: 0;
   font-size: 16px;
   line-height: 1.35;
+}
+
+.print-transfer-filters {
+  min-width: 0;
+}
+
+.print-transfer-filters .ant-space-item {
+  min-width: 0;
+}
+
+.print-development-cascader {
+  width: 220px;
+}
+
+.print-transfer-row-clickable {
+  cursor: pointer;
+}
+
+.data-table .print-transfer-row-disabled > td,
+.data-table .print-transfer-row-disabled.ant-table-row-selected > td {
+  color: #8a94a3;
+  background: #f2f4f7;
+}
+
+.data-table .print-transfer-row-disabled:hover > td,
+.data-table .print-transfer-row-disabled.ant-table-row-selected:hover > td {
+  background: #eef1f5;
 }
 
 .print-transfer-actions {
@@ -381,6 +415,191 @@ a {
 
 .print-options {
   width: 100%;
+}
+
+.carton-label-preview {
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  padding: 16px;
+  background: #eef2f6;
+}
+
+.carton-label-a4 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: 1fr;
+  align-content: stretch;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2mm;
+  width: 297mm;
+  height: 210mm;
+  padding: 20px 40px 20px 20px;
+  color: #000000;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
+}
+
+.carton-label-sheet {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  container-type: size;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  color: #000000;
+  font-family: Arial, sans-serif;
+  background: #ffffff;
+  border: 1px solid #000000;
+}
+
+.carton-label-sheet * {
+  color: #000000;
+}
+
+.carton-label-brand {
+  display: grid;
+  place-items: center;
+  height: 5.67%;
+  font-size: 2.73cqh;
+  font-weight: 800;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-top {
+  display: grid;
+  grid-template-columns: 32% 68%;
+  height: 23.2%;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-side-brand {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 2.32cqh;
+  font-weight: 800;
+  text-align: center;
+  border-right: 1px solid #000000;
+}
+
+.carton-label-side-brand span {
+  display: block;
+  line-height: 1.05;
+  transform: rotate(-90deg);
+  white-space: nowrap;
+}
+
+.carton-label-carton-box {
+  display: grid;
+  grid-template-rows: 24.44% 24.44% 13.78% 1fr;
+  text-align: center;
+}
+
+.carton-label-customer {
+  display: grid;
+  place-items: center;
+  font-size: 2.73cqh;
+  font-weight: 800;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-empty-line {
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-caption {
+  display: grid;
+  place-items: center;
+  font-size: 1.36cqh;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-carton-number {
+  display: grid;
+  place-items: center;
+  font-size: 8.73cqh;
+  line-height: 1;
+}
+
+.carton-label-info-row {
+  display: grid;
+  grid-template-columns: 32% 68%;
+  height: 7.63%;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-info-label,
+.carton-label-info-value {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  font-size: 1.91cqh;
+  font-weight: 800;
+}
+
+.carton-label-info-label {
+  border-right: 1px solid #000000;
+}
+
+.carton-label-info-value {
+  font-family: SimSun, "宋体", serif;
+  font-size: 2.18cqh;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.carton-label-size-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  height: 8.45%;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-size-cell {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  font-size: 1.16cqh;
+  font-weight: 800;
+  border-right: 1px solid #000000;
+}
+
+.carton-label-size-cell:nth-child(-n + 16) {
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-size-cell:nth-child(16n) {
+  border-right: 0;
+}
+
+.carton-label-weight-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 3.61%;
+  font-size: 1.91cqh;
+  font-weight: 800;
+  border-bottom: 1px solid #000000;
+}
+
+.carton-label-weight-row > div {
+  display: grid;
+  place-items: center;
+}
+
+.carton-label-weight-row > div:first-child {
+  border-right: 1px solid #000000;
+}
+
+.carton-label-origin {
+  display: grid;
+  place-items: center;
+  height: 5.67%;
+  font-size: 2.73cqh;
+  font-weight: 900;
 }
 
 .printer-input {
@@ -468,6 +687,17 @@ a {
     flex-direction: row;
   }
 
+  .print-transfer-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .print-transfer-filters,
+  .print-transfer-filters .ant-space-item,
+  .print-development-cascader {
+    width: 100%;
+  }
+
   .page-panel {
     padding: 10px;
   }
@@ -496,5 +726,32 @@ a {
 
   .pdf-frame {
     height: 520px;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .carton-label-a4,
+  .carton-label-a4 * {
+    visibility: visible;
+  }
+
+  .carton-label-a4 {
+    position: fixed;
+    top: 0;
+    left: 0;
+    box-shadow: none;
   }
 }
