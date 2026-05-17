@@ -1,9 +1,11 @@
 import {
   DollarOutlined,
+  FileExcelOutlined,
   FileDoneOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SettingOutlined,
+  ShoppingCartOutlined,
   TableOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Button, Layout, Menu, Tabs, Typography } from "antd";
@@ -54,6 +56,34 @@ const navLeafItems: NavLeafItem[] = [
     parentLabel: "打印中心",
   },
   {
+    path: "/component-orders/packing",
+    label: "订包装",
+    icon: <FileExcelOutlined />,
+    parentKey: "component-order-center",
+    parentLabel: "下单中心",
+  },
+  {
+    path: "/component-orders/outsole",
+    label: "订大底",
+    icon: <FileExcelOutlined />,
+    parentKey: "component-order-center",
+    parentLabel: "下单中心",
+  },
+  {
+    path: "/component-orders/insole",
+    label: "订中底",
+    icon: <FileExcelOutlined />,
+    parentKey: "component-order-center",
+    parentLabel: "下单中心",
+  },
+  {
+    path: "/component-orders/heel",
+    label: "订鞋跟",
+    icon: <FileExcelOutlined />,
+    parentKey: "component-order-center",
+    parentLabel: "下单中心",
+  },
+  {
     path: "/style-configs",
     label: "盒规配置",
     icon: <SettingOutlined />,
@@ -80,6 +110,17 @@ const menuItems: MenuProps["items"] = [
       { key: "/tasks/outer-carton-label", label: "打印外箱贴标" },
       { key: "/tasks/inner-box-label", label: "打印内盒贴标" },
       { key: "/tasks/shipping-note", label: "打印出货单" },
+    ],
+  },
+  {
+    key: "component-order-center",
+    label: "下单中心",
+    icon: <ShoppingCartOutlined />,
+    children: [
+      { key: "/component-orders/packing", label: "订包装" },
+      { key: "/component-orders/outsole", label: "订大底" },
+      { key: "/component-orders/insole", label: "订中底" },
+      { key: "/component-orders/heel", label: "订鞋跟" },
     ],
   },
   {
