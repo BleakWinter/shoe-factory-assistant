@@ -4,7 +4,7 @@ import {
   PrinterOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Modal, Radio, Select, Space, Table, Typography } from "antd";
+import { App, Button, Cascader, Modal, Pagination, Radio, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
@@ -20,7 +20,10 @@ type PrintSelectionItem = OrderRecordDetail & {
   printOrderNo?: string;
 };
 
-type PrintFormatKey = "outer-carton-a4" | "outer-carton-dual-size";
+type PrintFormatTarget = "outer-carton" | "inner-box";
+type CartonPrintFormatKey = "outer-carton-a4" | "outer-carton-dual-size";
+type InnerBoxPrintFormatKey = "inner-box-a4";
+type PrintFormatKey = CartonPrintFormatKey | InnerBoxPrintFormatKey;
 
 interface CartonLabelTemplateData {
   customerName: string;
@@ -37,6 +40,13 @@ interface CartonLabelTemplateData {
   sizeValues: string[];
   grossWeight: string;
   netWeight: string;
+}
+
+interface InnerBoxLabelData {
+  styleName: string;
+  material: string;
+  colour: string;
+  size: string;
 }
 
 const defaultCartonLabelData: CartonLabelTemplateData = {
@@ -56,25 +66,46 @@ const defaultCartonLabelData: CartonLabelTemplateData = {
   netWeight: "净重",
 };
 
-const printFormatTemplates: Record<PrintFormatKey, { label: string; data: CartonLabelTemplateData }> = {
+const printFormatTemplates: Record<
+  PrintFormatKey,
+  { label: string; target: PrintFormatTarget; data?: CartonLabelTemplateData }
+> = {
   "outer-carton-a4": {
     label: "外箱贴标-单码-通用版",
+    target: "outer-carton",
     data: defaultCartonLabelData,
   },
   "outer-carton-dual-size": {
     label: "外箱贴标-双码-通用版",
+    target: "outer-carton",
     data: {
       ...defaultCartonLabelData,
       sizeColumns: ["WIDTH", "", "", "", "35", "36", "37", "38", "39", "40", "41", "", "", "", "", "TOTAL"],
       sizeValues: ["M", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
     },
   },
+  "inner-box-a4": {
+    label: "内盒贴标-通用版",
+    target: "inner-box",
+  },
 };
 
 const printFormatOptions = Object.entries(printFormatTemplates).map(([value, item]) => ({
   label: item.label,
   value: value as PrintFormatKey,
+  target: item.target,
 }));
+
+const defaultInnerBoxLabel: InnerBoxLabelData = {
+  styleName: "SCHEDULE",
+  material: "KID SKIN/COW LEATHER",
+  colour: "WHITE BLACK PATENT",
+  size: "6",
+};
+
+const defaultInnerBoxLabels: InnerBoxLabelData[] = [defaultInnerBoxLabel];
+
+const INNER_BOX_LABELS_PER_PAGE = 18;
 
 function renderSizeQuantities(value?: Record<string, number>) {
   const entries = Object.entries(value || {})
@@ -165,9 +196,99 @@ function buildDevelopmentNoOptions(details: OrderRecordDetail[]) {
   return options;
 }
 
+function getPrintFormatTarget(title: string): PrintFormatTarget {
+  return title.includes("内盒") ? "inner-box" : "outer-carton";
+}
+
+function getDefaultPrintFormat(title: string): PrintFormatKey {
+  return getPrintFormatTarget(title) === "inner-box" ? "inner-box-a4" : "outer-carton-a4";
+}
+
+function isCartonPrintFormat(format: PrintFormatKey): format is CartonPrintFormatKey {
+  return printFormatTemplates[format].target === "outer-carton";
+}
+
+function pickFirstText(...values: unknown[]) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function getSortedSizeEntries(value?: Record<string, number>) {
+  return Object.entries(value || {})
+    .map(([size, count]) => [size.trim(), Number(count)] as const)
+    .filter(([size, count]) => size && Number.isFinite(count) && count > 0)
+    .sort(([left], [right]) => left.localeCompare(right, "zh-CN", { numeric: true }));
+}
+
+function buildInnerBoxLabels(items: PrintSelectionItem[]) {
+  if (items.length === 0) {
+    return defaultInnerBoxLabels;
+  }
+
+  const labels = items.flatMap((item) => {
+    const baseLabel = {
+      styleName: pickFirstText(item.customerStyleNo, item.developmentNo, "SCHEDULE"),
+      material: pickFirstText(item.englishMaterial, item.upperMaterial),
+      colour: pickFirstText(item.englishColor),
+    };
+    const sizeEntries = getSortedSizeEntries(item.sizeQuantities);
+    if (sizeEntries.length === 0) {
+      return [{ ...baseLabel, size: "" }];
+    }
+    return sizeEntries.flatMap(([size, count]) =>
+      Array.from({ length: Math.max(1, Math.trunc(count)) }, () => ({
+        ...baseLabel,
+        size,
+      })),
+    );
+  });
+
+  return labels.length > 0 ? labels : defaultInnerBoxLabels;
+}
+
+function chunkInnerBoxLabels(labels: InnerBoxLabelData[]) {
+  const pages: InnerBoxLabelData[][] = [];
+  for (let index = 0; index < labels.length; index += INNER_BOX_LABELS_PER_PAGE) {
+    pages.push(labels.slice(index, index + INNER_BOX_LABELS_PER_PAGE));
+  }
+  return pages.length > 0 ? pages : [defaultInnerBoxLabels];
+}
+
+function getInnerBoxPageCount(printItems: PrintSelectionItem[]) {
+  if (printItems.length === 0) {
+    return 1;
+  }
+  return chunkInnerBoxLabels(buildInnerBoxLabels(printItems)).length;
+}
+
+function fillRightSideIfNeeded(labels: InnerBoxLabelData[]) {
+  if (labels.length % 2 === 0) {
+    return labels;
+  }
+  return [...labels, { styleName: "", material: "", colour: "", size: "" }];
+}
+
+function applyPrintPageSize(format: PrintFormatKey) {
+  const styleId = "label-print-page-size";
+  const pageSize = format === "inner-box-a4" ? "A4 portrait" : "A4 landscape";
+  let style = document.getElementById(styleId) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = styleId;
+    document.head.appendChild(style);
+  }
+  style.textContent = `@media print { @page { size: ${pageSize}; margin: 0; } }`;
+}
+
 export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const { message } = App.useApp();
   const printTargetTitle = title.replace(/^打印/, "");
+  const printFormatTarget = getPrintFormatTarget(title);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
@@ -177,7 +298,8 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
   const [formatModalOpen, setFormatModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [selectedPrintFormat, setSelectedPrintFormat] = useState<PrintFormatKey>("outer-carton-a4");
+  const [previewPage, setPreviewPage] = useState(1);
+  const [selectedPrintFormat, setSelectedPrintFormat] = useState<PrintFormatKey>(() => getDefaultPrintFormat(title));
   const [orderLoading, setOrderLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -221,6 +343,16 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   useEffect(() => {
     void loadDetails();
   }, [loadDetails]);
+
+  useEffect(() => {
+    setSelectedPrintFormat(getDefaultPrintFormat(title));
+  }, [title]);
+
+  useEffect(() => {
+    if (previewOpen) {
+      setPreviewPage(1);
+    }
+  }, [previewOpen, selectedPrintFormat]);
 
   const printItemKeys = useMemo<Key[]>(() => printItems.map((item) => item.id), [printItems]);
 
@@ -291,6 +423,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 
   const printSelectedFormat = () => {
     setFormatModalOpen(false);
+    applyPrintPageSize(selectedPrintFormat);
     window.setTimeout(() => window.print(), 0);
   };
 
@@ -369,7 +502,21 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     ],
     [detailColumns],
   );
+  const availablePrintFormatOptions = useMemo(
+    () => printFormatOptions.filter((option) => option.target === printFormatTarget),
+    [printFormatTarget],
+  );
   const selectedPrintFormatLabel = printFormatTemplates[selectedPrintFormat].label;
+  const selectedPrintFormatIsInnerBox = selectedPrintFormat === "inner-box-a4";
+  const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && printItems.length === 0;
+  const previewInnerBoxPageCount = useMemo(
+    () => (selectedPrintFormatIsInnerBox ? getInnerBoxPageCount(printItems) : 1),
+    [printItems, selectedPrintFormatIsInnerBox],
+  );
+
+  useEffect(() => {
+    setPreviewPage((current) => Math.min(Math.max(current, 1), previewInnerBoxPageCount));
+  }, [previewInnerBoxPageCount]);
 
   return (
     <div className="workspace">
@@ -499,7 +646,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           value={selectedPrintFormat}
           onChange={(event) => setSelectedPrintFormat(event.target.value)}
         >
-          {printFormatOptions.map((option) => (
+          {availablePrintFormatOptions.map((option) => (
             <div
               className={`print-format-option${selectedPrintFormat === option.value ? " print-format-option-selected" : ""}`}
               key={option.value}
@@ -524,28 +671,77 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
         open={previewOpen}
         title={`${selectedPrintFormatLabel}预览`}
         onCancel={backToPrintFormatModal}
-        width={1120}
+        width={selectedPrintFormatIsInnerBoxTemplate ? 560 : selectedPrintFormatIsInnerBox ? 860 : 1120}
         footer={null}
         destroyOnClose
       >
-        <div className="carton-label-preview carton-label-preview-modal">
-          <div className="carton-label-preview-scale">
-            <CartonLabelA4 format={selectedPrintFormat} />
+        <div
+          className={`label-preview label-preview-modal ${
+            selectedPrintFormatIsInnerBoxTemplate
+              ? "inner-box-label-template-preview"
+              : selectedPrintFormatIsInnerBox
+                ? "inner-box-label-preview"
+                : "carton-label-preview"
+          }`}
+        >
+          <div
+            className={
+              selectedPrintFormatIsInnerBoxTemplate
+                ? "inner-box-label-template-preview-scale"
+                : selectedPrintFormatIsInnerBox
+                  ? "inner-box-label-preview-scale"
+                  : "carton-label-preview-scale"
+            }
+          >
+            <PrintFormatSheet
+              format={selectedPrintFormat}
+              printItems={printItems}
+              innerBoxPageIndex={selectedPrintFormatIsInnerBox ? previewPage - 1 : undefined}
+            />
           </div>
         </div>
+        {selectedPrintFormatIsInnerBox && previewInnerBoxPageCount > 1 ? (
+          <div className="label-preview-pagination">
+            <Pagination
+              current={previewPage}
+              pageSize={1}
+              total={previewInnerBoxPageCount}
+              showSizeChanger={false}
+              onChange={setPreviewPage}
+            />
+          </div>
+        ) : null}
       </Modal>
 
-      <div className="carton-label-print-root" aria-hidden>
-        <div className="carton-label-preview">
-          <CartonLabelA4 format={selectedPrintFormat} />
+      <div className="label-print-root" aria-hidden>
+        <div className="label-preview">
+          <PrintFormatSheet format={selectedPrintFormat} printItems={printItems} />
         </div>
       </div>
     </div>
   );
 }
 
-function CartonLabelA4({ format }: { format: PrintFormatKey }) {
-  const data = printFormatTemplates[format].data;
+function PrintFormatSheet({
+  format,
+  printItems,
+  innerBoxPageIndex,
+}: {
+  format: PrintFormatKey;
+  printItems: PrintSelectionItem[];
+  innerBoxPageIndex?: number;
+}) {
+  if (format === "inner-box-a4") {
+    return <InnerBoxLabelA4 printItems={printItems} pageIndex={innerBoxPageIndex} />;
+  }
+  if (isCartonPrintFormat(format)) {
+    return <CartonLabelA4 format={format} />;
+  }
+  return null;
+}
+
+function CartonLabelA4({ format }: { format: CartonPrintFormatKey }) {
+  const data = printFormatTemplates[format].data || defaultCartonLabelData;
 
   return (
     <div className="carton-label-a4">
@@ -604,6 +800,58 @@ function CartonLabelTemplate({ data }: { data: CartonLabelTemplateData }) {
       </div>
       <div className="carton-label-origin">MADE IN CHINA</div>
     </section>
+  );
+}
+
+function InnerBoxLabelA4({ printItems, pageIndex }: { printItems: PrintSelectionItem[]; pageIndex?: number }) {
+  if (printItems.length === 0) {
+    return (
+      <div className="inner-box-label-pages">
+        <div className="inner-box-label-template-only">
+          <InnerBoxLabel data={defaultInnerBoxLabel} />
+        </div>
+      </div>
+    );
+  }
+
+  const pages = chunkInnerBoxLabels(buildInnerBoxLabels(printItems));
+  const safePageIndex =
+    typeof pageIndex === "number" ? Math.min(Math.max(pageIndex, 0), pages.length - 1) : undefined;
+  const pageEntries =
+    safePageIndex === undefined
+      ? pages.map((labels, index) => [index, labels] as const)
+      : ([[safePageIndex, pages[safePageIndex]]] as const);
+
+  return (
+    <div className="inner-box-label-pages">
+      {pageEntries.map(([pageIndex, labels]) => (
+        <section className="inner-box-label-a4" key={`inner-box-page-${pageIndex}`}>
+          <div className="inner-box-label-grid">
+            {fillRightSideIfNeeded(labels).map((label, labelIndex) => (
+              <InnerBoxLabel
+                data={label}
+                key={`inner-box-label-${pageIndex}-${labelIndex}`}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function InnerBoxLabel({ data }: { data: InnerBoxLabelData }) {
+  return (
+    <div className="inner-box-label">
+      <div className="inner-box-label-cell inner-box-label-header">STYEL NAME</div>
+      <div className="inner-box-label-cell inner-box-label-header">MATERIAL</div>
+      <div className="inner-box-label-cell inner-box-label-header">COLOUR</div>
+      <div className="inner-box-label-cell inner-box-label-header">SIZE</div>
+      <div className="inner-box-label-cell inner-box-label-style">{data.styleName}</div>
+      <div className="inner-box-label-cell inner-box-label-material">{data.material}</div>
+      <div className="inner-box-label-cell inner-box-label-colour">{data.colour}</div>
+      <div className="inner-box-label-cell inner-box-label-size">{data.size}</div>
+    </div>
   );
 }
 

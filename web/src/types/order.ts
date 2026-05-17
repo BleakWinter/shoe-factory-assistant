@@ -192,3 +192,51 @@ export interface PrintPreview {
   errorMessage?: string;
   createdAt?: string;
 }
+
+export interface ShippingNoteItem {
+  sourceDetailId: number;
+  orderNo?: string;
+  developmentNo?: string;
+  customerName?: string;
+  customerStyleNo?: string;
+  englishColor?: string;
+  englishMaterial?: string;
+  colorMaterial?: string;
+  trademark?: string;
+  sizeQuantities?: Record<string, number>;
+  pairCount?: number;
+  cartonCount?: number;
+  totalPairs?: number;
+  cartonStart?: string;
+  cartonEnd?: string;
+}
+
+export interface ShippingNoteRecord {
+  id: number;
+  printNo: string;
+  orderId: number;
+  orderNo?: string;
+  customerName?: string;
+  recipientName?: string;
+  shippingDate?: string;
+  developmentNos?: string;
+  itemCount?: number;
+  totalPairs?: number;
+  totalCartonCount?: number;
+  items: ShippingNoteItem[];
+  createdAt?: string;
+}
+
+export interface ShippingNoteCreatePayload {
+  orderId: number;
+  recipientName?: string;
+  shippingDate?: string;
+  items: ShippingNoteItem[];
+}
+
+export interface ShippingNoteQueryParams {
+  orderNo?: string;
+  developmentNo?: string;
+  page?: number;
+  size?: number;
+}

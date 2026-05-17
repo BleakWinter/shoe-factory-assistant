@@ -462,10 +462,12 @@ a {
   margin-inline-end: 0;
 }
 
+.label-print-root,
 .carton-label-print-root {
   display: none;
 }
 
+.label-preview,
 .carton-label-preview {
   display: flex;
   justify-content: center;
@@ -474,6 +476,7 @@ a {
   background: #eef2f6;
 }
 
+.label-preview-modal,
 .carton-label-preview-modal {
   overflow: hidden;
   padding: 12px;
@@ -489,22 +492,62 @@ a {
   transform-origin: top left;
 }
 
+.inner-box-label-preview {
+  overflow: hidden;
+}
+
+.inner-box-label-template-preview {
+  align-items: center;
+  overflow: hidden;
+}
+
+.inner-box-label-template-preview-scale {
+  width: 105mm;
+  height: 33mm;
+}
+
+.inner-box-label-preview-scale {
+  --inner-box-preview-scale: 0.56;
+  width: calc(210mm * var(--inner-box-preview-scale));
+  height: calc(297mm * var(--inner-box-preview-scale));
+}
+
+.inner-box-label-preview-scale .inner-box-label-pages {
+  align-items: flex-start;
+  gap: 0;
+}
+
+.inner-box-label-preview-scale .inner-box-label-a4,
+.inner-box-label-preview-scale .inner-box-label-template-only {
+  transform: scale(var(--inner-box-preview-scale));
+  transform-origin: top left;
+}
+
+.label-preview-pagination {
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
 .carton-label-a4 {
   --carton-label-sheet-scale-x: 1.03385;
   --carton-label-sheet-scale-y: 1.02069;
+  --carton-label-left-column-width: calc(34.90466% - 5.57px);
+  --carton-label-sheet-gap: 15px;
   display: grid;
-  grid-template-columns: repeat(2, calc((297mm - 67px) / 2));
+  grid-template-columns: repeat(2, calc((297mm - 62px - var(--carton-label-sheet-gap)) / 2));
   grid-template-rows: calc(210mm - 26px);
   align-content: start;
   align-items: start;
   justify-content: start;
-  gap: 5px;
+  gap: var(--carton-label-sheet-gap);
   width: 297mm;
   height: 210mm;
   padding: 11px 17px 15px 45px;
   color: #000000;
   background: #ffffff;
   box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
+  page: carton-label-page;
 }
 
 .carton-label-sheet {
@@ -537,7 +580,7 @@ a {
 
 .carton-label-top {
   display: grid;
-  grid-template-columns: 32% 68%;
+  grid-template-columns: var(--carton-label-left-column-width) 1fr;
   height: 46mm;
   border-bottom: 1px solid #000000;
 }
@@ -597,7 +640,7 @@ a {
 
 .carton-label-info-row {
   display: grid;
-  grid-template-columns: 32% 68%;
+  grid-template-columns: var(--carton-label-left-column-width) 1fr;
   height: 15mm;
   border-bottom: 1px solid #000000;
 }
@@ -623,8 +666,14 @@ a {
 }
 
 .carton-label-size-grid {
+  --carton-label-width-size-column: calc(12.164548% - 7px);
+  --carton-label-number-size-column: calc(5.685028% + 0.357143px);
+  --carton-label-total-size-column: 8.245056%;
   display: grid;
-  grid-template-columns: 6.89fr repeat(14, 3.22fr) 4.67fr;
+  grid-template-columns:
+    var(--carton-label-width-size-column)
+    repeat(14, var(--carton-label-number-size-column))
+    var(--carton-label-total-size-column);
   grid-template-rows: 8.8mm 8.8mm 7.4mm;
   height: 25mm;
   border-bottom: 1px solid #000000;
@@ -647,9 +696,16 @@ a {
   font-size: 13px;
 }
 
-.carton-label-size-cell:nth-child(1),
+.carton-label-size-cell:nth-child(1) {
+  font-size: 12px;
+}
+
+.carton-label-size-cell:nth-child(n + 2):nth-child(-n + 15) {
+  font-size: 11px;
+}
+
 .carton-label-size-cell:nth-child(16) {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .carton-label-size-cell:nth-child(-n + 16) {
@@ -688,6 +744,100 @@ a {
   height: 12mm;
   font-size: 22px;
   font-weight: 900;
+}
+
+.inner-box-label-pages {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inner-box-label-template-only {
+  width: 105mm;
+  height: 33mm;
+  background: #ffffff;
+  border-top: 1px solid #000000;
+  border-left: 1px solid #000000;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
+}
+
+.inner-box-label-template-only .inner-box-label {
+  width: 100%;
+  height: 100%;
+}
+
+.inner-box-label-a4 {
+  display: block;
+  width: 210mm;
+  min-width: 210mm;
+  height: 297mm;
+  padding: 0;
+  color: #000000;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
+  page: inner-box-label-page;
+}
+
+.inner-box-label-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 32.97mm;
+  width: 100%;
+  height: auto;
+  border-top: 1px solid #000000;
+  border-left: 1px solid #000000;
+}
+
+.inner-box-label {
+  display: grid;
+  grid-template-columns: 13fr 11.89fr 11.89fr 10.89fr;
+  grid-template-rows: 43.1fr 48fr;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid #000000;
+  border-bottom: 1px solid #000000;
+}
+
+.inner-box-label-cell {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 1mm 0.8mm;
+  color: #000000;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.05;
+  text-align: center;
+  word-break: break-word;
+  border-right: 1px solid #000000;
+}
+
+.inner-box-label-cell:nth-child(4n) {
+  border-right: 0;
+}
+
+.inner-box-label-header {
+  font-size: 14px;
+  white-space: nowrap;
+  border-bottom: 1px solid #000000;
+}
+
+.inner-box-label-style {
+  font-size: 15px;
+}
+
+.inner-box-label-material,
+.inner-box-label-colour {
+  font-size: 15px;
+  text-transform: uppercase;
+}
+
+.inner-box-label-size {
+  font-size: 15px;
 }
 
 .printer-input {
@@ -823,6 +973,26 @@ a {
     margin: 0;
   }
 
+  @page carton-label-page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  @page inner-box-label-page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  html,
+  body,
+  #root {
+    width: auto;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
   body {
     background: #ffffff;
   }
@@ -831,14 +1001,65 @@ a {
     visibility: hidden;
   }
 
+  .app-shell,
+  .main-shell,
+  .app-content,
+  .workspace {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .app-sider,
+  .app-topbar,
+  .app-tabs,
+  .ant-modal-root,
+  .ant-message,
+  .ant-notification {
+    display: none !important;
+  }
+
+  .workspace > :not(.label-print-root) {
+    display: none !important;
+  }
+
+  .label-print-root,
   .carton-label-print-root {
     display: block;
+    position: static;
+    width: 100%;
+    margin: 0;
+    padding: 0;
     visibility: visible;
   }
 
+  .label-print-root *,
+  .carton-label-print-root *,
   .carton-label-a4,
-  .carton-label-a4 * {
+  .carton-label-a4 *,
+  .inner-box-label-a4,
+  .inner-box-label-a4 * {
     visibility: visible;
+  }
+
+  .label-preview,
+  .carton-label-preview {
+    display: block;
+    overflow: visible;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  .inner-box-label-pages {
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+    padding: 0;
   }
 
   .carton-label-a4 {
@@ -846,5 +1067,17 @@ a {
     top: 0;
     left: 0;
     box-shadow: none;
+  }
+
+  .inner-box-label-a4 {
+    height: auto;
+    min-height: 0;
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  .inner-box-label-a4 + .inner-box-label-a4 {
+    break-before: page;
+    page-break-before: always;
   }
 }
