@@ -557,6 +557,13 @@ a {
   padding-top: 12px;
 }
 
+.carton-label-pages {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .carton-label-a4 {
   --carton-label-sheet-scale-x: 1.03385;
   --carton-label-sheet-scale-y: 1.02069;
@@ -1192,11 +1199,21 @@ a {
     padding: 0;
   }
 
+  .carton-label-pages {
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
+
   .carton-label-a4 {
-    position: fixed;
-    top: 0;
-    left: 0;
     box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .carton-label-a4:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
   }
 
   .inner-box-label-a4 {

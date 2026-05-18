@@ -9,9 +9,10 @@ import { App, Button, Cascader, Modal, Pagination, Radio, Select, Space, Table, 
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
-import { fetchOrderDetails, fetchOrders } from "../api/orderApi";
-import type { DevelopmentNoOption, OrderRecord, OrderRecordDetail } from "../types/order";
+import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
+import type { DevelopmentNoOption, OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
 import { formatEmpty } from "../utils/format";
+import { getMatchingPackingDetails } from "../utils/orderMatching";
 
 interface PrintSelectionPageProps {
   title: string;
@@ -19,6 +20,7 @@ interface PrintSelectionPageProps {
 
 type PrintSelectionItem = OrderRecordDetail & {
   printOrderNo?: string;
+  packingDetails?: OrderPackingDetail[];
 };
 
 const templatePrintItems: PrintSelectionItem[] = [];
@@ -109,6 +111,7 @@ const defaultInnerBoxLabel: InnerBoxLabelData = {
 
 const defaultInnerBoxLabels: InnerBoxLabelData[] = [defaultInnerBoxLabel];
 
+const CARTON_LABEL_COPIES_PER_CARTON = 2;
 const INNER_BOX_LABELS_PER_PAGE = 18;
 
 function renderSizeQuantities(value?: Record<string, number>) {
@@ -229,18 +232,198 @@ function getSortedSizeEntries(value?: Record<string, number>) {
     .sort(([left], [right]) => left.localeCompare(right, "zh-CN", { numeric: true }));
 }
 
+function hasSizeQuantities(value?: Record<string, number>) {
+  return getSortedSizeEntries(value).length > 0;
+}
+
+function sumSizeQuantities(value?: Record<string, number>) {
+  return getSortedSizeEntries(value).reduce((total, [, count]) => total + count, 0);
+}
+
+function getPrintItemPackingSources(item: PrintSelectionItem) {
+  return item.packingDetails && item.packingDetails.length > 0 ? item.packingDetails : [undefined];
+}
+
+function getSourceSizeQuantities(item: PrintSelectionItem, packingDetail?: OrderPackingDetail) {
+  return hasSizeQuantities(packingDetail?.sizeQuantities) ? packingDetail?.sizeQuantities : item.sizeQuantities;
+}
+
+function formatCartonNumber(start?: string, end?: string) {
+  const startText = pickFirstText(start);
+  const endText = pickFirstText(end);
+  if (startText && endText && startText !== endText) {
+    return `${startText}-${endText}`;
+  }
+  return startText || endText;
+}
+
+function parseCartonNumber(value?: string) {
+  const text = pickFirstText(value);
+  const match = text.match(/^(.*?)(\d+)(.*?)$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    prefix: match[1],
+    number: Number(match[2]),
+    suffix: match[3],
+    width: match[2].length,
+  };
+}
+
+function formatParsedCartonNumber(carton: NonNullable<ReturnType<typeof parseCartonNumber>>, offset = 0) {
+  return `${carton.prefix}${String(carton.number + offset).padStart(carton.width, "0")}${carton.suffix}`;
+}
+
+function expandCartonNumbers(start?: string, end?: string, cartonCount?: number) {
+  const startText = pickFirstText(start);
+  const endText = pickFirstText(end);
+  const count = Math.trunc(Number(cartonCount));
+  const startCarton = parseCartonNumber(startText);
+  const endCarton = parseCartonNumber(endText);
+
+  if (
+    startCarton &&
+    endCarton &&
+    startCarton.prefix === endCarton.prefix &&
+    startCarton.suffix === endCarton.suffix &&
+    endCarton.number >= startCarton.number
+  ) {
+    const rangeCount = endCarton.number - startCarton.number + 1;
+    return Array.from({ length: rangeCount }, (_, index) => formatParsedCartonNumber(startCarton, index));
+  }
+
+  if (startCarton && Number.isFinite(count) && count > 1) {
+    return Array.from({ length: count }, (_, index) => formatParsedCartonNumber(startCarton, index));
+  }
+
+  const fallback = formatCartonNumber(startText, endText);
+  return fallback ? [fallback] : [""];
+}
+
+function sizeKeyParts(value: string) {
+  return value
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function findSizeCount(sizeQuantities: Record<string, number> | undefined, column: string) {
+  const normalizedColumn = column.trim();
+  if (!normalizedColumn) {
+    return "";
+  }
+  const entry = getSortedSizeEntries(sizeQuantities).find(([size]) => {
+    const parts = sizeKeyParts(size);
+    return size === normalizedColumn || parts.includes(normalizedColumn);
+  });
+  return entry ? String(entry[1]) : "";
+}
+
+function buildCartonSizeValues(
+  sizeColumns: string[],
+  sizeQuantities: Record<string, number> | undefined,
+  pairCount?: number,
+) {
+  const sizeTotal = sumSizeQuantities(sizeQuantities);
+  const total = Number(pairCount) > 0 ? Number(pairCount) : sizeTotal;
+  return sizeColumns.map((column, index) => {
+    if (index === 0) {
+      return "M";
+    }
+    if (column === "TOTAL") {
+      return total > 0 ? String(total) : "";
+    }
+    return findSizeCount(sizeQuantities, column);
+  });
+}
+
+function getPerCartonPairCount(
+  item: PrintSelectionItem,
+  packingDetail: OrderPackingDetail | undefined,
+  sizeQuantities: Record<string, number> | undefined,
+) {
+  const sizeTotal = sumSizeQuantities(sizeQuantities);
+  if (sizeTotal > 0) {
+    return sizeTotal;
+  }
+
+  const totalPairs = Number(packingDetail?.totalPairs ?? item.quantity);
+  const cartonCount = Number(packingDetail?.cartonCount ?? item.cartonCount);
+  if (!Number.isFinite(totalPairs) || totalPairs <= 0) {
+    return undefined;
+  }
+  if (Number.isFinite(cartonCount) && cartonCount > 1) {
+    return Math.round(totalPairs / cartonCount);
+  }
+  return totalPairs;
+}
+
+function buildCartonLabelData(format: CartonPrintFormatKey, items: PrintSelectionItem[]) {
+  const templateData = printFormatTemplates[format].data || defaultCartonLabelData;
+  if (items.length === 0) {
+    return [templateData, templateData];
+  }
+
+  const labels = items.flatMap((item) =>
+    getPrintItemPackingSources(item).flatMap((packingDetail) => {
+      const sizeQuantities = getSourceSizeQuantities(item, packingDetail);
+      const pairCount = getPerCartonPairCount(item, packingDetail, sizeQuantities);
+      const baseLabel = {
+        customerName: pickFirstText(packingDetail?.customerName, item.customerName),
+        storeLine: pickFirstText(packingDetail?.warehouseStoreNo, item.warehouseStoreNo),
+        factoryOrderNo: pickFirstText(item.printOrderNo),
+        style: pickFirstText(packingDetail?.customerStyleNo, item.customerStyleNo, packingDetail?.companyStyleNo, item.developmentNo),
+        material: pickFirstText(packingDetail?.material, packingDetail?.itemNumber, item.englishMaterial, item.upperMaterial),
+        color: pickFirstText(packingDetail?.customerColor, item.englishColor),
+        number: pickFirstText(pairCount),
+        po: pickFirstText(packingDetail?.poNo, item.poNo),
+        orderNumber: pickFirstText(packingDetail?.customerOrderNo, item.customerOrderNo),
+        sizeColumns: templateData.sizeColumns,
+        sizeValues: buildCartonSizeValues(templateData.sizeColumns, sizeQuantities, pairCount),
+        grossWeight: "",
+        netWeight: "",
+      };
+      return expandCartonNumbers(
+        pickFirstText(packingDetail?.cartonStart, item.cartonStart),
+        pickFirstText(packingDetail?.cartonEnd, item.cartonEnd),
+        packingDetail?.cartonCount ?? item.cartonCount,
+      ).flatMap((cartonNumber) =>
+        Array.from({ length: CARTON_LABEL_COPIES_PER_CARTON }, () => ({
+          ...baseLabel,
+          cartonNumber,
+        })),
+      );
+    }),
+  );
+
+  return labels.length > 0 ? labels : [templateData, templateData];
+}
+
+function chunkCartonLabelData(labels: CartonLabelTemplateData[]) {
+  const pages: CartonLabelTemplateData[][] = [];
+  for (let index = 0; index < labels.length; index += 2) {
+    pages.push(labels.slice(index, index + 2));
+  }
+  return pages.length > 0 ? pages : [[defaultCartonLabelData, defaultCartonLabelData]];
+}
+
+function getCartonPageCount(format: CartonPrintFormatKey, printItems: PrintSelectionItem[]) {
+  return chunkCartonLabelData(buildCartonLabelData(format, printItems)).length;
+}
+
 function buildInnerBoxLabels(items: PrintSelectionItem[]) {
   if (items.length === 0) {
     return defaultInnerBoxLabels;
   }
 
-  const labels = items.flatMap((item) => {
+  const labels = items.flatMap((item) => getPrintItemPackingSources(item).flatMap((packingDetail) => {
     const baseLabel = {
-      styleName: pickFirstText(item.customerStyleNo, item.developmentNo, "SCHEDULE"),
-      material: pickFirstText(item.englishMaterial, item.upperMaterial),
-      colour: pickFirstText(item.englishColor),
+      styleName: pickFirstText(packingDetail?.customerStyleNo, item.customerStyleNo, packingDetail?.companyStyleNo, item.developmentNo, "SCHEDULE"),
+      material: pickFirstText(packingDetail?.material, packingDetail?.itemNumber, item.englishMaterial, item.upperMaterial),
+      colour: pickFirstText(packingDetail?.customerColor, item.englishColor),
     };
-    const sizeEntries = getSortedSizeEntries(item.sizeQuantities);
+    const sizeEntries = getSortedSizeEntries(getSourceSizeQuantities(item, packingDetail));
     if (sizeEntries.length === 0) {
       return [{ ...baseLabel, size: "" }];
     }
@@ -250,7 +433,7 @@ function buildInnerBoxLabels(items: PrintSelectionItem[]) {
         size,
       })),
     );
-  });
+  }));
 
   return labels.length > 0 ? labels : defaultInnerBoxLabels;
 }
@@ -296,6 +479,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
+  const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
   const [selectedDetailIds, setSelectedDetailIds] = useState<Key[]>([]);
   const [selectedPrintIds, setSelectedPrintIds] = useState<Key[]>([]);
   const [printItems, setPrintItems] = useState<PrintSelectionItem[]>([]);
@@ -325,16 +509,22 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const loadDetails = useCallback(async () => {
     if (!selectedOrderId) {
       setDetails([]);
+      setPackingDetails([]);
       return;
     }
     setDetailLoading(true);
     try {
-      const data = await fetchOrderDetails(selectedOrderId);
+      const [data, nextPackingDetails] = await Promise.all([
+        fetchOrderDetails(selectedOrderId),
+        fetchOrderPackingDetails(selectedOrderId),
+      ]);
       setDetails(data);
+      setPackingDetails(nextPackingDetails);
       setSelectedDetailIds([]);
       setDevelopmentNoPaths([]);
     } catch (error) {
       setDetails([]);
+      setPackingDetails([]);
       message.error(error instanceof Error ? error.message : "订单明细加载失败");
     } finally {
       setDetailLoading(false);
@@ -401,7 +591,11 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       const currentIdSet = new Set(current.map((item) => item.id));
       const nextItems = items
         .filter((item) => !currentIdSet.has(item.id))
-        .map((item) => ({ ...item, printOrderNo }));
+        .map((item) => ({
+          ...item,
+          printOrderNo,
+          packingDetails: getMatchingPackingDetails(item, packingDetails),
+        }));
       if (nextItems.length === 0) {
         return current;
       }
@@ -534,14 +728,19 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const previewPrintItems = previewMode === "template" ? templatePrintItems : printItems;
   const hasPrintItems = printItems.length > 0;
   const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && previewPrintItems.length === 0;
-  const previewInnerBoxPageCount = useMemo(
-    () => (selectedPrintFormatIsInnerBox ? getInnerBoxPageCount(previewPrintItems) : 1),
-    [previewPrintItems, selectedPrintFormatIsInnerBox],
-  );
+  const previewPageCount = useMemo(() => {
+    if (selectedPrintFormatIsInnerBox) {
+      return getInnerBoxPageCount(previewPrintItems);
+    }
+    if (isCartonPrintFormat(selectedPrintFormat)) {
+      return getCartonPageCount(selectedPrintFormat, previewPrintItems);
+    }
+    return 1;
+  }, [previewPrintItems, selectedPrintFormat, selectedPrintFormatIsInnerBox]);
 
   useEffect(() => {
-    setPreviewPage((current) => Math.min(Math.max(current, 1), previewInnerBoxPageCount));
-  }, [previewInnerBoxPageCount]);
+    setPreviewPage((current) => Math.min(Math.max(current, 1), previewPageCount));
+  }, [previewPageCount]);
 
   return (
     <div className="workspace">
@@ -736,16 +935,17 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
             <PrintFormatSheet
               format={selectedPrintFormat}
               printItems={previewPrintItems}
+              cartonPageIndex={isCartonPrintFormat(selectedPrintFormat) ? previewPage - 1 : undefined}
               innerBoxPageIndex={selectedPrintFormatIsInnerBox ? previewPage - 1 : undefined}
             />
           </div>
         </div>
-        {selectedPrintFormatIsInnerBox && previewInnerBoxPageCount > 1 ? (
+        {previewPageCount > 1 ? (
           <div className="label-preview-pagination">
             <Pagination
               current={previewPage}
               pageSize={1}
-              total={previewInnerBoxPageCount}
+              total={previewPageCount}
               showSizeChanger={false}
               onChange={setPreviewPage}
             />
@@ -765,28 +965,49 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 function PrintFormatSheet({
   format,
   printItems,
+  cartonPageIndex,
   innerBoxPageIndex,
 }: {
   format: PrintFormatKey;
   printItems: PrintSelectionItem[];
+  cartonPageIndex?: number;
   innerBoxPageIndex?: number;
 }) {
   if (format === "inner-box-a4") {
     return <InnerBoxLabelA4 printItems={printItems} pageIndex={innerBoxPageIndex} />;
   }
   if (isCartonPrintFormat(format)) {
-    return <CartonLabelA4 format={format} />;
+    return <CartonLabelA4 format={format} printItems={printItems} pageIndex={cartonPageIndex} />;
   }
   return null;
 }
 
-function CartonLabelA4({ format }: { format: CartonPrintFormatKey }) {
-  const data = printFormatTemplates[format].data || defaultCartonLabelData;
+function CartonLabelA4({
+  format,
+  printItems,
+  pageIndex,
+}: {
+  format: CartonPrintFormatKey;
+  printItems: PrintSelectionItem[];
+  pageIndex?: number;
+}) {
+  const pages = chunkCartonLabelData(buildCartonLabelData(format, printItems));
+  const safePageIndex =
+    typeof pageIndex === "number" ? Math.min(Math.max(pageIndex, 0), pages.length - 1) : undefined;
+  const pageEntries =
+    safePageIndex === undefined
+      ? pages.map((labels, index) => [index, labels] as const)
+      : ([[safePageIndex, pages[safePageIndex]]] as const);
 
   return (
-    <div className="carton-label-a4">
-      <CartonLabelTemplate data={data} />
-      <CartonLabelTemplate data={data} />
+    <div className="carton-label-pages">
+      {pageEntries.map(([pageIndex, labels]) => (
+        <section className="carton-label-a4" key={`carton-label-page-${pageIndex}`}>
+          {labels.map((data, labelIndex) => (
+            <CartonLabelTemplate data={data} key={`carton-label-${pageIndex}-${labelIndex}`} />
+          ))}
+        </section>
+      ))}
     </div>
   );
 }

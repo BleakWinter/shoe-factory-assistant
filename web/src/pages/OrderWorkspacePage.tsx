@@ -37,6 +37,7 @@ import type {
   OrderRecordQueryParams,
 } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
+import { getPackingTotalPairs } from "../utils/packingTotals";
 
 interface FilterValues {
   orderNo?: string;
@@ -415,11 +416,10 @@ export default function OrderWorkspacePage() {
       { title: "客人款号", dataIndex: "customerStyleNo", width: 140, render: formatEmpty },
       { title: "客人颜色", dataIndex: "customerColor", width: 170, render: formatEmpty },
       { title: "面料材质", dataIndex: "material", width: 150, render: formatEmpty },
-      { title: "项目编号", dataIndex: "itemNumber", width: 130, render: formatEmpty },
       { title: "商标", dataIndex: "trademark", width: 120, render: formatEmpty },
       { title: "尺码数量", dataIndex: "sizeQuantities", width: 260, render: renderSizeQuantities },
       { title: "CTNS", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
-      { title: "TTL PRS", dataIndex: "totalPairs", width: 100, align: "right", render: formatEmpty },
+      { title: "TTL PRS", key: "totalPairs", width: 100, align: "right", render: (_, record) => formatEmpty(getPackingTotalPairs(record)) },
       { title: "开始箱号", dataIndex: "cartonStart", width: 120, render: formatEmpty },
       { title: "结束箱号", dataIndex: "cartonEnd", width: 120, render: formatEmpty },
     ],

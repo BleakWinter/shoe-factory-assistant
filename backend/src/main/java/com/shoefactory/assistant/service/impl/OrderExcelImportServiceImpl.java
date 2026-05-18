@@ -454,9 +454,11 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         detail.setMaterial(blankToNull(text(row, columns.material())));
         detail.setItemNumber(blankToNull(text(row, columns.itemNumber())));
         detail.setTrademark(blankToNull(text(row, columns.trademark())));
-        detail.setSizeQuantitiesJson(toJson(readPackingSizeQuantities(header, row, columns)));
-        detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
-        detail.setTotalPairs(nullToZero(integerValue(row, columns.totalPairs())));
+        Map<String, Integer> sizeQuantities = readPackingSizeQuantities(header, row, columns);
+        Integer cartonCount = integerValue(row, columns.cartonCount());
+        detail.setSizeQuantitiesJson(toJson(sizeQuantities));
+        detail.setCartonCount(nullToZero(cartonCount));
+        detail.setTotalPairs(calculatePackingTotalPairs(sizeQuantities, cartonCount, integerValue(row, columns.totalPairs())));
         detail.setCartonStart(blankToNull(text(row, columns.cartonStart())));
         detail.setCartonEnd(blankToNull(text(row, columns.cartonEnd())));
         detail.setSourceSheetName(sheet.getSheetName());
@@ -476,6 +478,18 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             detail.setStyleImagePath(imagePath == null ? null : imagePath.toString());
         }
         return detail;
+    }
+
+    private int calculatePackingTotalPairs(
+            Map<String, Integer> sizeQuantities,
+            Integer cartonCount,
+            Integer parsedTotalPairs
+    ) {
+        int perCartonPairs = sumPositiveValues(sizeQuantities);
+        if (perCartonPairs > 0 && cartonCount != null && cartonCount > 0) {
+            return perCartonPairs * cartonCount;
+        }
+        return nullToZero(parsedTotalPairs);
     }
 
     private <C, D> List<D> parseDataRows(

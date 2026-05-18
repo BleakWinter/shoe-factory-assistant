@@ -731,10 +731,13 @@ public class OrderServiceImpl implements OrderService {
         int quantity = 0;
         int cartonCount = 0;
         for (OrderPackingDetail detail : details) {
-            if (detail.getTotalPairs() != null && detail.getTotalPairs() > 0) {
+            int perCartonPairs = sumSizeQuantities(detail.getSizeQuantitiesJson());
+            if (perCartonPairs > 0 && detail.getCartonCount() != null && detail.getCartonCount() > 0) {
+                quantity += perCartonPairs * detail.getCartonCount();
+            } else if (detail.getTotalPairs() != null && detail.getTotalPairs() > 0) {
                 quantity += detail.getTotalPairs();
             } else {
-                quantity += sumSizeQuantities(detail.getSizeQuantitiesJson());
+                quantity += perCartonPairs;
             }
             if (detail.getCartonCount() != null && detail.getCartonCount() > 0) {
                 cartonCount += detail.getCartonCount();

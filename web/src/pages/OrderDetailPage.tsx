@@ -6,6 +6,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { fetchOrderDetails, fetchOrderPackingDetails, toAssetUrl } from "../api/orderApi";
 import type { OrderDetailProcess, OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
+import { getMatchingPackingDetails } from "../utils/orderMatching";
+import { getPackingTotalPairs } from "../utils/packingTotals";
 
 function renderSizeQuantities(value?: Record<string, number>) {
   const entries = Object.entries(value || {})
@@ -55,46 +57,6 @@ function renderProcesses(processes?: OrderDetailProcess[]) {
       ))}
     </Space>
   );
-}
-
-function normalizeMatchText(value?: string | number | null) {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  return String(value).trim().replace(/\s+/g, "").toUpperCase();
-}
-
-function sameRequired(left?: string | number | null, right?: string | number | null) {
-  const leftValue = normalizeMatchText(left);
-  const rightValue = normalizeMatchText(right);
-  return Boolean(leftValue && rightValue && leftValue === rightValue);
-}
-
-function sameOptional(left?: string | number | null, right?: string | number | null) {
-  const leftValue = normalizeMatchText(left);
-  const rightValue = normalizeMatchText(right);
-  return !leftValue || !rightValue || leftValue === rightValue;
-}
-
-function isMatchingPackingDetail(detail: OrderRecordDetail, packingDetail: OrderPackingDetail) {
-  if (sameRequired(detail.developmentNo, packingDetail.companyStyleNo)) {
-    return true;
-  }
-
-  if (sameRequired(detail.cartonStart, packingDetail.cartonStart) && sameRequired(detail.cartonEnd, packingDetail.cartonEnd)) {
-    return true;
-  }
-
-  if (sameRequired(detail.customerStyleNo, packingDetail.customerStyleNo)) {
-    if (sameRequired(detail.customerOrderNo, packingDetail.customerOrderNo)) {
-      return sameOptional(detail.poNo, packingDetail.poNo) && sameOptional(detail.englishColor, packingDetail.customerColor);
-    }
-    if (sameRequired(detail.poNo, packingDetail.poNo)) {
-      return sameOptional(detail.englishColor, packingDetail.customerColor);
-    }
-  }
-
-  return false;
 }
 
 export default function OrderDetailPage() {
@@ -196,11 +158,10 @@ export default function OrderDetailPage() {
       { title: "客人款号", dataIndex: "customerStyleNo", width: 140, render: formatEmpty },
       { title: "客人颜色", dataIndex: "customerColor", width: 170, render: formatEmpty },
       { title: "面料材质", dataIndex: "material", width: 150, render: formatEmpty },
-      { title: "项目编号", dataIndex: "itemNumber", width: 130, render: formatEmpty },
       { title: "商标", dataIndex: "trademark", width: 120, render: formatEmpty },
       { title: "尺码数量", dataIndex: "sizeQuantities", width: 260, render: renderSizeQuantities },
       { title: "CTNS", dataIndex: "cartonCount", width: 90, align: "right", render: formatEmpty },
-      { title: "TTL PRS", dataIndex: "totalPairs", width: 100, align: "right", render: formatEmpty },
+      { title: "TTL PRS", key: "totalPairs", width: 100, align: "right", render: (_, record) => formatEmpty(getPackingTotalPairs(record)) },
       { title: "开始箱号", dataIndex: "cartonStart", width: 120, render: formatEmpty },
       { title: "结束箱号", dataIndex: "cartonEnd", width: 120, render: formatEmpty },
     ],
@@ -210,7 +171,7 @@ export default function OrderDetailPage() {
   const packingDetailsByDetailId = useMemo(() => {
     const next = new Map<number, OrderPackingDetail[]>();
     details.forEach((detail) => {
-      next.set(detail.id, packingDetails.filter((packingDetail) => isMatchingPackingDetail(detail, packingDetail)));
+      next.set(detail.id, getMatchingPackingDetails(detail, packingDetails));
     });
     return next;
   }, [details, packingDetails]);
