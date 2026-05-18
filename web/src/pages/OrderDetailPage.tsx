@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined } from "@ant-design/icons";
-import { App, Button, Image, Space, Table, Tabs, Tag, Typography } from "antd";
+import { App, Button, Image, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -55,6 +55,46 @@ function renderProcesses(processes?: OrderDetailProcess[]) {
       ))}
     </Space>
   );
+}
+
+function normalizeMatchText(value?: string | number | null) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim().replace(/\s+/g, "").toUpperCase();
+}
+
+function sameRequired(left?: string | number | null, right?: string | number | null) {
+  const leftValue = normalizeMatchText(left);
+  const rightValue = normalizeMatchText(right);
+  return Boolean(leftValue && rightValue && leftValue === rightValue);
+}
+
+function sameOptional(left?: string | number | null, right?: string | number | null) {
+  const leftValue = normalizeMatchText(left);
+  const rightValue = normalizeMatchText(right);
+  return !leftValue || !rightValue || leftValue === rightValue;
+}
+
+function isMatchingPackingDetail(detail: OrderRecordDetail, packingDetail: OrderPackingDetail) {
+  if (sameRequired(detail.developmentNo, packingDetail.companyStyleNo)) {
+    return true;
+  }
+
+  if (sameRequired(detail.cartonStart, packingDetail.cartonStart) && sameRequired(detail.cartonEnd, packingDetail.cartonEnd)) {
+    return true;
+  }
+
+  if (sameRequired(detail.customerStyleNo, packingDetail.customerStyleNo)) {
+    if (sameRequired(detail.customerOrderNo, packingDetail.customerOrderNo)) {
+      return sameOptional(detail.poNo, packingDetail.poNo) && sameOptional(detail.englishColor, packingDetail.customerColor);
+    }
+    if (sameRequired(detail.poNo, packingDetail.poNo)) {
+      return sameOptional(detail.englishColor, packingDetail.customerColor);
+    }
+  }
+
+  return false;
 }
 
 export default function OrderDetailPage() {
@@ -167,6 +207,40 @@ export default function OrderDetailPage() {
     [],
   );
 
+  const packingDetailsByDetailId = useMemo(() => {
+    const next = new Map<number, OrderPackingDetail[]>();
+    details.forEach((detail) => {
+      next.set(detail.id, packingDetails.filter((packingDetail) => isMatchingPackingDetail(detail, packingDetail)));
+    });
+    return next;
+  }, [details, packingDetails]);
+
+  const renderExpandedDetail = useCallback(
+    (record: OrderRecordDetail) => {
+      const matchedPackingDetails = packingDetailsByDetailId.get(record.id) || [];
+      return (
+        <div className="order-packing-expanded">
+          <div className="order-packing-expanded-meta">
+            <Typography.Text strong>处理记录</Typography.Text>
+            {renderProcesses(record.processes)}
+          </div>
+          <Typography.Text strong>对应装箱单明细</Typography.Text>
+          <Table
+            rowKey="id"
+            columns={packingDetailColumns}
+            dataSource={matchedPackingDetails}
+            pagination={false}
+            scroll={{ x: 2140 }}
+            size="small"
+            className="data-table nested-data-table"
+            locale={{ emptyText: "暂无对应装箱单明细" }}
+          />
+        </div>
+      );
+    },
+    [packingDetailColumns, packingDetailsByDetailId],
+  );
+
   return (
     <div className="workspace">
       <div className="toolbar-band">
@@ -187,43 +261,20 @@ export default function OrderDetailPage() {
       </div>
 
       <div className="page-panel">
-        <Tabs
-          items={[
-            {
-              key: "ORDER",
-              label: "订单明细",
-              children: (
-                <Table
-                  rowKey="id"
-                  loading={loading}
-                  columns={detailColumns}
-                  dataSource={details}
-                  pagination={{ pageSize: 20, showSizeChanger: true }}
-                  scroll={{ x: 3330 }}
-                  className="data-table"
-                  expandable={{
-                    expandedRowRender: (record) => renderProcesses(record.processes),
-                    rowExpandable: () => true,
-                  }}
-                />
-              ),
-            },
-            {
-              key: "PACKING",
-              label: "装箱单明细",
-              children: (
-                <Table
-                  rowKey="id"
-                  loading={loading}
-                  columns={packingDetailColumns}
-                  dataSource={packingDetails}
-                  pagination={{ pageSize: 20, showSizeChanger: true }}
-                  scroll={{ x: 2140 }}
-                  className="data-table"
-                />
-              ),
-            },
-          ]}
+        <Table
+          rowKey="id"
+          loading={loading}
+          columns={detailColumns}
+          dataSource={details}
+          pagination={{ pageSize: 20, showSizeChanger: true }}
+          scroll={{ x: 3330 }}
+          className="data-table"
+          expandable={{
+            columnTitle: "装箱单",
+            expandedRowRender: renderExpandedDetail,
+            fixed: "left",
+            rowExpandable: () => true,
+          }}
         />
       </div>
     </div>

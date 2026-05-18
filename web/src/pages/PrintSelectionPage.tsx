@@ -1,6 +1,7 @@
 import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
+  EyeOutlined,
   PrinterOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
@@ -20,10 +21,13 @@ type PrintSelectionItem = OrderRecordDetail & {
   printOrderNo?: string;
 };
 
+const templatePrintItems: PrintSelectionItem[] = [];
+
 type PrintFormatTarget = "outer-carton" | "inner-box";
 type CartonPrintFormatKey = "outer-carton-a4" | "outer-carton-dual-size";
 type InnerBoxPrintFormatKey = "inner-box-a4";
 type PrintFormatKey = CartonPrintFormatKey | InnerBoxPrintFormatKey;
+type PreviewMode = "print" | "template";
 
 interface CartonLabelTemplateData {
   customerName: string;
@@ -298,6 +302,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
   const [formatModalOpen, setFormatModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("print");
   const [previewPage, setPreviewPage] = useState(1);
   const [selectedPrintFormat, setSelectedPrintFormat] = useState<PrintFormatKey>(() => getDefaultPrintFormat(title));
   const [orderLoading, setOrderLoading] = useState(false);
@@ -418,16 +423,34 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const openPrintFormatModal = () => {
+    if (printItems.length === 0) {
+      message.warning(`请先添加待打印${printTargetTitle}`);
+      return;
+    }
+    setPreviewMode("print");
+    setFormatModalOpen(true);
+  };
+
+  const openTemplateFormatModal = () => {
+    setPreviewMode("template");
     setFormatModalOpen(true);
   };
 
   const printSelectedFormat = () => {
+    if (printItems.length === 0) {
+      message.warning(`请先添加待打印${printTargetTitle}`);
+      return;
+    }
     setFormatModalOpen(false);
     applyPrintPageSize(selectedPrintFormat);
     window.setTimeout(() => window.print(), 0);
   };
 
   const previewSelectedFormat = (format: PrintFormatKey = selectedPrintFormat) => {
+    if (previewMode === "print" && printItems.length === 0) {
+      message.warning(`请先添加待打印${printTargetTitle}`);
+      return;
+    }
     setSelectedPrintFormat(format);
     setFormatModalOpen(false);
     setPreviewOpen(true);
@@ -508,10 +531,12 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   );
   const selectedPrintFormatLabel = printFormatTemplates[selectedPrintFormat].label;
   const selectedPrintFormatIsInnerBox = selectedPrintFormat === "inner-box-a4";
-  const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && printItems.length === 0;
+  const previewPrintItems = previewMode === "template" ? templatePrintItems : printItems;
+  const hasPrintItems = printItems.length > 0;
+  const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && previewPrintItems.length === 0;
   const previewInnerBoxPageCount = useMemo(
-    () => (selectedPrintFormatIsInnerBox ? getInnerBoxPageCount(printItems) : 1),
-    [printItems, selectedPrintFormatIsInnerBox],
+    () => (selectedPrintFormatIsInnerBox ? getInnerBoxPageCount(previewPrintItems) : 1),
+    [previewPrintItems, selectedPrintFormatIsInnerBox],
   );
 
   useEffect(() => {
@@ -528,8 +553,11 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           </Typography.Text>
         </div>
         <Space wrap>
-          <Button type="primary" icon={<PrinterOutlined />} onClick={openPrintFormatModal}>
-            打印
+          <Button type="primary" icon={<PrinterOutlined />} disabled={!hasPrintItems} onClick={openPrintFormatModal}>
+            打印预览
+          </Button>
+          <Button icon={<EyeOutlined />} onClick={openTemplateFormatModal}>
+            查看模板
           </Button>
         </Space>
       </div>
@@ -629,15 +657,27 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 
       <Modal
         open={formatModalOpen}
-        title="选择打印格式"
+        title={previewMode === "template" ? "选择模板格式" : "选择打印格式"}
         onCancel={() => setFormatModalOpen(false)}
         footer={[
           <Button key="close" onClick={() => setFormatModalOpen(false)}>
             取消
           </Button>,
-          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={printSelectedFormat}>
-            打印
-          </Button>,
+          previewMode === "template" ? (
+            <Button key="template" type="primary" icon={<EyeOutlined />} onClick={() => previewSelectedFormat()}>
+              查看模板
+            </Button>
+          ) : (
+            <Button
+              key="print"
+              type="primary"
+              icon={<PrinterOutlined />}
+              disabled={!hasPrintItems}
+              onClick={printSelectedFormat}
+            >
+              打印
+            </Button>
+          ),
         ]}
         destroyOnClose
       >
@@ -660,7 +700,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
                   previewSelectedFormat(option.value);
                 }}
               >
-                预览
+                {previewMode === "template" ? "查看模板" : "预览"}
               </Button>
             </div>
           ))}
@@ -669,7 +709,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 
       <Modal
         open={previewOpen}
-        title={`${selectedPrintFormatLabel}预览`}
+        title={`${selectedPrintFormatLabel}${previewMode === "template" ? "模板预览" : "预览"}`}
         onCancel={backToPrintFormatModal}
         width={selectedPrintFormatIsInnerBoxTemplate ? 560 : selectedPrintFormatIsInnerBox ? 860 : 1120}
         footer={null}
@@ -695,7 +735,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           >
             <PrintFormatSheet
               format={selectedPrintFormat}
-              printItems={printItems}
+              printItems={previewPrintItems}
               innerBoxPageIndex={selectedPrintFormatIsInnerBox ? previewPage - 1 : undefined}
             />
           </div>

@@ -3,6 +3,8 @@ import App from "../App";
 import ComponentOrderPage from "../pages/ComponentOrderPage";
 import OrderDetailPage from "../pages/OrderDetailPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
+import ShippingNoteHistoryPage from "../pages/ShippingNoteHistoryPage";
+import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
 import PrintSelectionPage from "../pages/PrintSelectionPage";
 import PrintTaskListPage from "../pages/PrintTaskListPage";
 import ShoePriceConfigPage from "../pages/ShoePriceConfigPage";
@@ -21,7 +23,8 @@ export const router = createBrowserRouter([
       { path: "tasks/order", element: <PrintTaskListPage /> },
       { path: "tasks/outer-carton-label", element: <PrintSelectionPage key="outer-carton-label" title="打印外箱贴标" /> },
       { path: "tasks/inner-box-label", element: <PrintSelectionPage key="inner-box-label" title="打印内盒贴标" /> },
-      { path: "tasks/shipping-note", element: <PrintSelectionPage key="shipping-note" title="打印出货单" /> },
+      { path: "tasks/shipping-note", element: <ShippingNotePrintPage /> },
+      { path: "shipping-notes", element: <ShippingNoteHistoryPage /> },
       { path: "component-orders", element: <Navigate to="/component-orders/packing" replace /> },
       { path: "component-orders/packing", element: <ComponentOrderPage key="component-order-packing" title="订包装" processType={1} /> },
       { path: "component-orders/outsole", element: <ComponentOrderPage key="component-order-outsole" title="订大底" processType={2} /> },
