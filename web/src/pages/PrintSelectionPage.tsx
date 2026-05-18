@@ -10,7 +10,9 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
 import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
+import { fetchStyleConfigs } from "../api/styleConfigApi";
 import type { DevelopmentNoOption, OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
+import type { StyleConfig } from "../types/styleConfig";
 import { formatEmpty } from "../utils/format";
 import { getMatchingPackingDetails } from "../utils/orderMatching";
 
@@ -21,6 +23,7 @@ interface PrintSelectionPageProps {
 type PrintSelectionItem = OrderRecordDetail & {
   printOrderNo?: string;
   packingDetails?: OrderPackingDetail[];
+  styleConfig?: StyleConfig;
 };
 
 const templatePrintItems: PrintSelectionItem[] = [];
@@ -225,11 +228,67 @@ function pickFirstText(...values: unknown[]) {
   return "";
 }
 
+function isDateLikeText(value: string) {
+  return /^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}$/.test(value.trim());
+}
+
+function pickPoText(...values: unknown[]) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text && !isDateLikeText(text)) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function getCartonLabelPo(item: PrintSelectionItem, packingDetail?: OrderPackingDetail) {
+  if (packingDetail) {
+    return pickPoText(packingDetail.poNo);
+  }
+  return pickPoText(item.poNo);
+}
+
+function normalizeKey(value?: string | number | null) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 function getSortedSizeEntries(value?: Record<string, number>) {
   return Object.entries(value || {})
     .map(([size, count]) => [size.trim(), Number(count)] as const)
     .filter(([size, count]) => size && Number.isFinite(count) && count > 0)
     .sort(([left], [right]) => left.localeCompare(right, "zh-CN", { numeric: true }));
+}
+
+function buildStyleConfigMap(configs: StyleConfig[]) {
+  return new Map(configs.map((config) => [normalizeKey(config.developmentNo), config]));
+}
+
+function findStyleConfig(
+  configsByDevelopmentNo: Map<string, StyleConfig>,
+  item: OrderRecordDetail,
+  packingDetail?: OrderPackingDetail,
+) {
+  return (
+    configsByDevelopmentNo.get(normalizeKey(packingDetail?.companyStyleNo)) ||
+    configsByDevelopmentNo.get(normalizeKey(item.developmentNo))
+  );
+}
+
+function formatWeightKgs(value?: number) {
+  if (!Number.isFinite(value) || Number(value) <= 0) {
+    return "";
+  }
+  return `${Number(value).toFixed(3).replace(/\.?0+$/, "")}`;
+}
+
+function calculateLabelWeight(weightPerPair?: number, pairCount?: number) {
+  const weight = Number(weightPerPair);
+  const pairs = Number(pairCount);
+  if (!Number.isFinite(weight) || weight <= 0 || !Number.isFinite(pairs) || pairs <= 0) {
+    return "";
+  }
+  return formatWeightKgs(weight * pairs);
 }
 
 function hasSizeQuantities(value?: Record<string, number>) {
@@ -377,12 +436,12 @@ function buildCartonLabelData(format: CartonPrintFormatKey, items: PrintSelectio
         material: pickFirstText(packingDetail?.material, packingDetail?.itemNumber, item.englishMaterial, item.upperMaterial),
         color: pickFirstText(packingDetail?.customerColor, item.englishColor),
         number: pickFirstText(pairCount),
-        po: pickFirstText(packingDetail?.poNo, item.poNo),
+        po: getCartonLabelPo(item, packingDetail),
         orderNumber: pickFirstText(packingDetail?.customerOrderNo, item.customerOrderNo),
         sizeColumns: templateData.sizeColumns,
         sizeValues: buildCartonSizeValues(templateData.sizeColumns, sizeQuantities, pairCount),
-        grossWeight: "",
-        netWeight: "",
+        grossWeight: calculateLabelWeight(item.styleConfig?.grossWeightPerPair, pairCount),
+        netWeight: calculateLabelWeight(item.styleConfig?.netWeightPerPair, pairCount),
       };
       return expandCartonNumbers(
         pickFirstText(packingDetail?.cartonStart, item.cartonStart),
@@ -480,6 +539,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
   const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
+  const [styleConfigsByDevelopmentNo, setStyleConfigsByDevelopmentNo] = useState<Map<string, StyleConfig>>(new Map());
   const [selectedDetailIds, setSelectedDetailIds] = useState<Key[]>([]);
   const [selectedPrintIds, setSelectedPrintIds] = useState<Key[]>([]);
   const [printItems, setPrintItems] = useState<PrintSelectionItem[]>([]);
@@ -510,6 +570,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     if (!selectedOrderId) {
       setDetails([]);
       setPackingDetails([]);
+      setStyleConfigsByDevelopmentNo(new Map());
       return;
     }
     setDetailLoading(true);
@@ -520,11 +581,22 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       ]);
       setDetails(data);
       setPackingDetails(nextPackingDetails);
+      const developmentNos = Array.from(new Set([
+        ...data.map((item) => item.developmentNo),
+        ...nextPackingDetails.map((item) => item.companyStyleNo),
+      ].map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
+      if (developmentNos.length > 0) {
+        const configPage = await fetchStyleConfigs({ developmentNos: developmentNos.join(","), page: 1, size: 100 });
+        setStyleConfigsByDevelopmentNo(buildStyleConfigMap(configPage.records));
+      } else {
+        setStyleConfigsByDevelopmentNo(new Map());
+      }
       setSelectedDetailIds([]);
       setDevelopmentNoPaths([]);
     } catch (error) {
       setDetails([]);
       setPackingDetails([]);
+      setStyleConfigsByDevelopmentNo(new Map());
       message.error(error instanceof Error ? error.message : "订单明细加载失败");
     } finally {
       setDetailLoading(false);
@@ -595,6 +667,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           ...item,
           printOrderNo,
           packingDetails: getMatchingPackingDetails(item, packingDetails),
+          styleConfig: findStyleConfig(styleConfigsByDevelopmentNo, item),
         }));
       if (nextItems.length === 0) {
         return current;
