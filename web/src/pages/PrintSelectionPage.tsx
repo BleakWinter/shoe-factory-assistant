@@ -1105,7 +1105,7 @@ function CartonLabelTemplate({ data }: { data: CartonLabelTemplateData }) {
         <div className="carton-label-carton-box">
           <div className="carton-label-customer">{data.customerName}</div>
           <div className="carton-label-empty-line">{data.storeLine}</div>
-          <div className="carton-label-caption">CARTON NUMBER</div>
+          <div className="carton-label-caption">CARTON MUMBER</div>
           <div className="carton-label-carton-number">{data.cartonNumber}</div>
         </div>
       </div>
