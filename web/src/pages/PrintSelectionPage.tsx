@@ -679,7 +679,15 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 
   const addSelectedPrintItems = () => {
     const selectedSet = new Set(selectedDetailIds);
-    addPrintItems(details.filter((item) => selectedSet.has(item.id)));
+    const orderRecordDetails = details.filter((item) => selectedSet.has(item.id));
+    const developmentNoList = orderRecordDetails.map(item => item.developmentNo);
+    for (let i = 0; i < developmentNoList.length; i++){
+      const styleConfig = styleConfigsByDevelopmentNo.get(developmentNoList[i] as string);
+      if(styleConfig.netWeightPerPair === undefined && styleConfig.grossWeightPerPair === undefined){
+
+      }
+    }
+    addPrintItems(orderRecordDetails);
     setSelectedDetailIds([]);
   };
 
