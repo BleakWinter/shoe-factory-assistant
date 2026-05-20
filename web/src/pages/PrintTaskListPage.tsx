@@ -17,8 +17,7 @@ import {
   regeneratePrintTaskPreview,
 } from "../api/printTaskApi";
 import PdfPreview from "../components/PdfPreview";
-import { PRINT_TYPES } from "../types/order";
-import type { PrintTask, PrintTaskStatus, PrintType } from "../types/order";
+import type { PrintTask, PrintTaskStatus } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 const allowedExtensions = ["xlsx", "xls"];
@@ -33,13 +32,16 @@ function renderTaskStatus(status: PrintTaskStatus) {
   // 后端存英文枚举，页面转成爸妈看得懂的中文状态。
   const map: Record<PrintTaskStatus, { color: string; label: string }> = {
     PENDING: { color: "gold", label: "待打印" },
-    PRINTING: { color: "blue", label: "打印中" },
-    SUCCESS: { color: "green", label: "已完成" },
+    PRINTED: { color: "green", label: "已打印" },
     FAILED: { color: "red", label: "失败" },
-    CANCELED: { color: "default", label: "已取消" },
+    INVALID: { color: "default", label: "已失效" },
   };
   const item = map[status] || { color: "default", label: status };
   return <Tag color={item.color}>{item.label}</Tag>;
+}
+
+function renderPrintType(task: PrintTask) {
+  return <Tag color="blue">{task.printTypeText || task.printType}</Tag>;
 }
 
 function renderStyleNos(styleNos?: string[]) {
@@ -56,15 +58,6 @@ function renderStyleNos(styleNos?: string[]) {
   );
 }
 
-function renderPrintFlags(task: PrintTask) {
-  return (
-    <Space size={[4, 4]} wrap>
-      <Tag color={task.orderPrinted ? "green" : "default"}>订单</Tag>
-      <Tag color={task.packingPrinted ? "green" : "default"}>装箱单</Tag>
-    </Space>
-  );
-}
-
 export default function PrintTaskListPage() {
   const { message } = App.useApp();
   // tasks 是表格数据；activeTask 是当前打开打印弹窗的那条任务。
@@ -72,11 +65,10 @@ export default function PrintTaskListPage() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
-  const [activePrintType, setActivePrintType] = useState<PrintType | "">("");
   const [previewUrl, setPreviewUrl] = useState("");
-  const [previewLoading, setPreviewLoading] = useState<PrintType | "">("");
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [markingPrinted, setMarkingPrinted] = useState<PrintType | "">("");
+  const [markingPrinted, setMarkingPrinted] = useState(false);
 
   const loadTasks = useCallback(async () => {
     // 刷新打印任务列表。上传成功后也会调用一次。
@@ -127,61 +119,49 @@ export default function PrintTaskListPage() {
     },
   };
 
-  const requestPreview = async (task: PrintTask, printType: PrintType) => {
-    setActivePrintType(printType);
-    setPreviewLoading(printType);
+  const requestPreview = async (task: PrintTask) => {
+    setPreviewLoading(true);
     try {
-      // 生成 PDF 后，把当前任务的 previewUrl 同步回表格缓存。
-      const preview = await generatePrintTaskPreview(task.id, printType);
+      const preview = await generatePrintTaskPreview(task.id);
       setPreviewUrl(preview.previewUrl);
       setTasks((prev) =>
         prev.map((task) =>
-          task.id === preview.orderId ? { ...task, previewUrl: preview.previewUrl } : task,
+          task.id === preview.id ? { ...task, previewUrl: preview.previewUrl } : task,
         ),
       );
       setActiveTask((current) =>
-        current && current.id === preview.orderId
+        current && current.id === preview.id
           ? { ...current, previewUrl: preview.previewUrl }
           : current,
       );
     } catch (error) {
       message.error(error instanceof Error ? error.message : "PDF 预览生成失败");
     } finally {
-      setPreviewLoading("");
+      setPreviewLoading(false);
     }
   };
 
   const openPrintModal = (task: PrintTask) => {
-    // 打开弹窗时默认选中“订单”，并立即请求订单预览。
     setActiveTask(task);
-    setActivePrintType(PRINT_TYPES.ORDER);
     setPreviewUrl(task.previewUrl || "");
-    void requestPreview(task, PRINT_TYPES.ORDER);
+    void requestPreview(task);
   };
 
   const closePrintModal = () => {
     setActiveTask(null);
-    setActivePrintType("");
     setPreviewUrl("");
-    setPreviewLoading("");
+    setPreviewLoading(false);
     setRegenerating(false);
-    setMarkingPrinted("");
-  };
-
-  const loadPreview = async (printType: PrintType) => {
-    if (!activeTask) {
-      return;
-    }
-    await requestPreview(activeTask, printType);
+    setMarkingPrinted(false);
   };
 
   const regeneratePreview = async () => {
-    if (!activeTask || !activePrintType) {
+    if (!activeTask) {
       return;
     }
     setRegenerating(true);
     try {
-      const preview = await regeneratePrintTaskPreview(activeTask.id, activePrintType);
+      const preview = await regeneratePrintTaskPreview(activeTask.id);
       setPreviewUrl(preview.previewUrl);
       setTasks((prev) =>
         prev.map((task) =>
@@ -206,19 +186,19 @@ export default function PrintTaskListPage() {
     setActiveTask((current) => (current && current.id === nextTask.id ? nextTask : current));
   };
 
-  const markPrinted = async (printType: PrintType) => {
+  const markPrinted = async () => {
     if (!activeTask) {
       return;
     }
-    setMarkingPrinted(printType);
+    setMarkingPrinted(true);
     try {
-      const nextTask = await markPrintTaskPrinted(activeTask.id, printType);
+      const nextTask = await markPrintTaskPrinted(activeTask.id);
       updateTaskCache({ ...nextTask, previewUrl });
-      message.success(`${printType === PRINT_TYPES.ORDER ? "订单" : "装箱单"}已标记为已打印`);
+      message.success(`${activeTask.printTypeText || "任务"}已标记为已打印`);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "标记已打印失败");
     } finally {
-      setMarkingPrinted("");
+      setMarkingPrinted(false);
     }
   };
 
@@ -244,6 +224,12 @@ export default function PrintTaskListPage() {
         render: renderStyleNos,
       },
       {
+        title: "打印类型",
+        key: "printType",
+        width: 110,
+        render: (_, record) => renderPrintType(record),
+      },
+      {
         title: "订单总对数",
         dataIndex: "totalPairs",
         width: 120,
@@ -257,10 +243,11 @@ export default function PrintTaskListPage() {
         render: renderTaskStatus,
       },
       {
-        title: "打印确认",
-        key: "printedFlags",
-        width: 150,
-        render: (_, record) => renderPrintFlags(record),
+        title: "打印次数",
+        dataIndex: "printCount",
+        width: 100,
+        align: "right",
+        render: formatEmpty,
       },
       {
         title: "上传时间",
@@ -299,7 +286,7 @@ export default function PrintTaskListPage() {
         <div>
           <Typography.Title level={3}>打印订单</Typography.Title>
           <Typography.Text type="secondary">
-            上传订单 Excel 后生成待打印记录，可预览订单和装箱单。
+            上传订单 Excel 后生成订单和装箱单两个可打印任务。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -332,7 +319,11 @@ export default function PrintTaskListPage() {
 
       <Modal
         open={Boolean(activeTask)}
-        title={activeTask ? `打印预览：${activeTask.orderNo || activeTask.taskNo}` : "打印预览"}
+        title={
+          activeTask
+            ? `打印预览：${activeTask.orderNo || activeTask.taskNo} / ${activeTask.printTypeText || activeTask.printType}`
+            : "打印预览"
+        }
         onCancel={closePrintModal}
         width={1120}
         footer={null}
@@ -341,23 +332,9 @@ export default function PrintTaskListPage() {
         <div className="print-modal-body">
           <Space wrap className="print-options">
             <Button
-              type={activePrintType === PRINT_TYPES.ORDER ? "primary" : "default"}
-              loading={previewLoading === PRINT_TYPES.ORDER}
-              onClick={() => void loadPreview(PRINT_TYPES.ORDER)}
-            >
-              订单
-            </Button>
-            <Button
-              type={activePrintType === PRINT_TYPES.PACKING ? "primary" : "default"}
-              loading={previewLoading === PRINT_TYPES.PACKING}
-              onClick={() => void loadPreview(PRINT_TYPES.PACKING)}
-            >
-              装箱单
-            </Button>
-            <Button
               danger
               icon={<ReloadOutlined />}
-              disabled={!activePrintType || !previewUrl || Boolean(previewLoading)}
+              disabled={!previewUrl || previewLoading}
               loading={regenerating}
               onClick={() => void regeneratePreview()}
             >
@@ -365,19 +342,11 @@ export default function PrintTaskListPage() {
             </Button>
             <Button
               icon={<CheckCircleOutlined />}
-              disabled={!previewUrl || Boolean(previewLoading) || Boolean(activeTask?.orderPrinted)}
-              loading={markingPrinted === PRINT_TYPES.ORDER}
-              onClick={() => void markPrinted(PRINT_TYPES.ORDER)}
+              disabled={!previewUrl || previewLoading || activeTask?.status === "PRINTED"}
+              loading={markingPrinted}
+              onClick={() => void markPrinted()}
             >
-              订单已打印
-            </Button>
-            <Button
-              icon={<CheckCircleOutlined />}
-              disabled={!previewUrl || Boolean(previewLoading) || Boolean(activeTask?.packingPrinted)}
-              loading={markingPrinted === PRINT_TYPES.PACKING}
-              onClick={() => void markPrinted(PRINT_TYPES.PACKING)}
-            >
-              装箱单已打印
+              标记已打印
             </Button>
             <Typography.Text type="secondary">
               生成预览后，使用 PDF 预览窗口里的打印功能即可。

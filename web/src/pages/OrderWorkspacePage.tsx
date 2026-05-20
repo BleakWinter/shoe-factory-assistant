@@ -102,15 +102,6 @@ function renderRecognitionFlags(record: OrderRecord) {
   );
 }
 
-function renderPrintFlags(record: OrderRecord) {
-  return (
-    <Space size={[4, 4]} wrap>
-      <Tag color={record.orderPrinted ? "green" : "default"}>订单</Tag>
-      <Tag color={record.packingPrinted ? "green" : "default"}>装箱单</Tag>
-    </Space>
-  );
-}
-
 function renderSizeQuantities(value?: Record<string, number>) {
   const entries = Object.entries(value || {})
     .filter(([, count]) => Number(count) > 0)
@@ -317,7 +308,6 @@ export default function OrderWorkspacePage() {
         width: 220,
         render: (_, record) => renderRecognitionFlags(record),
       },
-      { title: "打印", key: "printed", width: 140, render: (_, record) => renderPrintFlags(record) },
       { title: "上传时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
       {
         title: "操作",

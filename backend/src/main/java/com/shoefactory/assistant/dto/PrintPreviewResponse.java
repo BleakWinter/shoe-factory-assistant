@@ -1,7 +1,5 @@
 package com.shoefactory.assistant.dto;
 
-import com.shoefactory.assistant.entity.OrderRecord;
-
 import java.time.LocalDateTime;
 
 public class PrintPreviewResponse {
@@ -21,7 +19,8 @@ public class PrintPreviewResponse {
     public static PrintPreviewResponse generated(
             Long id,
             String previewNo,
-            OrderRecord order,
+            Long orderId,
+            String orderNo,
             String printType,
             String previewUrl,
             Long pdfSize,
@@ -32,16 +31,14 @@ public class PrintPreviewResponse {
         PrintPreviewResponse response = new PrintPreviewResponse();
         response.setId(id);
         response.setPreviewNo(previewNo);
-        response.setOrderId(order == null ? null : order.getId());
+        response.setOrderId(orderId);
+        response.setOrderNo(orderNo);
         response.setPrintType(printType);
         response.setPreviewUrl(previewUrl);
         response.setPdfSize(pdfSize);
         response.setStatus(status);
         response.setErrorMessage(errorMessage);
         response.setCreatedAt(createdAt);
-        if (order != null) {
-            response.setOrderNo(order.getOrderNo());
-        }
         return response;
     }
 

@@ -1,5 +1,5 @@
 import request from "../utils/request";
-import type { PrintPreview, PrintTask, PrintType } from "../types/order";
+import type { PrintPreview, PrintTask } from "../types/order";
 
 function normalizeList<T>(data: T[] | { records?: T[]; list?: T[] }): T[] {
   if (Array.isArray(data)) {
@@ -15,33 +15,17 @@ export async function fetchPrintTasks() {
   return normalizeList(data);
 }
 
-export async function generatePrintTaskPreview(
-  id: number,
-  printType: PrintType,
-) {
-  const { data } = await request.post<PrintPreview>(`/print-tasks/${id}/preview`, {
-    printType,
-  });
+export async function generatePrintTaskPreview(id: number) {
+  const { data } = await request.post<PrintPreview>(`/print-tasks/${id}/preview`);
   return data;
 }
 
-export async function regeneratePrintTaskPreview(
-  id: number,
-  printType: PrintType,
-) {
-  const { data } = await request.post<PrintPreview>(
-    `/print-tasks/${id}/preview/regenerate`,
-    { printType },
-  );
+export async function regeneratePrintTaskPreview(id: number) {
+  const { data } = await request.post<PrintPreview>(`/print-tasks/${id}/preview/regenerate`);
   return data;
 }
 
-export async function markPrintTaskPrinted(
-  id: number,
-  printType: PrintType,
-) {
-  const { data } = await request.patch<PrintTask>(`/print-tasks/${id}/printed`, {
-    printType,
-  });
+export async function markPrintTaskPrinted(id: number) {
+  const { data } = await request.patch<PrintTask>(`/print-tasks/${id}/printed`);
   return data;
 }

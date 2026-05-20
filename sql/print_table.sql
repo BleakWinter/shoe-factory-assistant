@@ -12,14 +12,6 @@ CREATE TABLE IF NOT EXISTS `order_record` (
 
   `development_nos` varchar(1024) DEFAULT NULL COMMENT '开发编号汇总，多个用逗号分隔，仅用于展示',
 
-  `order_printed` tinyint NOT NULL DEFAULT 0 COMMENT '是否已打印订单: 0否 1是',
-  `packing_printed` tinyint NOT NULL DEFAULT 0 COMMENT '是否已打印装箱单: 0否 1是',
-
-  `order_pdf_path` varchar(512) DEFAULT NULL COMMENT '订单PDF本地路径',
-  `packing_pdf_path` varchar(512) DEFAULT NULL COMMENT '装箱单PDF本地路径',
-  `order_pdf_generated_at` datetime DEFAULT NULL COMMENT '订单PDF生成时间',
-  `packing_pdf_generated_at` datetime DEFAULT NULL COMMENT '装箱单PDF生成时间',
-
   `total_quantity` int NOT NULL DEFAULT 0 COMMENT '总对数',
   `total_carton_count` int NOT NULL DEFAULT 0 COMMENT '总箱数',
 
@@ -185,6 +177,33 @@ CREATE TABLE IF NOT EXISTS `order_detail_process` (
   KEY `idx_process_detail_id` (`order_detail_id`),
   KEY `idx_process_type` (`process_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细处理状态表';
+
+
+CREATE TABLE IF NOT EXISTS `order_print_task` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+
+  `order_id` bigint NOT NULL COMMENT '订单主表ID',
+  `order_detail_id` bigint DEFAULT NULL COMMENT '订单明细ID，订单/装箱单打印为空',
+
+  `print_type` tinyint NOT NULL COMMENT '打印类型: 1订单 2装箱单 3出货单 4外箱贴 5内盒贴 6标签',
+
+  `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态: 1待打印 2已打印 3失败 4已失效',
+  `preview_pdf_path` varchar(512) DEFAULT NULL COMMENT 'PDF预览文件路径',
+  `pdf_generated_at` datetime DEFAULT NULL COMMENT 'PDF生成时间',
+
+  `print_count` int NOT NULL DEFAULT 0 COMMENT '累计成功打印次数',
+  `last_print_time` datetime DEFAULT NULL COMMENT '最后打印时间',
+  `last_print_user` varchar(64) DEFAULT NULL COMMENT '最后打印人',
+  `error_message` varchar(1024) DEFAULT NULL COMMENT '失败原因',
+
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  KEY `idx_print_task_order_id` (`order_id`),
+  KEY `idx_print_task_detail_id` (`order_detail_id`),
+  KEY `idx_print_task_type_status` (`print_type`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='打印任务表';
 
 
 CREATE TABLE IF NOT EXISTS `shoe_style_config` (

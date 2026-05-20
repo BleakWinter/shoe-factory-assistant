@@ -148,14 +148,6 @@ public class FileStorageUtil {
         return target;
     }
 
-    public String buildPreviewUrl(Long fileId) {
-        String prefix = properties.getPreviewUrlPrefix();
-        if (prefix.endsWith("/")) {
-            prefix = prefix.substring(0, prefix.length() - 1);
-        }
-        return prefix + "/" + fileId + "/preview";
-    }
-
     public Path saveOrderDetailImage(byte[] content, String fileNo, String orderNo, int rowIndex, String extension) {
         if (content == null || content.length == 0) {
             return null;

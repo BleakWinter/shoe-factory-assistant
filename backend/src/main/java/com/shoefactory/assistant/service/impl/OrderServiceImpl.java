@@ -13,14 +13,18 @@ import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
+import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.entity.ShoeStyleConfig;
 import com.shoefactory.assistant.enums.FileType;
 import com.shoefactory.assistant.enums.OrderRecognitionStatus;
 import com.shoefactory.assistant.enums.OrderSourceType;
+import com.shoefactory.assistant.enums.PrintTaskStatus;
+import com.shoefactory.assistant.enums.PrintType;
 import com.shoefactory.assistant.mapper.OrderDetailProcessMapper;
 import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
+import com.shoefactory.assistant.mapper.OrderPrintTaskMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
@@ -62,6 +66,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private final OrderRecordMapper orderRecordMapper;
+    private final OrderPrintTaskMapper orderPrintTaskMapper;
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderDetailProcessMapper orderDetailProcessMapper;
@@ -72,6 +77,7 @@ public class OrderServiceImpl implements OrderService {
 
     public OrderServiceImpl(
             OrderRecordMapper orderRecordMapper,
+            OrderPrintTaskMapper orderPrintTaskMapper,
             OrderRecordDetailMapper orderRecordDetailMapper,
             OrderPackingDetailMapper orderPackingDetailMapper,
             OrderDetailProcessMapper orderDetailProcessMapper,
@@ -81,6 +87,7 @@ public class OrderServiceImpl implements OrderService {
             StyleConfigService styleConfigService
     ) {
         this.orderRecordMapper = orderRecordMapper;
+        this.orderPrintTaskMapper = orderPrintTaskMapper;
         this.orderRecordDetailMapper = orderRecordDetailMapper;
         this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderDetailProcessMapper = orderDetailProcessMapper;
@@ -104,8 +111,9 @@ public class OrderServiceImpl implements OrderService {
         OrderRecord orderRecord = readUploadSummary(storedFile, fileNo);
         initializeRecognitionFields(orderRecord);
         orderRecordMapper.insert(orderRecord);
+        List<OrderPrintTask> printTasks = createOrderLevelPrintTasks(orderRecord);
         styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
-        return buildUploadResponse(orderRecord, 0);
+        return buildUploadResponse(orderRecord, firstTaskId(printTasks), 0);
     }
 
     @Override
@@ -449,8 +457,6 @@ public class OrderServiceImpl implements OrderService {
             fallback.setOriginalFilePath(storedFile.getPath().toString());
             fallback.setOrderNo(fileNo);
             fallback.setCustomerName(null);
-            fallback.setOrderPrinted(false);
-            fallback.setPackingPrinted(false);
             fallback.setTotalQuantity(0);
             fallback.setTotalCartonCount(0);
             fallback.setSourceType(OrderSourceType.EXCEL.getCode());
@@ -463,12 +469,6 @@ public class OrderServiceImpl implements OrderService {
     private void initializeRecognitionFields(OrderRecord order) {
         if (!hasText(order.getOrderNo())) {
             order.setOrderNo(FileStorageUtil.newBusinessNo("SF"));
-        }
-        if (order.getOrderPrinted() == null) {
-            order.setOrderPrinted(false);
-        }
-        if (order.getPackingPrinted() == null) {
-            order.setPackingPrinted(false);
         }
         if (order.getTotalQuantity() == null) {
             order.setTotalQuantity(0);
@@ -489,16 +489,50 @@ public class OrderServiceImpl implements OrderService {
         order.setUpdatedAt(now);
     }
 
-    private OrderUploadResponse buildUploadResponse(OrderRecord orderRecord, int lineCount) {
+    private Long firstTaskId(List<OrderPrintTask> printTasks) {
+        if (printTasks == null || printTasks.isEmpty()) {
+            return null;
+        }
+        return printTasks.get(0).getId();
+    }
+
+    private OrderUploadResponse buildUploadResponse(OrderRecord orderRecord, Long firstTaskId, int lineCount) {
         OrderUploadResponse response = new OrderUploadResponse();
         response.setOrderId(orderRecord.getId());
         response.setOrderNo(orderRecord.getOrderNo());
         response.setCustomerName(orderRecord.getCustomerName());
         response.setLineCount(lineCount);
         response.setTotalPairs(orderRecord.getTotalQuantity());
-        response.setPrintTaskId(orderRecord.getId());
+        response.setPrintTaskId(firstTaskId);
         response.setPrintTaskNo(orderRecord.getOrderNo());
         return response;
+    }
+
+    private List<OrderPrintTask> createOrderLevelPrintTasks(OrderRecord order) {
+        if (order == null || order.getId() == null) {
+            return List.of();
+        }
+        List<OrderPrintTask> tasks = List.of(
+                buildOrderLevelPrintTask(order, PrintType.ORDER_SHEET),
+                buildOrderLevelPrintTask(order, PrintType.PACKING_SHEET)
+        );
+        for (OrderPrintTask task : tasks) {
+            orderPrintTaskMapper.insert(task);
+        }
+        return tasks;
+    }
+
+    private OrderPrintTask buildOrderLevelPrintTask(OrderRecord order, PrintType printType) {
+        LocalDateTime now = LocalDateTime.now();
+        OrderPrintTask task = new OrderPrintTask();
+        task.setOrderId(order.getId());
+        task.setOrderDetailId(null);
+        task.setPrintType(printType.getCode());
+        task.setStatus(PrintTaskStatus.PENDING.getCode());
+        task.setPrintCount(0);
+        task.setCreatedAt(now);
+        task.setUpdatedAt(now);
+        return task;
     }
 
     private FileType toFileType(String extension) {

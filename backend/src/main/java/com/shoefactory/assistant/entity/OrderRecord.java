@@ -19,12 +19,6 @@ public class OrderRecord {
     private String boxImageUrl;
     private String boxImagePath;
     private String developmentNos;
-    private Boolean orderPrinted;
-    private Boolean packingPrinted;
-    private String orderPdfPath;
-    private String packingPdfPath;
-    private LocalDateTime orderPdfGeneratedAt;
-    private LocalDateTime packingPdfGeneratedAt;
     private Integer totalQuantity;
     private Integer totalCartonCount;
     private Integer sourceType;
@@ -100,54 +94,6 @@ public class OrderRecord {
 
     public void setDevelopmentNos(String developmentNos) {
         this.developmentNos = developmentNos;
-    }
-
-    public Boolean getOrderPrinted() {
-        return orderPrinted;
-    }
-
-    public void setOrderPrinted(Boolean orderPrinted) {
-        this.orderPrinted = orderPrinted;
-    }
-
-    public Boolean getPackingPrinted() {
-        return packingPrinted;
-    }
-
-    public void setPackingPrinted(Boolean packingPrinted) {
-        this.packingPrinted = packingPrinted;
-    }
-
-    public String getOrderPdfPath() {
-        return orderPdfPath;
-    }
-
-    public void setOrderPdfPath(String orderPdfPath) {
-        this.orderPdfPath = orderPdfPath;
-    }
-
-    public String getPackingPdfPath() {
-        return packingPdfPath;
-    }
-
-    public void setPackingPdfPath(String packingPdfPath) {
-        this.packingPdfPath = packingPdfPath;
-    }
-
-    public LocalDateTime getOrderPdfGeneratedAt() {
-        return orderPdfGeneratedAt;
-    }
-
-    public void setOrderPdfGeneratedAt(LocalDateTime orderPdfGeneratedAt) {
-        this.orderPdfGeneratedAt = orderPdfGeneratedAt;
-    }
-
-    public LocalDateTime getPackingPdfGeneratedAt() {
-        return packingPdfGeneratedAt;
-    }
-
-    public void setPackingPdfGeneratedAt(LocalDateTime packingPdfGeneratedAt) {
-        this.packingPdfGeneratedAt = packingPdfGeneratedAt;
     }
 
     public Integer getTotalQuantity() {

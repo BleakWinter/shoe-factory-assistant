@@ -3,115 +3,148 @@ package com.shoefactory.assistant.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PrintPreviewResponse;
-import com.shoefactory.assistant.dto.PrintTaskCreateRequest;
 import com.shoefactory.assistant.dto.PrintTaskResponse;
 import com.shoefactory.assistant.dto.PrintTaskStatusUpdateRequest;
+import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.enums.PrintTaskStatus;
-import com.shoefactory.assistant.enums.PrintType;
+import com.shoefactory.assistant.mapper.OrderPrintTaskMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.service.PrintPreviewService;
 import com.shoefactory.assistant.service.PrintTaskService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class PrintTaskServiceImpl implements PrintTaskService {
 
-    // 新表结构没有 print_task 表，打印列表直接展示 order_record。
+    private final OrderPrintTaskMapper orderPrintTaskMapper;
     private final OrderRecordMapper orderRecordMapper;
     private final PrintPreviewService printPreviewService;
 
     public PrintTaskServiceImpl(
+            OrderPrintTaskMapper orderPrintTaskMapper,
             OrderRecordMapper orderRecordMapper,
             PrintPreviewService printPreviewService
     ) {
+        this.orderPrintTaskMapper = orderPrintTaskMapper;
         this.orderRecordMapper = orderRecordMapper;
         this.printPreviewService = printPreviewService;
     }
 
     @Override
-    public PrintTaskResponse createTask(PrintTaskCreateRequest request) {
-        throw new BusinessException("当前版本上传订单后直接进入打印列表，无需单独创建打印任务");
-    }
-
-    @Override
     public List<PrintTaskResponse> listTasks() {
-        // 打印列表页面直接按上传时间倒序展示订单主表。
-        return orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
-                        .orderByDesc(OrderRecord::getCreatedAt))
-                .stream()
-                .map(PrintTaskResponse::fromOrder)
-                .toList();
+        List<OrderPrintTask> tasks = orderPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderPrintTask>()
+                .isNull(OrderPrintTask::getOrderDetailId)
+                .ne(OrderPrintTask::getStatus, PrintTaskStatus.INVALID.getCode())
+                .orderByDesc(OrderPrintTask::getCreatedAt));
+        return toResponses(tasks);
     }
 
     @Override
     public List<PrintTaskResponse> listPendingTasks(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
-        List<OrderRecord> orders = orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
-                .and(wrapper -> wrapper
-                        .eq(OrderRecord::getOrderPrinted, false)
-                        .or()
-                        .eq(OrderRecord::getPackingPrinted, false))
-                .orderByAsc(OrderRecord::getCreatedAt)
+        List<OrderPrintTask> tasks = orderPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderPrintTask>()
+                .isNull(OrderPrintTask::getOrderDetailId)
+                .eq(OrderPrintTask::getStatus, PrintTaskStatus.PENDING.getCode())
+                .orderByAsc(OrderPrintTask::getCreatedAt)
                 .last("LIMIT " + safeLimit));
-        if (orders.isEmpty()) {
-            return Collections.emptyList();
-        }
-        return orders.stream().map(PrintTaskResponse::fromOrder).toList();
+        return toResponses(tasks);
     }
 
     @Override
-    public PrintPreviewResponse generateTaskPreview(Long taskId, PrintType printType) {
-        // 这里的 taskId 兼容旧接口名，实际就是 order_record.id。
-        return printPreviewService.generatePreview(taskId, printType);
+    public PrintPreviewResponse generateTaskPreview(Long taskId) {
+        return printPreviewService.generatePreview(getRequiredTask(taskId));
     }
 
     @Override
-    public PrintPreviewResponse regenerateTaskPreview(Long taskId, PrintType printType) {
-        // 这里的 taskId 兼容旧接口名，实际就是 order_record.id。
-        return printPreviewService.regeneratePreview(taskId, printType);
+    public PrintPreviewResponse regenerateTaskPreview(Long taskId) {
+        return printPreviewService.regeneratePreview(getRequiredTask(taskId));
     }
 
     @Override
     @Transactional
-    public PrintTaskResponse markTaskPrinted(Long id, PrintType printType) {
-        OrderRecord order = orderRecordMapper.selectById(id);
-        if (order == null) {
-            throw new BusinessException("订单不存在: " + id);
-        }
-        if (printType == PrintType.ORDER) {
-            order.setOrderPrinted(true);
-        } else {
-            order.setPackingPrinted(true);
-        }
-        order.setUpdatedAt(LocalDateTime.now());
-        orderRecordMapper.updateById(order);
-        return PrintTaskResponse.fromOrder(order);
+    public PrintTaskResponse markTaskPrinted(Long id) {
+        OrderPrintTask task = getRequiredTask(id);
+        LocalDateTime now = LocalDateTime.now();
+        task.setStatus(PrintTaskStatus.PRINTED.getCode());
+        task.setPrintCount((task.getPrintCount() == null ? 0 : task.getPrintCount()) + 1);
+        task.setLastPrintTime(now);
+        task.setErrorMessage(null);
+        task.setUpdatedAt(now);
+        orderPrintTaskMapper.updateById(task);
+        return toResponse(task);
     }
 
     @Override
     @Transactional
     public PrintTaskResponse updateTaskStatus(Long id, PrintTaskStatusUpdateRequest request) {
-        OrderRecord order = orderRecordMapper.selectById(id);
-        if (order == null) {
-            throw new BusinessException("订单不存在: " + id);
-        }
+        OrderPrintTask task = getRequiredTask(id);
         PrintTaskStatus status = PrintTaskStatus.parse(request.getStatus());
-        if (status == PrintTaskStatus.SUCCESS) {
-            order.setOrderPrinted(true);
-            order.setPackingPrinted(true);
+        task.setStatus(status.getCode());
+        task.setErrorMessage(status == PrintTaskStatus.FAILED ? blankToNull(request.getErrorMessage()) : null);
+        if (status == PrintTaskStatus.PRINTED) {
+            task.setPrintCount((task.getPrintCount() == null ? 0 : task.getPrintCount()) + 1);
+            task.setLastPrintTime(LocalDateTime.now());
         }
-        if (status == PrintTaskStatus.FAILED) {
-            order.setErrorMessage(blankToNull(request.getErrorMessage()));
+        task.setUpdatedAt(LocalDateTime.now());
+        orderPrintTaskMapper.updateById(task);
+        return toResponse(task);
+    }
+
+    @Override
+    public Path loadTaskPdf(Long id) {
+        return printPreviewService.loadTaskPdf(getRequiredTask(id));
+    }
+
+    private OrderPrintTask getRequiredTask(Long taskId) {
+        if (taskId == null) {
+            throw new BusinessException("打印任务 ID 不能为空");
         }
-        order.setUpdatedAt(LocalDateTime.now());
-        orderRecordMapper.updateById(order);
-        return PrintTaskResponse.fromOrder(order);
+        OrderPrintTask task = orderPrintTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BusinessException("打印任务不存在: " + taskId);
+        }
+        if (PrintTaskStatus.fromCode(task.getStatus()) == PrintTaskStatus.INVALID) {
+            throw new BusinessException("打印任务已失效，请使用新上传文件对应的任务");
+        }
+        return task;
+    }
+
+    private List<PrintTaskResponse> toResponses(List<OrderPrintTask> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, OrderRecord> orderMap = loadOrderMap(tasks);
+        return tasks.stream()
+                .map(task -> PrintTaskResponse.fromTask(task, orderMap.get(task.getOrderId())))
+                .toList();
+    }
+
+    private PrintTaskResponse toResponse(OrderPrintTask task) {
+        OrderRecord order = task.getOrderId() == null ? null : orderRecordMapper.selectById(task.getOrderId());
+        return PrintTaskResponse.fromTask(task, order);
+    }
+
+    private Map<Long, OrderRecord> loadOrderMap(List<OrderPrintTask> tasks) {
+        List<Long> orderIds = tasks.stream()
+                .map(OrderPrintTask::getOrderId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return orderRecordMapper.selectBatchIds(orderIds).stream()
+                .collect(Collectors.toMap(OrderRecord::getId, Function.identity()));
     }
 
     private String blankToNull(String value) {

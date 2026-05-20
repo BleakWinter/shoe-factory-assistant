@@ -1,7 +1,9 @@
 package com.shoefactory.assistant.dto;
 
+import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.enums.PrintTaskStatus;
+import com.shoefactory.assistant.enums.PrintType;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -9,53 +11,61 @@ import java.util.List;
 
 public class PrintTaskResponse {
 
-    // 打印列表现在直接以 order_record 为数据源，id 就是订单 id。
     private Long id;
     private String taskNo;
     private Long orderId;
+    private Long orderDetailId;
     private String orderNo;
     private String customerName;
     private List<String> styleNos;
     private Integer totalPairs;
-    private Boolean orderPrinted;
-    private Boolean packingPrinted;
-    private Long previewId;
-    private String previewUrl;
     private String printType;
-    private String printerName;
-    private Integer copies;
+    private String printTypeText;
     private String status;
-    private Integer priority;
+    private String statusText;
+    private String previewUrl;
+    private Integer printCount;
+    private LocalDateTime pdfGeneratedAt;
+    private LocalDateTime lastPrintTime;
     private String errorMessage;
-    private LocalDateTime pickedAt;
-    private LocalDateTime printedAt;
     private LocalDateTime createdAt;
 
-    public static PrintTaskResponse fromOrder(OrderRecord order) {
+    public static PrintTaskResponse fromTask(OrderPrintTask task, OrderRecord order) {
         PrintTaskResponse response = new PrintTaskResponse();
-        if (order == null) {
+        if (task == null) {
             return response;
         }
-        response.setId(order.getId());
-        response.setTaskNo(order.getOrderNo());
-        response.setOrderId(order.getId());
-        response.setOrderNo(order.getOrderNo());
-        response.setCustomerName(order.getCustomerName());
-        response.setStyleNos(splitDevelopmentNos(order.getDevelopmentNos()));
-        response.setTotalPairs(order.getTotalQuantity());
-        response.setOrderPrinted(order.getOrderPrinted());
-        response.setPackingPrinted(order.getPackingPrinted());
-        response.setStatus(resolveStatus(order));
-        response.setPriority(0);
-        response.setErrorMessage(order.getErrorMessage());
-        response.setCreatedAt(order.getCreatedAt());
+        PrintType type = PrintType.fromCode(task.getPrintType());
+        PrintTaskStatus status = PrintTaskStatus.fromCode(task.getStatus());
+        response.setId(task.getId());
+        response.setTaskNo(buildTaskNo(task, order, type));
+        response.setOrderId(task.getOrderId());
+        response.setOrderDetailId(task.getOrderDetailId());
+        response.setPrintType(type.name());
+        response.setPrintTypeText(type.getLabel());
+        response.setStatus(status.name());
+        response.setStatusText(status.getLabel());
+        response.setPrintCount(task.getPrintCount() == null ? 0 : task.getPrintCount());
+        response.setPdfGeneratedAt(task.getPdfGeneratedAt());
+        response.setLastPrintTime(task.getLastPrintTime());
+        response.setErrorMessage(task.getErrorMessage());
+        response.setCreatedAt(task.getCreatedAt());
+        if (task.getPreviewPdfPath() != null && !task.getPreviewPdfPath().isBlank()) {
+            response.setPreviewUrl("/api/print-tasks/" + task.getId() + "/pdf");
+        }
+        if (order != null) {
+            response.setOrderNo(order.getOrderNo());
+            response.setCustomerName(order.getCustomerName());
+            response.setStyleNos(splitDevelopmentNos(order.getDevelopmentNos()));
+            response.setTotalPairs(order.getTotalQuantity());
+        }
         return response;
     }
 
-    private static String resolveStatus(OrderRecord order) {
-        return Boolean.TRUE.equals(order.getOrderPrinted()) && Boolean.TRUE.equals(order.getPackingPrinted())
-                ? PrintTaskStatus.SUCCESS.name()
-                : PrintTaskStatus.PENDING.name();
+    private static String buildTaskNo(OrderPrintTask task, OrderRecord order, PrintType type) {
+        String orderNo = order == null ? null : order.getOrderNo();
+        String base = orderNo == null || orderNo.isBlank() ? String.valueOf(task.getOrderId()) : orderNo;
+        return base + "-" + type.getCode();
     }
 
     private static List<String> splitDevelopmentNos(String value) {
@@ -93,6 +103,14 @@ public class PrintTaskResponse {
         this.orderId = orderId;
     }
 
+    public Long getOrderDetailId() {
+        return orderDetailId;
+    }
+
+    public void setOrderDetailId(Long orderDetailId) {
+        this.orderDetailId = orderDetailId;
+    }
+
     public String getOrderNo() {
         return orderNo;
     }
@@ -125,38 +143,6 @@ public class PrintTaskResponse {
         this.totalPairs = totalPairs;
     }
 
-    public Boolean getOrderPrinted() {
-        return orderPrinted;
-    }
-
-    public void setOrderPrinted(Boolean orderPrinted) {
-        this.orderPrinted = orderPrinted;
-    }
-
-    public Boolean getPackingPrinted() {
-        return packingPrinted;
-    }
-
-    public void setPackingPrinted(Boolean packingPrinted) {
-        this.packingPrinted = packingPrinted;
-    }
-
-    public Long getPreviewId() {
-        return previewId;
-    }
-
-    public void setPreviewId(Long previewId) {
-        this.previewId = previewId;
-    }
-
-    public String getPreviewUrl() {
-        return previewUrl;
-    }
-
-    public void setPreviewUrl(String previewUrl) {
-        this.previewUrl = previewUrl;
-    }
-
     public String getPrintType() {
         return printType;
     }
@@ -165,20 +151,12 @@ public class PrintTaskResponse {
         this.printType = printType;
     }
 
-    public String getPrinterName() {
-        return printerName;
+    public String getPrintTypeText() {
+        return printTypeText;
     }
 
-    public void setPrinterName(String printerName) {
-        this.printerName = printerName;
-    }
-
-    public Integer getCopies() {
-        return copies;
-    }
-
-    public void setCopies(Integer copies) {
-        this.copies = copies;
+    public void setPrintTypeText(String printTypeText) {
+        this.printTypeText = printTypeText;
     }
 
     public String getStatus() {
@@ -189,12 +167,44 @@ public class PrintTaskResponse {
         this.status = status;
     }
 
-    public Integer getPriority() {
-        return priority;
+    public String getStatusText() {
+        return statusText;
     }
 
-    public void setPriority(Integer priority) {
-        this.priority = priority;
+    public void setStatusText(String statusText) {
+        this.statusText = statusText;
+    }
+
+    public String getPreviewUrl() {
+        return previewUrl;
+    }
+
+    public void setPreviewUrl(String previewUrl) {
+        this.previewUrl = previewUrl;
+    }
+
+    public Integer getPrintCount() {
+        return printCount;
+    }
+
+    public void setPrintCount(Integer printCount) {
+        this.printCount = printCount;
+    }
+
+    public LocalDateTime getPdfGeneratedAt() {
+        return pdfGeneratedAt;
+    }
+
+    public void setPdfGeneratedAt(LocalDateTime pdfGeneratedAt) {
+        this.pdfGeneratedAt = pdfGeneratedAt;
+    }
+
+    public LocalDateTime getLastPrintTime() {
+        return lastPrintTime;
+    }
+
+    public void setLastPrintTime(LocalDateTime lastPrintTime) {
+        this.lastPrintTime = lastPrintTime;
     }
 
     public String getErrorMessage() {
@@ -203,22 +213,6 @@ public class PrintTaskResponse {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
-    }
-
-    public LocalDateTime getPickedAt() {
-        return pickedAt;
-    }
-
-    public void setPickedAt(LocalDateTime pickedAt) {
-        this.pickedAt = pickedAt;
-    }
-
-    public LocalDateTime getPrintedAt() {
-        return printedAt;
-    }
-
-    public void setPrintedAt(LocalDateTime printedAt) {
-        this.printedAt = printedAt;
     }
 
     public LocalDateTime getCreatedAt() {

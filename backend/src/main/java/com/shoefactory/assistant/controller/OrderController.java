@@ -7,12 +7,7 @@ import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
-import com.shoefactory.assistant.dto.PrintPreviewCreateRequest;
-import com.shoefactory.assistant.dto.PrintPreviewResponse;
-import com.shoefactory.assistant.enums.PrintType;
 import com.shoefactory.assistant.service.OrderService;
-import com.shoefactory.assistant.service.PrintPreviewService;
-import jakarta.validation.Valid;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -21,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -40,11 +34,9 @@ public class OrderController {
 
     // 订单接口：上传 Excel、查看订单主表、查看明细和明细图片。
     private final OrderService orderService;
-    private final PrintPreviewService printPreviewService;
 
-    public OrderController(OrderService orderService, PrintPreviewService printPreviewService) {
+    public OrderController(OrderService orderService) {
         this.orderService = orderService;
-        this.printPreviewService = printPreviewService;
     }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -124,33 +116,6 @@ public class OrderController {
                         .build()
                         .toString())
                 .body(resource);
-    }
-
-    @GetMapping("/{id}/pdf/{printType}")
-    public ResponseEntity<UrlResource> orderPdf(
-            @PathVariable Long id,
-            @PathVariable String printType
-    ) throws MalformedURLException {
-        // 生成后的 PDF 路径保存在 order_record，这里按订单 id 和类型读取。
-        Path pdfPath = printPreviewService.loadOrderPdf(id, PrintType.parse(printType));
-        UrlResource resource = new UrlResource(pdfPath.toUri());
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .contentLength(fileSize(pdfPath))
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
-                        .filename(pdfPath.getFileName().toString(), StandardCharsets.UTF_8)
-                        .build()
-                        .toString())
-                .body(resource);
-    }
-
-    @PostMapping("/{id}/print-previews")
-    public ApiResponse<PrintPreviewResponse> generatePrintPreview(
-            @PathVariable Long id,
-            @Valid @RequestBody PrintPreviewCreateRequest request
-    ) {
-        // 早期接口：从订单 id 直接生成预览；当前主流程更多走 /api/print-tasks/{id}/preview。
-        return ApiResponse.ok(printPreviewService.generatePreview(id, PrintType.parse(request.getPrintType())));
     }
 
     private MediaType detectMediaType(Path path) {

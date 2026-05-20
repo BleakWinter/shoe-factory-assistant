@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public class PrintTaskStatusUpdateRequest {
 
-    // PENDING/PRINTING/SUCCESS/FAILED/CANCELED。
+    // PENDING/PRINTED/FAILED/INVALID，数字状态码也兼容。
     @NotBlank
     private String status;
     // 失败或取消时可写原因。

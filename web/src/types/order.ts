@@ -15,18 +15,21 @@ export interface PageResponse<T> {
 }
 
 export const PRINT_TYPES = {
-  ORDER: "ORDER",
-  PACKING: "PACKING",
+  ORDER_SHEET: "ORDER_SHEET",
+  PACKING_SHEET: "PACKING_SHEET",
+  SHIPPING_NOTE: "SHIPPING_NOTE",
+  OUTER_BOX_LABEL: "OUTER_BOX_LABEL",
+  INNER_BOX_LABEL: "INNER_BOX_LABEL",
+  TAG_LABEL: "TAG_LABEL",
 } as const;
 export type PrintType = (typeof PRINT_TYPES)[keyof typeof PRINT_TYPES];
 
 // 打印任务状态和后端 PrintTaskStatus 枚举保持一致。
 export type PrintTaskStatus =
   | "PENDING"
-  | "PRINTING"
-  | "SUCCESS"
+  | "PRINTED"
   | "FAILED"
-  | "CANCELED";
+  | "INVALID";
 
 export interface OrderUploadResult {
   // 上传成功后后端返回的摘要，用于提示“解析了哪条订单”。
@@ -48,12 +51,6 @@ export interface OrderRecord {
   boxImageUrl?: string;
   developmentNos?: string;
   developmentNoList?: string[];
-  orderPrinted?: boolean;
-  packingPrinted?: boolean;
-  orderPdfPath?: string;
-  packingPdfPath?: string;
-  orderPdfGeneratedAt?: string;
-  packingPdfGeneratedAt?: string;
   totalQuantity?: number;
   totalCartonCount?: number;
   sourceType?: number;
@@ -164,18 +161,23 @@ export interface OrderPackingDetail {
 }
 
 export interface PrintTask {
-  // 兼容原打印列表类型；现在每一行实际来自 order_record。
+  // 一行就是一个可打印项，例如订单 sheet 或装箱单 sheet。
   id: number;
   taskNo?: string;
   orderId: number;
+  orderDetailId?: number;
   orderNo?: string;
   customerName?: string;
   styleNos?: string[];
   totalPairs?: number;
-  orderPrinted?: boolean;
-  packingPrinted?: boolean;
+  printType: PrintType;
+  printTypeText?: string;
   status: PrintTaskStatus;
+  statusText?: string;
   previewUrl?: string;
+  printCount?: number;
+  pdfGeneratedAt?: string;
+  lastPrintTime?: string;
   errorMessage?: string;
   createdAt?: string;
 }

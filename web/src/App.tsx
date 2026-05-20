@@ -30,7 +30,7 @@ const navLeafItems: NavLeafItem[] = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   {
     path: "/tasks/order",
-    label: "打印订单",
+    label: "打印订单和装箱单",
     icon: <FileDoneOutlined />,
     parentKey: "print-center",
     parentLabel: "打印中心",
@@ -114,7 +114,7 @@ const menuItems: MenuProps["items"] = [
     label: "打印中心",
     icon: <FileDoneOutlined />,
     children: [
-      { key: "/tasks/order", label: "打印订单" },
+      { key: "/tasks/order", label: "打印订单和装箱单" },
       { key: "/tasks/outer-carton-label", label: "打印外箱贴标" },
       { key: "/tasks/inner-box-label", label: "打印内盒贴标" },
       { key: "/tasks/shipping-note", label: "打印出货单" },

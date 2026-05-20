@@ -21,8 +21,6 @@ public class FileStorageProperties {
     private String libreOfficeCommand = "soffice";
     // Excel 转 PDF 最长等待时间，防止转换进程卡死。
     private long libreOfficeTimeoutSeconds = 120;
-    // PDF 预览 URL 前缀，最终会拼成 /api/print-previews/{id}/preview。
-    private String previewUrlPrefix = "/api/print-previews";
 
     public String getRootPath() {
         return rootPath;
@@ -88,11 +86,4 @@ public class FileStorageProperties {
         this.libreOfficeTimeoutSeconds = libreOfficeTimeoutSeconds;
     }
 
-    public String getPreviewUrlPrefix() {
-        return previewUrlPrefix;
-    }
-
-    public void setPreviewUrlPrefix(String previewUrlPrefix) {
-        this.previewUrlPrefix = previewUrlPrefix;
-    }
 }

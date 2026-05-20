@@ -154,8 +154,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         order.setOriginalFilePath(storedFile.getPath().toString());
         order.setOrderNo(blankToNull(resolveOrderNo(sheet, storedFile.getOriginalName())));
         order.setCustomerName(blankToNull(resolveCustomerName(sheet)));
-        order.setOrderPrinted(false);
-        order.setPackingPrinted(false);
         order.setSourceType(OrderSourceType.EXCEL.getCode());
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
