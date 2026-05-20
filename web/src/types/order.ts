@@ -15,12 +15,8 @@ export interface PageResponse<T> {
 }
 
 export const PRINT_TYPES = {
-  ORDER_SHEET: "ORDER_SHEET",
-  PACKING_SHEET: "PACKING_SHEET",
-  SHIPPING_NOTE: "SHIPPING_NOTE",
-  OUTER_BOX_LABEL: "OUTER_BOX_LABEL",
-  INNER_BOX_LABEL: "INNER_BOX_LABEL",
-  TAG_LABEL: "TAG_LABEL",
+  ORDER: "ORDER",
+  PACKING: "PACKING",
 } as const;
 export type PrintType = (typeof PRINT_TYPES)[keyof typeof PRINT_TYPES];
 
@@ -81,6 +77,25 @@ export interface DevelopmentNoOption {
   value: string;
   label: string;
   children?: DevelopmentNoOption[];
+}
+
+export interface DevelopmentNoStatisticNode {
+  key: string;
+  label: string;
+  fullDevelopmentNo?: string;
+  level: number;
+  pairCount: number;
+  detailCount: number;
+  styleCount: number;
+  children?: DevelopmentNoStatisticNode[];
+}
+
+export interface OrderStatistics {
+  totalPairs: number;
+  styleCount: number;
+  detailCount: number;
+  developmentNoTree: DevelopmentNoStatisticNode[];
+  topDevelopmentNos: DevelopmentNoStatisticNode[];
 }
 
 export interface OrderDetailProcess {
@@ -165,7 +180,6 @@ export interface PrintTask {
   id: number;
   taskNo?: string;
   orderId: number;
-  orderDetailId?: number;
   orderNo?: string;
   customerName?: string;
   styleNos?: string[];

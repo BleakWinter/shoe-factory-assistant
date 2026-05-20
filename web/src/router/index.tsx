@@ -8,6 +8,7 @@ import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
 import PrintSelectionPage from "../pages/PrintSelectionPage";
 import PrintTaskListPage from "../pages/PrintTaskListPage";
 import ShoePriceConfigPage from "../pages/ShoePriceConfigPage";
+import ShoeStatisticsPage from "../pages/ShoeStatisticsPage";
 import StyleConfigPage from "../pages/StyleConfigPage";
 
 export const router = createBrowserRouter([
@@ -18,6 +19,7 @@ export const router = createBrowserRouter([
       // 默认进入订单列表；爸妈常用的上传入口在 /tasks。
       { index: true, element: <Navigate to="/orders" replace /> },
       { path: "orders", element: <OrderWorkspacePage /> },
+      { path: "statistics", element: <ShoeStatisticsPage /> },
       { path: "orders/:id/details", element: <OrderDetailPage /> },
       { path: "tasks", element: <Navigate to="/tasks/order" replace /> },
       { path: "tasks/order", element: <PrintTaskListPage /> },

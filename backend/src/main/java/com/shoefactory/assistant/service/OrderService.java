@@ -3,6 +3,7 @@ package com.shoefactory.assistant.service;
 import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.PageResponse;
@@ -26,6 +27,8 @@ public interface OrderService {
     );
 
     List<DevelopmentNoOptionResponse> listDevelopmentNoOptions();
+
+    OrderStatisticsResponse getOrderStatistics();
 
     OrderRecordResponse recognizeOrder(Long orderId);
 

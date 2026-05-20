@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
  * 如果以后支持多个客户/多个模板，可以继续在这里增加枚举值。
  */
 public enum OrderExcelTemplate {
-    DEFAULT(PrintType.ORDER_SHEET.getSheetName(), 4, 30, Pattern.compile("^(\\d{4,})"));
+    DEFAULT(PrintType.ORDER.getSheetName(), 4, 30, Pattern.compile("^(\\d{4,})"));
 
     private final String orderSheetName;
     private final int fallbackHeaderRowIndex;

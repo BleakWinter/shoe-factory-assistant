@@ -2,12 +2,12 @@ package com.shoefactory.assistant.service.impl;
 
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PrintPreviewResponse;
-import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
+import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 import com.shoefactory.assistant.enums.PrintPreviewStatus;
 import com.shoefactory.assistant.enums.PrintType;
-import com.shoefactory.assistant.mapper.OrderPrintTaskMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
+import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
 import com.shoefactory.assistant.service.ExcelPdfService;
 import com.shoefactory.assistant.service.PrintPreviewService;
 import com.shoefactory.assistant.util.FileStorageUtil;
@@ -23,25 +23,25 @@ import java.util.Locale;
 public class PrintPreviewServiceImpl implements PrintPreviewService {
 
     private final OrderRecordMapper orderRecordMapper;
-    private final OrderPrintTaskMapper orderPrintTaskMapper;
+    private final OrderSheetPrintTaskMapper orderSheetPrintTaskMapper;
     private final ExcelPdfService excelPdfService;
     private final FileStorageUtil fileStorageUtil;
 
     public PrintPreviewServiceImpl(
             OrderRecordMapper orderRecordMapper,
-            OrderPrintTaskMapper orderPrintTaskMapper,
+            OrderSheetPrintTaskMapper orderSheetPrintTaskMapper,
             ExcelPdfService excelPdfService,
             FileStorageUtil fileStorageUtil
     ) {
         this.orderRecordMapper = orderRecordMapper;
-        this.orderPrintTaskMapper = orderPrintTaskMapper;
+        this.orderSheetPrintTaskMapper = orderSheetPrintTaskMapper;
         this.excelPdfService = excelPdfService;
         this.fileStorageUtil = fileStorageUtil;
     }
 
     @Override
-    public PrintPreviewResponse generatePreview(OrderPrintTask task) {
-        OrderPrintTask requiredTask = requireTask(task);
+    public PrintPreviewResponse generatePreview(OrderSheetPrintTask task) {
+        OrderSheetPrintTask requiredTask = requireTask(task);
         PrintType printType = PrintType.fromCode(requiredTask.getPrintType());
         if (printType.getSheetName() == null || printType.getSheetName().isBlank()) {
             throw new BusinessException(printType.getLabel() + "暂未配置来源 sheet，不能生成预览");
@@ -72,26 +72,26 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
             requiredTask.setPdfGeneratedAt(now);
             requiredTask.setErrorMessage(null);
             requiredTask.setUpdatedAt(now);
-            orderPrintTaskMapper.updateById(requiredTask);
+            orderSheetPrintTaskMapper.updateById(requiredTask);
             return buildReadyResponse(requiredTask, order, printType, targetPdf, now);
         } catch (Exception ex) {
             requiredTask.setErrorMessage(ex.getMessage());
             requiredTask.setUpdatedAt(LocalDateTime.now());
-            orderPrintTaskMapper.updateById(requiredTask);
+            orderSheetPrintTaskMapper.updateById(requiredTask);
             throw new BusinessException("生成打印预览失败: " + ex.getMessage(), ex);
         }
     }
 
     @Override
-    public PrintPreviewResponse regeneratePreview(OrderPrintTask task) {
-        OrderPrintTask requiredTask = requireTask(task);
+    public PrintPreviewResponse regeneratePreview(OrderSheetPrintTask task) {
+        OrderSheetPrintTask requiredTask = requireTask(task);
         deletePdfAndClearPath(requiredTask);
         return generatePreview(requiredTask);
     }
 
     @Override
-    public Path loadTaskPdf(OrderPrintTask task) {
-        OrderPrintTask requiredTask = requireTask(task);
+    public Path loadTaskPdf(OrderSheetPrintTask task) {
+        OrderSheetPrintTask requiredTask = requireTask(task);
         Path pdfPath = existingPdfPath(requiredTask);
         if (pdfPath == null) {
             throw new BusinessException("请先生成 PDF 预览");
@@ -100,7 +100,7 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         return pdfPath;
     }
 
-    private OrderPrintTask requireTask(OrderPrintTask task) {
+    private OrderSheetPrintTask requireTask(OrderSheetPrintTask task) {
         if (task == null || task.getId() == null) {
             throw new BusinessException("打印任务不存在");
         }
@@ -118,7 +118,7 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         return order;
     }
 
-    private Path existingPdfPath(OrderPrintTask task) {
+    private Path existingPdfPath(OrderSheetPrintTask task) {
         String pdfPath = task.getPreviewPdfPath();
         if (pdfPath == null || pdfPath.isBlank()) {
             return null;
@@ -126,12 +126,12 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         return fileStorageUtil.resolvePath(pdfPath);
     }
 
-    private LocalDateTime existingGeneratedAt(OrderPrintTask task) {
+    private LocalDateTime existingGeneratedAt(OrderSheetPrintTask task) {
         return task.getPdfGeneratedAt() == null ? LocalDateTime.now() : task.getPdfGeneratedAt();
     }
 
     private PrintPreviewResponse buildReadyResponse(
-            OrderPrintTask task,
+            OrderSheetPrintTask task,
             OrderRecord order,
             PrintType printType,
             Path pdfPath,
@@ -157,7 +157,7 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         );
     }
 
-    private void deletePdfAndClearPath(OrderPrintTask task) {
+    private void deletePdfAndClearPath(OrderSheetPrintTask task) {
         Path existingPdf = existingPdfPath(task);
         if (existingPdf != null) {
             try {
@@ -169,6 +169,6 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         task.setPreviewPdfPath(null);
         task.setPdfGeneratedAt(null);
         task.setUpdatedAt(LocalDateTime.now());
-        orderPrintTaskMapper.updateById(task);
+        orderSheetPrintTaskMapper.updateById(task);
     }
 }

@@ -179,13 +179,12 @@ CREATE TABLE IF NOT EXISTS `order_detail_process` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细处理状态表';
 
 
-CREATE TABLE IF NOT EXISTS `order_print_task` (
+CREATE TABLE IF NOT EXISTS `order_sheet_print_task` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
 
   `order_id` bigint NOT NULL COMMENT '订单主表ID',
-  `order_detail_id` bigint DEFAULT NULL COMMENT '订单明细ID，订单/装箱单打印为空',
 
-  `print_type` tinyint NOT NULL COMMENT '打印类型: 1订单 2装箱单 3出货单 4外箱贴 5内盒贴 6标签',
+  `print_type` tinyint NOT NULL COMMENT '打印类型: 1订单 2装箱单',
 
   `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态: 1待打印 2已打印 3失败 4已失效',
   `preview_pdf_path` varchar(512) DEFAULT NULL COMMENT 'PDF预览文件路径',
@@ -200,10 +199,9 @@ CREATE TABLE IF NOT EXISTS `order_print_task` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
 
   PRIMARY KEY (`id`),
-  KEY `idx_print_task_order_id` (`order_id`),
-  KEY `idx_print_task_detail_id` (`order_detail_id`),
-  KEY `idx_print_task_type_status` (`print_type`, `status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='打印任务表';
+  KEY `idx_sheet_print_task_order_id` (`order_id`),
+  KEY `idx_sheet_print_task_type_status` (`print_type`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单Sheet打印任务表';
 
 
 CREATE TABLE IF NOT EXISTS `shoe_style_config` (

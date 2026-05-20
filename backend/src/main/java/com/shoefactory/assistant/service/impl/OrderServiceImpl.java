@@ -9,13 +9,15 @@ import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
-import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
+import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 import com.shoefactory.assistant.entity.ShoeStyleConfig;
 import com.shoefactory.assistant.enums.FileType;
 import com.shoefactory.assistant.enums.OrderRecognitionStatus;
@@ -24,9 +26,9 @@ import com.shoefactory.assistant.enums.PrintTaskStatus;
 import com.shoefactory.assistant.enums.PrintType;
 import com.shoefactory.assistant.mapper.OrderDetailProcessMapper;
 import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
-import com.shoefactory.assistant.mapper.OrderPrintTaskMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
+import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
@@ -42,7 +44,10 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -66,7 +71,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private final OrderRecordMapper orderRecordMapper;
-    private final OrderPrintTaskMapper orderPrintTaskMapper;
+    private final OrderSheetPrintTaskMapper orderSheetPrintTaskMapper;
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderDetailProcessMapper orderDetailProcessMapper;
@@ -77,7 +82,7 @@ public class OrderServiceImpl implements OrderService {
 
     public OrderServiceImpl(
             OrderRecordMapper orderRecordMapper,
-            OrderPrintTaskMapper orderPrintTaskMapper,
+            OrderSheetPrintTaskMapper orderSheetPrintTaskMapper,
             OrderRecordDetailMapper orderRecordDetailMapper,
             OrderPackingDetailMapper orderPackingDetailMapper,
             OrderDetailProcessMapper orderDetailProcessMapper,
@@ -87,7 +92,7 @@ public class OrderServiceImpl implements OrderService {
             StyleConfigService styleConfigService
     ) {
         this.orderRecordMapper = orderRecordMapper;
-        this.orderPrintTaskMapper = orderPrintTaskMapper;
+        this.orderSheetPrintTaskMapper = orderSheetPrintTaskMapper;
         this.orderRecordDetailMapper = orderRecordDetailMapper;
         this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderDetailProcessMapper = orderDetailProcessMapper;
@@ -111,7 +116,7 @@ public class OrderServiceImpl implements OrderService {
         OrderRecord orderRecord = readUploadSummary(storedFile, fileNo);
         initializeRecognitionFields(orderRecord);
         orderRecordMapper.insert(orderRecord);
-        List<OrderPrintTask> printTasks = createOrderLevelPrintTasks(orderRecord);
+        List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(orderRecord);
         styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
         return buildUploadResponse(orderRecord, firstTaskId(printTasks), 0);
     }
@@ -257,6 +262,136 @@ public class OrderServiceImpl implements OrderService {
                 appendDevelopmentNoOption(options, parseDevelopmentNoParts(developmentNo), List.of()));
         sortDevelopmentNoOptions(options);
         return options;
+    }
+
+    @Override
+    public OrderStatisticsResponse getOrderStatistics() {
+        List<OrderRecordDetail> details = orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                .select(
+                        OrderRecordDetail::getDevelopmentNo,
+                        OrderRecordDetail::getQuantity,
+                        OrderRecordDetail::getSizeQuantitiesJson
+                ));
+        Map<String, DevelopmentNoBucket> buckets = new LinkedHashMap<>();
+        int totalPairs = 0;
+        for (OrderRecordDetail detail : details) {
+            int pairCount = detailPairCount(detail);
+            totalPairs += pairCount;
+            String developmentNo = normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo());
+            buckets.computeIfAbsent(developmentNo, DevelopmentNoBucket::new).add(pairCount);
+        }
+
+        OrderStatisticsResponse response = new OrderStatisticsResponse();
+        response.setTotalPairs(totalPairs);
+        response.setStyleCount(buckets.size());
+        response.setDetailCount(details.size());
+        response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));
+        response.setTopDevelopmentNos(buildTopDevelopmentNoStatistics(buckets.values()));
+        return response;
+    }
+
+    private List<DevelopmentNoStatisticNode> buildDevelopmentNoStatisticsTree(
+            Collection<DevelopmentNoBucket> buckets
+    ) {
+        List<DevelopmentNoStatisticNode> nodes = new ArrayList<>();
+        for (DevelopmentNoBucket bucket : buckets) {
+            appendDevelopmentNoStatistic(nodes, bucket);
+        }
+        sortDevelopmentNoStatisticsTree(nodes);
+        return nodes;
+    }
+
+    private void appendDevelopmentNoStatistic(
+            List<DevelopmentNoStatisticNode> nodes,
+            DevelopmentNoBucket bucket
+    ) {
+        List<String> parts = parseDevelopmentNoParts(bucket.getDevelopmentNo());
+        if (parts.isEmpty()) {
+            parts = List.of(bucket.getDevelopmentNo());
+        }
+        List<DevelopmentNoStatisticNode> siblings = nodes;
+        List<String> path = new ArrayList<>();
+        for (int index = 0; index < parts.size(); index++) {
+            String part = parts.get(index);
+            path.add(part);
+            String key = String.join("-", path);
+            DevelopmentNoStatisticNode node = findDevelopmentNoStatisticNode(siblings, key);
+            if (node == null) {
+                node = buildDevelopmentNoStatisticNode(key, part, index + 1);
+                siblings.add(node);
+            }
+            node.setPairCount(nullToZero(node.getPairCount()) + bucket.getPairCount());
+            node.setDetailCount(nullToZero(node.getDetailCount()) + bucket.getDetailCount());
+            node.setStyleCount(nullToZero(node.getStyleCount()) + 1);
+            if (index == parts.size() - 1) {
+                node.setFullDevelopmentNo(bucket.getDevelopmentNo());
+            }
+            siblings = node.getChildren();
+        }
+    }
+
+    private DevelopmentNoStatisticNode buildDevelopmentNoStatisticNode(String key, String label, int level) {
+        DevelopmentNoStatisticNode node = new DevelopmentNoStatisticNode();
+        node.setKey(key);
+        node.setLabel(label);
+        node.setLevel(level);
+        node.setPairCount(0);
+        node.setDetailCount(0);
+        node.setStyleCount(0);
+        node.setChildren(new ArrayList<>());
+        return node;
+    }
+
+    private DevelopmentNoStatisticNode findDevelopmentNoStatisticNode(
+            List<DevelopmentNoStatisticNode> nodes,
+            String key
+    ) {
+        return nodes.stream()
+                .filter(node -> key.equals(node.getKey()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void sortDevelopmentNoStatisticsTree(List<DevelopmentNoStatisticNode> nodes) {
+        nodes.sort((left, right) -> compareDevelopmentNoLabel(left.getLabel(), right.getLabel()));
+        nodes.forEach(node -> sortDevelopmentNoStatisticsTree(node.getChildren()));
+    }
+
+    private List<DevelopmentNoStatisticNode> buildTopDevelopmentNoStatistics(
+            Collection<DevelopmentNoBucket> buckets
+    ) {
+        return buckets.stream()
+                .sorted(Comparator.comparingInt(DevelopmentNoBucket::getPairCount)
+                        .reversed()
+                        .thenComparing(DevelopmentNoBucket::getDevelopmentNo))
+                .limit(10)
+                .map(this::buildDevelopmentNoStatisticLeaf)
+                .toList();
+    }
+
+    private DevelopmentNoStatisticNode buildDevelopmentNoStatisticLeaf(DevelopmentNoBucket bucket) {
+        DevelopmentNoStatisticNode node = new DevelopmentNoStatisticNode();
+        node.setKey(bucket.getDevelopmentNo());
+        node.setLabel(bucket.getDevelopmentNo());
+        node.setFullDevelopmentNo(bucket.getDevelopmentNo());
+        node.setLevel(parseDevelopmentNoParts(bucket.getDevelopmentNo()).size());
+        node.setPairCount(bucket.getPairCount());
+        node.setDetailCount(bucket.getDetailCount());
+        node.setStyleCount(1);
+        node.setChildren(List.of());
+        return node;
+    }
+
+    private int detailPairCount(OrderRecordDetail detail) {
+        int sizeTotal = sumSizeQuantities(detail.getSizeQuantitiesJson());
+        if (sizeTotal > 0) {
+            return sizeTotal;
+        }
+        return detail.getQuantity() != null && detail.getQuantity() > 0 ? detail.getQuantity() : 0;
+    }
+
+    private String normalizeStatisticsDevelopmentNo(String value) {
+        return hasText(value) ? value.trim() : "未填款号";
     }
 
     private List<String> parseDevelopmentNoParts(String value) {
@@ -489,7 +624,7 @@ public class OrderServiceImpl implements OrderService {
         order.setUpdatedAt(now);
     }
 
-    private Long firstTaskId(List<OrderPrintTask> printTasks) {
+    private Long firstTaskId(List<OrderSheetPrintTask> printTasks) {
         if (printTasks == null || printTasks.isEmpty()) {
             return null;
         }
@@ -508,25 +643,24 @@ public class OrderServiceImpl implements OrderService {
         return response;
     }
 
-    private List<OrderPrintTask> createOrderLevelPrintTasks(OrderRecord order) {
+    private List<OrderSheetPrintTask> createSheetPrintTasks(OrderRecord order) {
         if (order == null || order.getId() == null) {
             return List.of();
         }
-        List<OrderPrintTask> tasks = List.of(
-                buildOrderLevelPrintTask(order, PrintType.ORDER_SHEET),
-                buildOrderLevelPrintTask(order, PrintType.PACKING_SHEET)
+        List<OrderSheetPrintTask> tasks = List.of(
+                buildSheetPrintTask(order, PrintType.ORDER),
+                buildSheetPrintTask(order, PrintType.PACKING)
         );
-        for (OrderPrintTask task : tasks) {
-            orderPrintTaskMapper.insert(task);
+        for (OrderSheetPrintTask task : tasks) {
+            orderSheetPrintTaskMapper.insert(task);
         }
         return tasks;
     }
 
-    private OrderPrintTask buildOrderLevelPrintTask(OrderRecord order, PrintType printType) {
+    private OrderSheetPrintTask buildSheetPrintTask(OrderRecord order, PrintType printType) {
         LocalDateTime now = LocalDateTime.now();
-        OrderPrintTask task = new OrderPrintTask();
+        OrderSheetPrintTask task = new OrderSheetPrintTask();
         task.setOrderId(order.getId());
-        task.setOrderDetailId(null);
         task.setPrintType(printType.getCode());
         task.setStatus(PrintTaskStatus.PENDING.getCode());
         task.setPrintCount(0);
@@ -817,5 +951,32 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private record DetailTotals(int quantity, int cartonCount) {
+    }
+
+    private static class DevelopmentNoBucket {
+        private final String developmentNo;
+        private int pairCount;
+        private int detailCount;
+
+        private DevelopmentNoBucket(String developmentNo) {
+            this.developmentNo = developmentNo;
+        }
+
+        private void add(int pairs) {
+            pairCount += pairs;
+            detailCount += 1;
+        }
+
+        private String getDevelopmentNo() {
+            return developmentNo;
+        }
+
+        private int getPairCount() {
+            return pairCount;
+        }
+
+        private int getDetailCount() {
+            return detailCount;
+        }
     }
 }

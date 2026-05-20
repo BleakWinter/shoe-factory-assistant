@@ -5,6 +5,7 @@ import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.service.OrderService;
@@ -66,6 +67,11 @@ public class OrderController {
     @GetMapping("/development-options")
     public ApiResponse<List<DevelopmentNoOptionResponse>> listDevelopmentNoOptions() {
         return ApiResponse.ok(orderService.listDevelopmentNoOptions());
+    }
+
+    @GetMapping("/statistics")
+    public ApiResponse<OrderStatisticsResponse> getOrderStatistics() {
+        return ApiResponse.ok(orderService.getOrderStatistics());
     }
 
     @PostMapping("/{id}/recognize-order")

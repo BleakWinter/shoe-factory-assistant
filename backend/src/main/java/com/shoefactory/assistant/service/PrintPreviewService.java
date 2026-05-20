@@ -1,15 +1,15 @@
 package com.shoefactory.assistant.service;
 
 import com.shoefactory.assistant.dto.PrintPreviewResponse;
-import com.shoefactory.assistant.entity.OrderPrintTask;
+import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 
 import java.nio.file.Path;
 
 public interface PrintPreviewService {
 
-    PrintPreviewResponse generatePreview(OrderPrintTask task);
+    PrintPreviewResponse generatePreview(OrderSheetPrintTask task);
 
-    PrintPreviewResponse regeneratePreview(OrderPrintTask task);
+    PrintPreviewResponse regeneratePreview(OrderSheetPrintTask task);
 
-    Path loadTaskPdf(OrderPrintTask task);
+    Path loadTaskPdf(OrderSheetPrintTask task);
 }

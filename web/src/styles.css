@@ -1010,6 +1010,142 @@ a {
   border-radius: 8px;
 }
 
+/* Statistics dashboard. */
+.statistics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.statistics-metric {
+  min-width: 0;
+  padding: 16px 18px;
+  background: #ffffff;
+  border: 1px solid #dde3eb;
+  border-radius: 4px;
+}
+
+.statistics-metric .ant-statistic-title {
+  color: #596579;
+  font-weight: 600;
+}
+
+.statistics-metric .ant-statistic-content {
+  color: #152033;
+}
+
+.statistics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.statistics-chart-panel,
+.statistics-top-panel {
+  min-width: 0;
+}
+
+.statistics-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.statistics-panel-heading h4.ant-typography {
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.statistics-breadcrumb {
+  max-width: 100%;
+}
+
+.statistics-breadcrumb .ant-btn {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statistics-bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.statistics-bar-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) minmax(160px, 1fr) 96px 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 10px;
+  color: #1f2937;
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid #e0e6ef;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.statistics-bar-row:hover,
+.statistics-bar-row-active {
+  background: #eef7f6;
+  border-color: #62b7ac;
+}
+
+.statistics-bar-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.statistics-bar-label strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statistics-bar-label small {
+  flex: 0 0 auto;
+  color: #667085;
+  font-size: 12px;
+}
+
+.statistics-bar-track {
+  display: block;
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  background: #e7edf4;
+  border-radius: 999px;
+}
+
+.statistics-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #0f766e, #2563eb);
+  border-radius: inherit;
+}
+
+.statistics-bar-value {
+  color: #172033;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.statistics-node-table .ant-table-row {
+  cursor: pointer;
+}
+
 /* Mobile layout: keep the same shell but let controls stack cleanly. */
 @media (max-width: 920px) {
   .app-topbar {
@@ -1090,6 +1226,25 @@ a {
 
   .pdf-frame {
     height: 520px;
+  }
+
+  .statistics-summary-grid,
+  .statistics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .statistics-bar-row {
+    grid-template-columns: minmax(90px, 130px) minmax(100px, 1fr) 82px 18px;
+  }
+}
+
+@media (max-width: 560px) {
+  .statistics-bar-row {
+    grid-template-columns: 1fr 74px 18px;
+  }
+
+  .statistics-bar-label {
+    grid-column: 1 / -1;
   }
 }
 

@@ -5,11 +5,11 @@ import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PrintPreviewResponse;
 import com.shoefactory.assistant.dto.PrintTaskResponse;
 import com.shoefactory.assistant.dto.PrintTaskStatusUpdateRequest;
-import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
+import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 import com.shoefactory.assistant.enums.PrintTaskStatus;
-import com.shoefactory.assistant.mapper.OrderPrintTaskMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
+import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
 import com.shoefactory.assistant.service.PrintPreviewService;
 import com.shoefactory.assistant.service.PrintTaskService;
 import org.springframework.stereotype.Service;
@@ -26,36 +26,34 @@ import java.util.stream.Collectors;
 @Service
 public class PrintTaskServiceImpl implements PrintTaskService {
 
-    private final OrderPrintTaskMapper orderPrintTaskMapper;
+    private final OrderSheetPrintTaskMapper orderSheetPrintTaskMapper;
     private final OrderRecordMapper orderRecordMapper;
     private final PrintPreviewService printPreviewService;
 
     public PrintTaskServiceImpl(
-            OrderPrintTaskMapper orderPrintTaskMapper,
+            OrderSheetPrintTaskMapper orderSheetPrintTaskMapper,
             OrderRecordMapper orderRecordMapper,
             PrintPreviewService printPreviewService
     ) {
-        this.orderPrintTaskMapper = orderPrintTaskMapper;
+        this.orderSheetPrintTaskMapper = orderSheetPrintTaskMapper;
         this.orderRecordMapper = orderRecordMapper;
         this.printPreviewService = printPreviewService;
     }
 
     @Override
     public List<PrintTaskResponse> listTasks() {
-        List<OrderPrintTask> tasks = orderPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderPrintTask>()
-                .isNull(OrderPrintTask::getOrderDetailId)
-                .ne(OrderPrintTask::getStatus, PrintTaskStatus.INVALID.getCode())
-                .orderByDesc(OrderPrintTask::getCreatedAt));
+        List<OrderSheetPrintTask> tasks = orderSheetPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderSheetPrintTask>()
+                .ne(OrderSheetPrintTask::getStatus, PrintTaskStatus.INVALID.getCode())
+                .orderByDesc(OrderSheetPrintTask::getCreatedAt));
         return toResponses(tasks);
     }
 
     @Override
     public List<PrintTaskResponse> listPendingTasks(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
-        List<OrderPrintTask> tasks = orderPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderPrintTask>()
-                .isNull(OrderPrintTask::getOrderDetailId)
-                .eq(OrderPrintTask::getStatus, PrintTaskStatus.PENDING.getCode())
-                .orderByAsc(OrderPrintTask::getCreatedAt)
+        List<OrderSheetPrintTask> tasks = orderSheetPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderSheetPrintTask>()
+                .eq(OrderSheetPrintTask::getStatus, PrintTaskStatus.PENDING.getCode())
+                .orderByAsc(OrderSheetPrintTask::getCreatedAt)
                 .last("LIMIT " + safeLimit));
         return toResponses(tasks);
     }
@@ -73,21 +71,21 @@ public class PrintTaskServiceImpl implements PrintTaskService {
     @Override
     @Transactional
     public PrintTaskResponse markTaskPrinted(Long id) {
-        OrderPrintTask task = getRequiredTask(id);
+        OrderSheetPrintTask task = getRequiredTask(id);
         LocalDateTime now = LocalDateTime.now();
         task.setStatus(PrintTaskStatus.PRINTED.getCode());
         task.setPrintCount((task.getPrintCount() == null ? 0 : task.getPrintCount()) + 1);
         task.setLastPrintTime(now);
         task.setErrorMessage(null);
         task.setUpdatedAt(now);
-        orderPrintTaskMapper.updateById(task);
+        orderSheetPrintTaskMapper.updateById(task);
         return toResponse(task);
     }
 
     @Override
     @Transactional
     public PrintTaskResponse updateTaskStatus(Long id, PrintTaskStatusUpdateRequest request) {
-        OrderPrintTask task = getRequiredTask(id);
+        OrderSheetPrintTask task = getRequiredTask(id);
         PrintTaskStatus status = PrintTaskStatus.parse(request.getStatus());
         task.setStatus(status.getCode());
         task.setErrorMessage(status == PrintTaskStatus.FAILED ? blankToNull(request.getErrorMessage()) : null);
@@ -96,7 +94,7 @@ public class PrintTaskServiceImpl implements PrintTaskService {
             task.setLastPrintTime(LocalDateTime.now());
         }
         task.setUpdatedAt(LocalDateTime.now());
-        orderPrintTaskMapper.updateById(task);
+        orderSheetPrintTaskMapper.updateById(task);
         return toResponse(task);
     }
 
@@ -105,11 +103,11 @@ public class PrintTaskServiceImpl implements PrintTaskService {
         return printPreviewService.loadTaskPdf(getRequiredTask(id));
     }
 
-    private OrderPrintTask getRequiredTask(Long taskId) {
+    private OrderSheetPrintTask getRequiredTask(Long taskId) {
         if (taskId == null) {
             throw new BusinessException("打印任务 ID 不能为空");
         }
-        OrderPrintTask task = orderPrintTaskMapper.selectById(taskId);
+        OrderSheetPrintTask task = orderSheetPrintTaskMapper.selectById(taskId);
         if (task == null) {
             throw new BusinessException("打印任务不存在: " + taskId);
         }
@@ -119,7 +117,7 @@ public class PrintTaskServiceImpl implements PrintTaskService {
         return task;
     }
 
-    private List<PrintTaskResponse> toResponses(List<OrderPrintTask> tasks) {
+    private List<PrintTaskResponse> toResponses(List<OrderSheetPrintTask> tasks) {
         if (tasks == null || tasks.isEmpty()) {
             return Collections.emptyList();
         }
@@ -129,14 +127,14 @@ public class PrintTaskServiceImpl implements PrintTaskService {
                 .toList();
     }
 
-    private PrintTaskResponse toResponse(OrderPrintTask task) {
+    private PrintTaskResponse toResponse(OrderSheetPrintTask task) {
         OrderRecord order = task.getOrderId() == null ? null : orderRecordMapper.selectById(task.getOrderId());
         return PrintTaskResponse.fromTask(task, order);
     }
 
-    private Map<Long, OrderRecord> loadOrderMap(List<OrderPrintTask> tasks) {
+    private Map<Long, OrderRecord> loadOrderMap(List<OrderSheetPrintTask> tasks) {
         List<Long> orderIds = tasks.stream()
-                .map(OrderPrintTask::getOrderId)
+                .map(OrderSheetPrintTask::getOrderId)
                 .filter(id -> id != null)
                 .distinct()
                 .toList();

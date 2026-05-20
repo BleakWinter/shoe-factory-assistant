@@ -1,7 +1,7 @@
 package com.shoefactory.assistant.dto;
 
-import com.shoefactory.assistant.entity.OrderPrintTask;
 import com.shoefactory.assistant.entity.OrderRecord;
+import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 import com.shoefactory.assistant.enums.PrintTaskStatus;
 import com.shoefactory.assistant.enums.PrintType;
 
@@ -14,7 +14,6 @@ public class PrintTaskResponse {
     private Long id;
     private String taskNo;
     private Long orderId;
-    private Long orderDetailId;
     private String orderNo;
     private String customerName;
     private List<String> styleNos;
@@ -30,7 +29,7 @@ public class PrintTaskResponse {
     private String errorMessage;
     private LocalDateTime createdAt;
 
-    public static PrintTaskResponse fromTask(OrderPrintTask task, OrderRecord order) {
+    public static PrintTaskResponse fromTask(OrderSheetPrintTask task, OrderRecord order) {
         PrintTaskResponse response = new PrintTaskResponse();
         if (task == null) {
             return response;
@@ -40,7 +39,6 @@ public class PrintTaskResponse {
         response.setId(task.getId());
         response.setTaskNo(buildTaskNo(task, order, type));
         response.setOrderId(task.getOrderId());
-        response.setOrderDetailId(task.getOrderDetailId());
         response.setPrintType(type.name());
         response.setPrintTypeText(type.getLabel());
         response.setStatus(status.name());
@@ -62,7 +60,7 @@ public class PrintTaskResponse {
         return response;
     }
 
-    private static String buildTaskNo(OrderPrintTask task, OrderRecord order, PrintType type) {
+    private static String buildTaskNo(OrderSheetPrintTask task, OrderRecord order, PrintType type) {
         String orderNo = order == null ? null : order.getOrderNo();
         String base = orderNo == null || orderNo.isBlank() ? String.valueOf(task.getOrderId()) : orderNo;
         return base + "-" + type.getCode();
@@ -101,14 +99,6 @@ public class PrintTaskResponse {
 
     public void setOrderId(Long orderId) {
         this.orderId = orderId;
-    }
-
-    public Long getOrderDetailId() {
-        return orderDetailId;
-    }
-
-    public void setOrderDetailId(Long orderDetailId) {
-        this.orderDetailId = orderDetailId;
     }
 
     public String getOrderNo() {

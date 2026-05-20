@@ -6,14 +6,13 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
 
-@TableName("order_print_task")
-public class OrderPrintTask {
+@TableName("order_sheet_print_task")
+public class OrderSheetPrintTask {
 
-    // 一行表示一个可打印项，比如订单 sheet、装箱单 sheet 或后续某条明细的标签。
+    // 只表示订单 Excel 里的整单级 sheet 打印：订单、装箱单。
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long orderId;
-    private Long orderDetailId;
     private Integer printType;
     private Integer status;
     private String previewPdfPath;
@@ -39,14 +38,6 @@ public class OrderPrintTask {
 
     public void setOrderId(Long orderId) {
         this.orderId = orderId;
-    }
-
-    public Long getOrderDetailId() {
-        return orderDetailId;
-    }
-
-    public void setOrderDetailId(Long orderDetailId) {
-        this.orderDetailId = orderDetailId;
     }
 
     public Integer getPrintType() {
