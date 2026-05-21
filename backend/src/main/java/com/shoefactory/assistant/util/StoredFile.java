@@ -4,7 +4,7 @@ import java.nio.file.Path;
 
 public class StoredFile {
 
-    // 保存文件后返回的结果对象，给 order_record 写入原始文件信息使用。
+    // 保存文件后返回的结果对象，给打印任务保存原稿信息使用。
     private final String originalName;
     private final String extension;
     private final String mimeType;

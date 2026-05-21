@@ -16,6 +16,7 @@ public class PrintTaskResponse {
     private Long orderId;
     private String orderNo;
     private String customerName;
+    private String originalFileName;
     private List<String> styleNos;
     private Integer totalPairs;
     private String printType;
@@ -39,6 +40,7 @@ public class PrintTaskResponse {
         response.setId(task.getId());
         response.setTaskNo(buildTaskNo(task, order, type));
         response.setOrderId(task.getOrderId());
+        response.setOriginalFileName(task.getOriginalFileName());
         response.setPrintType(type.name());
         response.setPrintTypeText(type.getLabel());
         response.setStatus(status.name());
@@ -115,6 +117,14 @@ public class PrintTaskResponse {
 
     public void setCustomerName(String customerName) {
         this.customerName = customerName;
+    }
+
+    public String getOriginalFileName() {
+        return originalFileName;
+    }
+
+    public void setOriginalFileName(String originalFileName) {
+        this.originalFileName = originalFileName;
     }
 
     public List<String> getStyleNos() {

@@ -14,7 +14,6 @@ public class OrderRecordResponse {
     private Long id;
     private String orderNo;
     private String customerName;
-    private String originalFileName;
     private String boxImageUrl;
     private String developmentNos;
     private List<String> developmentNoList;
@@ -39,7 +38,6 @@ public class OrderRecordResponse {
         response.setId(order.getId());
         response.setOrderNo(order.getOrderNo());
         response.setCustomerName(order.getCustomerName());
-        response.setOriginalFileName(order.getOriginalFileName());
         response.setBoxImageUrl(order.getBoxImageUrl());
         response.setDevelopmentNos(order.getDevelopmentNos());
         response.setDevelopmentNoList(splitDevelopmentNos(order.getDevelopmentNos()));
@@ -98,14 +96,6 @@ public class OrderRecordResponse {
 
     public void setCustomerName(String customerName) {
         this.customerName = customerName;
-    }
-
-    public String getOriginalFileName() {
-        return originalFileName;
-    }
-
-    public void setOriginalFileName(String originalFileName) {
-        this.originalFileName = originalFileName;
     }
 
     public String getBoxImageUrl() {

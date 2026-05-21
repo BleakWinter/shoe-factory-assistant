@@ -4,9 +4,6 @@ CREATE TABLE IF NOT EXISTS `order_record` (
   `order_no` varchar(128) DEFAULT NULL COMMENT '订单流水号',
   `customer_name` varchar(128) DEFAULT NULL COMMENT '客户名称',
 
-  `original_file_name` varchar(255) DEFAULT NULL COMMENT '原始订单文件名',
-  `original_file_path` varchar(512) DEFAULT NULL COMMENT '原始订单文件本地路径',
-
   `box_image_url` varchar(512) DEFAULT NULL COMMENT '订单盒子图片访问链接',
   `box_image_path` varchar(512) DEFAULT NULL COMMENT '订单盒子图片本地路径',
 
@@ -185,6 +182,8 @@ CREATE TABLE IF NOT EXISTS `order_sheet_print_task` (
   `order_id` bigint NOT NULL COMMENT '订单主表ID',
 
   `print_type` tinyint NOT NULL COMMENT '打印类型: 1订单 2装箱单',
+  `original_file_name` varchar(255) DEFAULT NULL COMMENT '原始订单文件名',
+  `original_file_path` varchar(512) DEFAULT NULL COMMENT '原始订单文件本地路径',
 
   `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态: 1待打印 2已打印 3失败 4已失效',
   `preview_pdf_path` varchar(512) DEFAULT NULL COMMENT 'PDF预览文件路径',

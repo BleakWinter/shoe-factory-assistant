@@ -150,8 +150,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     private OrderRecord buildOrderRecord(Sheet sheet, StoredFile storedFile, TableColumns columns) {
         LocalDateTime now = LocalDateTime.now();
         OrderRecord order = new OrderRecord();
-        order.setOriginalFileName(storedFile.getOriginalName());
-        order.setOriginalFilePath(storedFile.getPath().toString());
         order.setOrderNo(blankToNull(resolveOrderNo(sheet, storedFile.getOriginalName())));
         order.setCustomerName(blankToNull(resolveCustomerName(sheet)));
         order.setSourceType(OrderSourceType.EXCEL.getCode());

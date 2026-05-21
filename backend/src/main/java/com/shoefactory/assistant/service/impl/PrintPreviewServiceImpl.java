@@ -5,6 +5,7 @@ import com.shoefactory.assistant.dto.PrintPreviewResponse;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 import com.shoefactory.assistant.enums.PrintPreviewStatus;
+import com.shoefactory.assistant.enums.PrintTaskStatus;
 import com.shoefactory.assistant.enums.PrintType;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
@@ -48,12 +49,12 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         }
 
         OrderRecord order = getRequiredOrder(requiredTask.getOrderId());
-        if (order.getOriginalFilePath() == null || order.getOriginalFilePath().isBlank()) {
-            throw new BusinessException("订单原稿路径为空，不能生成预览");
-        }
+        Path sourceExcel = sourceExcelPath(requiredTask, printType);
         Path existingPdf = existingPdfPath(requiredTask);
         if (existingPdf != null && Files.isRegularFile(existingPdf)) {
-            return buildReadyResponse(requiredTask, order, printType, existingPdf, existingGeneratedAt(requiredTask));
+            LocalDateTime generatedAt = existingGeneratedAt(requiredTask);
+            markPreviewReady(requiredTask, generatedAt);
+            return buildReadyResponse(requiredTask, order, printType, existingPdf, generatedAt);
         }
 
         Path targetPdf = fileStorageUtil.allocateOrderPdfPath(
@@ -64,21 +65,24 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
 
         try {
             excelPdfService.convertSheetToPdf(
-                    fileStorageUtil.resolvePath(order.getOriginalFilePath()),
+                    sourceExcel,
                     targetPdf,
                     printType.getSheetName()
             );
             requiredTask.setPreviewPdfPath(targetPdf.toString());
             requiredTask.setPdfGeneratedAt(now);
+            markPreviewReadyStatus(requiredTask);
             requiredTask.setErrorMessage(null);
             requiredTask.setUpdatedAt(now);
             orderSheetPrintTaskMapper.updateById(requiredTask);
             return buildReadyResponse(requiredTask, order, printType, targetPdf, now);
         } catch (Exception ex) {
-            requiredTask.setErrorMessage(ex.getMessage());
+            String message = failureMessage(ex);
+            requiredTask.setStatus(PrintTaskStatus.FAILED.getCode());
+            requiredTask.setErrorMessage(message);
             requiredTask.setUpdatedAt(LocalDateTime.now());
             orderSheetPrintTaskMapper.updateById(requiredTask);
-            throw new BusinessException("生成打印预览失败: " + ex.getMessage(), ex);
+            throw new BusinessException("生成打印预览失败: " + message, ex);
         }
     }
 
@@ -126,8 +130,51 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
         return fileStorageUtil.resolvePath(pdfPath);
     }
 
+    private Path sourceExcelPath(OrderSheetPrintTask task, PrintType printType) {
+        if (task.getOriginalFilePath() == null || task.getOriginalFilePath().isBlank()) {
+            throw new BusinessException(printType.getLabel() + "原稿路径为空，不能生成预览");
+        }
+        return fileStorageUtil.resolvePath(task.getOriginalFilePath());
+    }
+
     private LocalDateTime existingGeneratedAt(OrderSheetPrintTask task) {
         return task.getPdfGeneratedAt() == null ? LocalDateTime.now() : task.getPdfGeneratedAt();
+    }
+
+    private void markPreviewReady(OrderSheetPrintTask task, LocalDateTime generatedAt) {
+        boolean changed = false;
+        if (task.getPdfGeneratedAt() == null && generatedAt != null) {
+            task.setPdfGeneratedAt(generatedAt);
+            changed = true;
+        }
+        if (task.getErrorMessage() != null && !task.getErrorMessage().isBlank()) {
+            task.setErrorMessage(null);
+            changed = true;
+        }
+        changed = markPreviewReadyStatus(task) || changed;
+        if (changed) {
+            task.setUpdatedAt(LocalDateTime.now());
+            orderSheetPrintTaskMapper.updateById(task);
+        }
+    }
+
+    private boolean markPreviewReadyStatus(OrderSheetPrintTask task) {
+        if (PrintTaskStatus.fromCode(task.getStatus()) != PrintTaskStatus.FAILED) {
+            return false;
+        }
+        PrintTaskStatus readyStatus = task.getPrintCount() != null && task.getPrintCount() > 0
+                ? PrintTaskStatus.PRINTED
+                : PrintTaskStatus.PENDING;
+        task.setStatus(readyStatus.getCode());
+        return true;
+    }
+
+    private String failureMessage(Exception ex) {
+        if (ex == null) {
+            return "Unknown error";
+        }
+        String message = ex.getMessage();
+        return message == null || message.isBlank() ? ex.getClass().getSimpleName() : message;
     }
 
     private PrintPreviewResponse buildReadyResponse(

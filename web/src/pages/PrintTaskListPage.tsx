@@ -136,6 +136,7 @@ export default function PrintTaskListPage() {
       );
     } catch (error) {
       message.error(error instanceof Error ? error.message : "PDF 预览生成失败");
+      await loadTasks();
     } finally {
       setPreviewLoading(false);
     }
@@ -176,6 +177,7 @@ export default function PrintTaskListPage() {
       message.success("PDF 已重新生成");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "PDF 重新生成失败");
+      await loadTasks();
     } finally {
       setRegenerating(false);
     }

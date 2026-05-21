@@ -14,8 +14,6 @@ public class OrderRecord {
     private Long id;
     private String orderNo;
     private String customerName;
-    private String originalFileName;
-    private String originalFilePath;
     private String boxImageUrl;
     private String boxImagePath;
     private String developmentNos;
@@ -54,22 +52,6 @@ public class OrderRecord {
 
     public void setCustomerName(String customerName) {
         this.customerName = customerName;
-    }
-
-    public String getOriginalFileName() {
-        return originalFileName;
-    }
-
-    public void setOriginalFileName(String originalFileName) {
-        this.originalFileName = originalFileName;
-    }
-
-    public String getOriginalFilePath() {
-        return originalFilePath;
-    }
-
-    public void setOriginalFilePath(String originalFilePath) {
-        this.originalFilePath = originalFilePath;
     }
 
     public String getBoxImageUrl() {

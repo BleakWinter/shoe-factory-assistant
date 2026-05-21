@@ -43,7 +43,6 @@ export interface OrderRecord {
   id: number;
   orderNo?: string;
   customerName?: string;
-  originalFileName?: string;
   boxImageUrl?: string;
   developmentNos?: string;
   developmentNoList?: string[];
@@ -182,6 +181,7 @@ export interface PrintTask {
   orderId: number;
   orderNo?: string;
   customerName?: string;
+  originalFileName?: string;
   styleNos?: string[];
   totalPairs?: number;
   printType: PrintType;

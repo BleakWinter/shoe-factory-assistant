@@ -14,6 +14,8 @@ public class OrderSheetPrintTask {
     private Long id;
     private Long orderId;
     private Integer printType;
+    private String originalFileName;
+    private String originalFilePath;
     private Integer status;
     private String previewPdfPath;
     private LocalDateTime pdfGeneratedAt;
@@ -46,6 +48,22 @@ public class OrderSheetPrintTask {
 
     public void setPrintType(Integer printType) {
         this.printType = printType;
+    }
+
+    public String getOriginalFileName() {
+        return originalFileName;
+    }
+
+    public void setOriginalFileName(String originalFileName) {
+        this.originalFileName = originalFileName;
+    }
+
+    public String getOriginalFilePath() {
+        return originalFilePath;
+    }
+
+    public void setOriginalFilePath(String originalFilePath) {
+        this.originalFilePath = originalFilePath;
     }
 
     public Integer getStatus() {

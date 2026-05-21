@@ -116,7 +116,7 @@ public class OrderServiceImpl implements OrderService {
         OrderRecord orderRecord = readUploadSummary(storedFile, fileNo);
         initializeRecognitionFields(orderRecord);
         orderRecordMapper.insert(orderRecord);
-        List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(orderRecord);
+        List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(orderRecord, storedFile);
         styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
         return buildUploadResponse(orderRecord, firstTaskId(printTasks), 0);
     }
@@ -469,7 +469,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderRecordResponse recognizeOrder(Long orderId) {
         OrderRecord order = getRequiredOrder(orderId);
         try {
-            StoredFile storedFile = storedFileFromOrder(order);
+            StoredFile storedFile = storedFileFromTask(orderId, PrintType.ORDER);
             deleteOrderDetailRows(orderId);
             OrderImportResult importResult = orderExcelImportService.importOrderDetails(
                     storedFile.getPath(),
@@ -502,7 +502,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderRecordResponse recognizePacking(Long orderId) {
         OrderRecord order = getRequiredOrder(orderId);
         try {
-            StoredFile storedFile = storedFileFromOrder(order);
+            StoredFile storedFile = storedFileFromTask(orderId, PrintType.PACKING);
             deletePackingDetailRows(orderId);
             List<OrderPackingDetail> packingDetails = orderExcelImportService.importPackingDetails(
                     storedFile.getPath(),
@@ -588,8 +588,6 @@ public class OrderServiceImpl implements OrderService {
             );
         } catch (RuntimeException ex) {
             OrderRecord fallback = new OrderRecord();
-            fallback.setOriginalFileName(storedFile.getOriginalName());
-            fallback.setOriginalFilePath(storedFile.getPath().toString());
             fallback.setOrderNo(fileNo);
             fallback.setCustomerName(null);
             fallback.setTotalQuantity(0);
@@ -643,13 +641,13 @@ public class OrderServiceImpl implements OrderService {
         return response;
     }
 
-    private List<OrderSheetPrintTask> createSheetPrintTasks(OrderRecord order) {
+    private List<OrderSheetPrintTask> createSheetPrintTasks(OrderRecord order, StoredFile storedFile) {
         if (order == null || order.getId() == null) {
             return List.of();
         }
         List<OrderSheetPrintTask> tasks = List.of(
-                buildSheetPrintTask(order, PrintType.ORDER),
-                buildSheetPrintTask(order, PrintType.PACKING)
+                buildSheetPrintTask(order, storedFile, PrintType.ORDER),
+                buildSheetPrintTask(order, storedFile, PrintType.PACKING)
         );
         for (OrderSheetPrintTask task : tasks) {
             orderSheetPrintTaskMapper.insert(task);
@@ -657,11 +655,13 @@ public class OrderServiceImpl implements OrderService {
         return tasks;
     }
 
-    private OrderSheetPrintTask buildSheetPrintTask(OrderRecord order, PrintType printType) {
+    private OrderSheetPrintTask buildSheetPrintTask(OrderRecord order, StoredFile storedFile, PrintType printType) {
         LocalDateTime now = LocalDateTime.now();
         OrderSheetPrintTask task = new OrderSheetPrintTask();
         task.setOrderId(order.getId());
         task.setPrintType(printType.getCode());
+        task.setOriginalFileName(storedFile == null ? null : storedFile.getOriginalName());
+        task.setOriginalFilePath(storedFile == null || storedFile.getPath() == null ? null : storedFile.getPath().toString());
         task.setStatus(PrintTaskStatus.PENDING.getCode());
         task.setPrintCount(0);
         task.setCreatedAt(now);
@@ -685,13 +685,22 @@ public class OrderServiceImpl implements OrderService {
         return order;
     }
 
-    private StoredFile storedFileFromOrder(OrderRecord order) {
-        if (!hasText(order.getOriginalFilePath())) {
-            throw new BusinessException("订单原稿路径为空，不能识别");
+    private StoredFile storedFileFromTask(Long orderId, PrintType printType) {
+        OrderSheetPrintTask task = orderSheetPrintTaskMapper.selectOne(new LambdaQueryWrapper<OrderSheetPrintTask>()
+                .eq(OrderSheetPrintTask::getOrderId, orderId)
+                .eq(OrderSheetPrintTask::getPrintType, printType.getCode())
+                .ne(OrderSheetPrintTask::getStatus, PrintTaskStatus.INVALID.getCode())
+                .orderByDesc(OrderSheetPrintTask::getCreatedAt)
+                .last("LIMIT 1"));
+        if (task == null) {
+            throw new BusinessException(printType.getLabel() + "原稿任务不存在，不能识别");
         }
-        Path path = fileStorageUtil.resolvePath(order.getOriginalFilePath());
-        String originalName = hasText(order.getOriginalFileName())
-                ? order.getOriginalFileName()
+        if (!hasText(task.getOriginalFilePath())) {
+            throw new BusinessException(printType.getLabel() + "原稿路径为空，不能识别");
+        }
+        Path path = fileStorageUtil.resolvePath(task.getOriginalFilePath());
+        String originalName = hasText(task.getOriginalFileName())
+                ? task.getOriginalFileName()
                 : path.getFileName().toString();
         String extension = fileStorageUtil.extractExtension(originalName);
         return new StoredFile(originalName, extension, null, 0, path);
