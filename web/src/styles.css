@@ -1013,7 +1013,7 @@ a {
 /* Statistics dashboard. */
 .statistics-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
   gap: 10px;
 }
 
@@ -1070,80 +1070,238 @@ a {
   text-overflow: ellipsis;
 }
 
-.statistics-bar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.statistics-donut-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(260px, 1fr);
+  gap: 14px;
+  align-items: stretch;
 }
 
-.statistics-bar-row {
+.statistics-donut-wrap {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(110px, 170px) minmax(160px, 1fr) 96px 18px;
+  place-items: center;
+  min-height: 300px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 82%, rgb(15 23 42 / 9%) 0 31%, transparent 32%),
+    #f8fafc;
+  border: 1px solid #e0e6ef;
+  border-radius: 4px;
+}
+
+.statistics-donut-svg {
+  width: min(260px, 100%);
+  aspect-ratio: 220 / 238;
+  overflow: visible;
+  filter: drop-shadow(0 12px 16px rgb(15 23 42 / 14%));
+}
+
+.statistics-donut-empty-ring-depth {
+  fill: none;
+  stroke: #b8c2d0;
+  stroke-width: 38;
+}
+
+.statistics-donut-empty-ring {
+  fill: none;
+  stroke: #e1e7f0;
+  stroke-width: 38;
+}
+
+.statistics-donut-depth-slice {
+  stroke: rgb(255 255 255 / 34%);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.statistics-donut-slice {
+  stroke: #ffffff;
+  stroke-width: 2;
+  cursor: pointer;
+  transition: opacity 0.18s ease, filter 0.18s ease;
+}
+
+.statistics-donut-slice-disabled {
+  cursor: default;
+}
+
+.statistics-donut-slice:hover,
+.statistics-donut-slice-active {
+  opacity: 0.86;
+  filter: drop-shadow(0 6px 12px rgb(15 23 42 / 18%));
+}
+
+.statistics-donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  pointer-events: none;
+  text-align: center;
+  transform: translateY(-8px);
+}
+
+.statistics-donut-center span {
+  color: #152033;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.statistics-donut-center small {
+  margin-top: 4px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.statistics-donut-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+
+.statistics-donut-empty-note {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 46px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  grid-column: 1 / -1;
+  min-height: 180px;
+  background: #f8fafc;
+  border: 1px dashed #d8dee8;
+  border-radius: 4px;
+}
+
+.statistics-donut-layout-empty .statistics-donut-wrap {
+  background:
+    linear-gradient(90deg, rgb(47 109 246 / 7%) 0 50%, transparent 50%),
+    #f8fafc;
+}
+
+.statistics-donut-legend-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 58px;
   padding: 8px 10px;
   color: #1f2937;
   text-align: left;
-  background: #f8fafc;
+  background: #ffffff;
   border: 1px solid #e0e6ef;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.statistics-bar-row:hover,
-.statistics-bar-row-active {
+.statistics-donut-legend-item:disabled {
+  cursor: default;
+}
+
+.statistics-donut-legend-item:hover,
+.statistics-donut-legend-item-active {
   background: #eef7f6;
   border-color: #62b7ac;
 }
 
-.statistics-bar-label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
+.statistics-donut-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
 }
 
-.statistics-bar-label strong {
+.statistics-donut-legend-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.statistics-donut-legend-main strong,
+.statistics-rank-label {
   min-width: 0;
   overflow: hidden;
-  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.statistics-bar-label small {
-  flex: 0 0 auto;
+.statistics-donut-legend-main small {
   color: #667085;
   font-size: 12px;
 }
 
-.statistics-bar-track {
+.statistics-donut-percent {
+  color: #172033;
+  white-space: nowrap;
+}
+
+.statistics-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.statistics-rank-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 82px;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+}
+
+.statistics-rank-index {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2f6;
+  border-radius: 4px;
+}
+
+.statistics-rank-row:nth-child(-n + 3) .statistics-rank-index {
+  color: #ffffff;
+  background: #2f6df6;
+}
+
+.statistics-rank-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+
+.statistics-rank-label {
+  color: #172033;
+  font-weight: 600;
+}
+
+.statistics-rank-track {
   display: block;
   width: 100%;
-  height: 12px;
+  height: 8px;
   overflow: hidden;
   background: #e7edf4;
   border-radius: 999px;
 }
 
-.statistics-bar-fill {
+.statistics-rank-fill {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #0f766e, #2563eb);
+  background: linear-gradient(90deg, #0f766e, #2f6df6);
   border-radius: inherit;
 }
 
-.statistics-bar-value {
+.statistics-rank-row strong {
   color: #172033;
-  font-weight: 700;
+  font-size: 13px;
   text-align: right;
   white-space: nowrap;
-}
-
-.statistics-node-table .ant-table-row {
-  cursor: pointer;
 }
 
 /* Mobile layout: keep the same shell but let controls stack cleanly. */
@@ -1233,18 +1391,27 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .statistics-bar-row {
-    grid-template-columns: minmax(90px, 130px) minmax(100px, 1fr) 82px 18px;
+  .statistics-donut-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .statistics-donut-wrap {
+    min-height: 280px;
   }
 }
 
 @media (max-width: 560px) {
-  .statistics-bar-row {
-    grid-template-columns: 1fr 74px 18px;
+  .statistics-donut-legend {
+    grid-template-columns: 1fr;
   }
 
-  .statistics-bar-label {
-    grid-column: 1 / -1;
+  .statistics-rank-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .statistics-rank-row strong {
+    grid-column: 2;
+    text-align: left;
   }
 }
 

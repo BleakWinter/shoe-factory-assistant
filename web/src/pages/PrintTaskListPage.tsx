@@ -9,7 +9,7 @@ import { App, Button, Modal, Space, Table, Tag, Typography, Upload } from "antd"
 import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { uploadOrderFile } from "../api/orderApi";
+import { reuploadOrderFile, uploadOrderFile } from "../api/orderApi";
 import {
   fetchPrintTasks,
   generatePrintTaskPreview,
@@ -17,7 +17,8 @@ import {
   regeneratePrintTaskPreview,
 } from "../api/printTaskApi";
 import PdfPreview from "../components/PdfPreview";
-import type { PrintTask, PrintTaskStatus } from "../types/order";
+import { PRINT_TYPES } from "../types/order";
+import type { PrintTask, PrintTaskStatus, PrintType } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 const allowedExtensions = ["xlsx", "xls"];
@@ -40,8 +41,17 @@ function renderTaskStatus(status: PrintTaskStatus) {
   return <Tag color={item.color}>{item.label}</Tag>;
 }
 
-function renderPrintType(task: PrintTask) {
-  return <Tag color="blue">{task.printTypeText || task.printType}</Tag>;
+interface PrintTaskRow {
+  key: string;
+  orderId?: number;
+  orderNo?: string;
+  customerName?: string;
+  originalFileName?: string;
+  styleNos?: string[];
+  totalPairs?: number;
+  createdAt?: string;
+  orderTask?: PrintTask;
+  packingTask?: PrintTask;
 }
 
 function renderStyleNos(styleNos?: string[]) {
@@ -58,17 +68,84 @@ function renderStyleNos(styleNos?: string[]) {
   );
 }
 
+function taskForPrintType(row: PrintTaskRow | null, printType: PrintType) {
+  if (!row) {
+    return undefined;
+  }
+  return printType === PRINT_TYPES.ORDER ? row.orderTask : row.packingTask;
+}
+
+function mergeTaskIntoRow(row: PrintTaskRow, task: PrintTask): PrintTaskRow {
+  const nextRow = {
+    ...row,
+    orderId: row.orderId ?? task.orderId,
+    orderNo: row.orderNo || task.orderNo,
+    customerName: row.customerName || task.customerName,
+    originalFileName: row.originalFileName || task.originalFileName,
+    styleNos: row.styleNos && row.styleNos.length > 0 ? row.styleNos : task.styleNos,
+    totalPairs: row.totalPairs ?? task.totalPairs,
+    createdAt: row.createdAt || task.createdAt,
+  };
+
+  if (task.printType === PRINT_TYPES.ORDER) {
+    return { ...nextRow, orderTask: task };
+  }
+  if (task.printType === PRINT_TYPES.PACKING) {
+    return { ...nextRow, packingTask: task };
+  }
+  return nextRow;
+}
+
+function buildPrintTaskRows(tasks: PrintTask[]) {
+  const groups = new Map<string, PrintTaskRow>();
+  tasks.forEach((task) => {
+    const key = String(task.orderId ?? task.orderNo ?? task.id);
+    const current = groups.get(key) || { key };
+    groups.set(key, mergeTaskIntoRow(current, task));
+  });
+  return Array.from(groups.values());
+}
+
+function renderPrintFlags(row: PrintTaskRow) {
+  const renderFlag = (label: string, task?: PrintTask) => {
+    const color =
+      task?.status === "PRINTED" ? "green" : task?.status === "FAILED" ? "red" : "default";
+    return <Tag color={color}>{label}</Tag>;
+  };
+
+  return (
+    <Space size={[4, 4]} wrap>
+      {renderFlag("订单", row.orderTask)}
+      {renderFlag("装箱单", row.packingTask)}
+    </Space>
+  );
+}
+
+function getRowStatus(row: PrintTaskRow): PrintTaskStatus {
+  const rowTasks = [row.orderTask, row.packingTask].filter(Boolean) as PrintTask[];
+  if (rowTasks.some((task) => task.status === "FAILED")) {
+    return "FAILED";
+  }
+  if (rowTasks.length > 0 && rowTasks.every((task) => task.status === "PRINTED")) {
+    return "PRINTED";
+  }
+  return "PENDING";
+}
+
 export default function PrintTaskListPage() {
   const { message } = App.useApp();
-  // tasks 是表格数据；activeTask 是当前打开打印弹窗的那条任务。
+  // tasks 保存后端的订单/装箱单任务；页面再合并成一行，恢复以前的操作习惯。
   const [tasks, setTasks] = useState<PrintTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [reuploadingOrderId, setReuploadingOrderId] = useState<number | null>(null);
+  const [activeRow, setActiveRow] = useState<PrintTaskRow | null>(null);
   const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
+  const [activePrintType, setActivePrintType] = useState<PrintType | "">("");
   const [previewUrl, setPreviewUrl] = useState("");
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState<PrintType | "">("");
   const [regenerating, setRegenerating] = useState(false);
-  const [markingPrinted, setMarkingPrinted] = useState(false);
+  const [markingPrinted, setMarkingPrinted] = useState<PrintType | "">("");
 
   const loadTasks = useCallback(async () => {
     // 刷新打印任务列表。上传成功后也会调用一次。
@@ -92,7 +169,7 @@ export default function PrintTaskListPage() {
     accept: ".xlsx,.xls",
     multiple: false,
     showUploadList: false,
-    disabled: uploading,
+    disabled: uploading || reuploadingOrderId !== null,
     beforeUpload(file) {
       if (!isAllowedFile(file)) {
         message.error("请上传 xlsx 或 xls 订单文件");
@@ -119,41 +196,99 @@ export default function PrintTaskListPage() {
     },
   };
 
+  const buildReuploadProps = useCallback(
+    (row: PrintTaskRow): UploadProps => ({
+      accept: ".xlsx,.xls",
+      multiple: false,
+      showUploadList: false,
+      disabled: uploading || reuploadingOrderId !== null,
+      beforeUpload(file) {
+        if (!isAllowedFile(file)) {
+          message.error("请上传 xlsx 或 xls 订单文件");
+          return Upload.LIST_IGNORE;
+        }
+        return true;
+      },
+      customRequest: async (options) => {
+        if (!row.orderId) {
+          const err = new Error("订单 ID 为空，不能重新上传");
+          options.onError?.(err);
+          message.error(err.message);
+          return;
+        }
+        setReuploadingOrderId(row.orderId);
+        try {
+          const file = options.file as File;
+          const result = await reuploadOrderFile(row.orderId, file);
+          options.onSuccess?.(result);
+          message.success(`订单 ${result.printTaskNo || result.orderNo || ""} 已重新上传，旧打印任务已失效`);
+          await loadTasks();
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error("重新上传失败");
+          options.onError?.(err);
+          message.error(err.message);
+        } finally {
+          setReuploadingOrderId(null);
+        }
+      },
+    }),
+    [loadTasks, message, reuploadingOrderId, uploading],
+  );
+
+  const rows = useMemo(() => buildPrintTaskRows(tasks), [tasks]);
+
+  const updateTaskCache = (nextTask: PrintTask) => {
+    setTasks((prev) => prev.map((task) => (task.id === nextTask.id ? nextTask : task)));
+    setActiveTask((current) => (current && current.id === nextTask.id ? nextTask : current));
+    setActiveRow((current) => (current ? mergeTaskIntoRow(current, nextTask) : current));
+  };
+
   const requestPreview = async (task: PrintTask) => {
-    setPreviewLoading(true);
+    setActiveTask(task);
+    setActivePrintType(task.printType);
+    setPreviewUrl(task.previewUrl || "");
+    setPreviewLoading(task.printType);
     try {
       const preview = await generatePrintTaskPreview(task.id);
       setPreviewUrl(preview.previewUrl);
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === preview.id ? { ...task, previewUrl: preview.previewUrl } : task,
-        ),
-      );
-      setActiveTask((current) =>
-        current && current.id === preview.id
-          ? { ...current, previewUrl: preview.previewUrl }
-          : current,
-      );
+      updateTaskCache({ ...task, previewUrl: preview.previewUrl });
     } catch (error) {
       message.error(error instanceof Error ? error.message : "PDF 预览生成失败");
       await loadTasks();
     } finally {
-      setPreviewLoading(false);
+      setPreviewLoading("");
     }
   };
 
-  const openPrintModal = (task: PrintTask) => {
-    setActiveTask(task);
-    setPreviewUrl(task.previewUrl || "");
-    void requestPreview(task);
+  const openPrintModal = (row: PrintTaskRow) => {
+    const defaultTask = row.orderTask || row.packingTask;
+    setActiveRow(row);
+    if (!defaultTask) {
+      setActiveTask(null);
+      setActivePrintType("");
+      setPreviewUrl("");
+      return;
+    }
+    void requestPreview(defaultTask);
   };
 
   const closePrintModal = () => {
+    setActiveRow(null);
     setActiveTask(null);
+    setActivePrintType("");
     setPreviewUrl("");
-    setPreviewLoading(false);
+    setPreviewLoading("");
     setRegenerating(false);
-    setMarkingPrinted(false);
+    setMarkingPrinted("");
+  };
+
+  const loadPreview = async (printType: PrintType) => {
+    const task = taskForPrintType(activeRow, printType);
+    if (!task) {
+      message.warning(`${printType === PRINT_TYPES.ORDER ? "订单" : "装箱单"}任务未生成`);
+      return;
+    }
+    await requestPreview(task);
   };
 
   const regeneratePreview = async () => {
@@ -164,16 +299,7 @@ export default function PrintTaskListPage() {
     try {
       const preview = await regeneratePrintTaskPreview(activeTask.id);
       setPreviewUrl(preview.previewUrl);
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === activeTask.id ? { ...task, previewUrl: preview.previewUrl } : task,
-        ),
-      );
-      setActiveTask((current) =>
-        current && current.id === activeTask.id
-          ? { ...current, previewUrl: preview.previewUrl }
-          : current,
-      );
+      updateTaskCache({ ...activeTask, previewUrl: preview.previewUrl });
       message.success("PDF 已重新生成");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "PDF 重新生成失败");
@@ -183,28 +309,24 @@ export default function PrintTaskListPage() {
     }
   };
 
-  const updateTaskCache = (nextTask: PrintTask) => {
-    setTasks((prev) => prev.map((task) => (task.id === nextTask.id ? nextTask : task)));
-    setActiveTask((current) => (current && current.id === nextTask.id ? nextTask : current));
-  };
-
-  const markPrinted = async () => {
-    if (!activeTask) {
+  const markPrinted = async (printType: PrintType) => {
+    const task = taskForPrintType(activeRow, printType);
+    if (!task) {
       return;
     }
-    setMarkingPrinted(true);
+    setMarkingPrinted(printType);
     try {
-      const nextTask = await markPrintTaskPrinted(activeTask.id);
-      updateTaskCache({ ...nextTask, previewUrl });
-      message.success(`${activeTask.printTypeText || "任务"}已标记为已打印`);
+      const nextTask = await markPrintTaskPrinted(task.id);
+      updateTaskCache(nextTask);
+      message.success(`${printType === PRINT_TYPES.ORDER ? "订单" : "装箱单"}已标记为已打印`);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "标记已打印失败");
     } finally {
-      setMarkingPrinted(false);
+      setMarkingPrinted("");
     }
   };
 
-  const columns = useMemo<ColumnsType<PrintTask>>(
+  const columns = useMemo<ColumnsType<PrintTaskRow>>(
     // 表格列定义固定，用 useMemo 避免每次状态变化都重建。
     () => [
       {
@@ -226,12 +348,6 @@ export default function PrintTaskListPage() {
         render: renderStyleNos,
       },
       {
-        title: "打印类型",
-        key: "printType",
-        width: 110,
-        render: (_, record) => renderPrintType(record),
-      },
-      {
         title: "订单总对数",
         dataIndex: "totalPairs",
         width: 120,
@@ -240,16 +356,15 @@ export default function PrintTaskListPage() {
       },
       {
         title: "状态",
-        dataIndex: "status",
+        key: "status",
         width: 110,
-        render: renderTaskStatus,
+        render: (_, record) => renderTaskStatus(getRowStatus(record)),
       },
       {
-        title: "打印次数",
-        dataIndex: "printCount",
-        width: 100,
-        align: "right",
-        render: formatEmpty,
+        title: "打印确认",
+        key: "printedFlags",
+        width: 150,
+        render: (_, record) => renderPrintFlags(record),
       },
       {
         title: "上传时间",
@@ -271,15 +386,24 @@ export default function PrintTaskListPage() {
             >
               打印
             </Button>
-            <Button disabled icon={<UploadOutlined />}>
-              {/* 预留按钮：后续做“重新上传并覆盖旧订单”。 */}
-              重新上传
-            </Button>
+            <Upload {...buildReuploadProps(record)}>
+              <Button
+                disabled={
+                  !record.orderId ||
+                  uploading ||
+                  (reuploadingOrderId !== null && reuploadingOrderId !== record.orderId)
+                }
+                loading={reuploadingOrderId === record.orderId}
+                icon={<UploadOutlined />}
+              >
+                重新上传
+              </Button>
+            </Upload>
           </Space>
         ),
       },
     ],
-    [],
+    [buildReuploadProps, reuploadingOrderId, uploading],
   );
 
   return (
@@ -288,7 +412,7 @@ export default function PrintTaskListPage() {
         <div>
           <Typography.Title level={3}>打印订单</Typography.Title>
           <Typography.Text type="secondary">
-            上传订单 Excel 后生成订单和装箱单两个可打印任务。
+            上传订单 Excel 后生成待打印记录，可预览订单和装箱单。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -309,12 +433,12 @@ export default function PrintTaskListPage() {
 
       <div className="page-panel">
         <Table
-          rowKey="id"
+          rowKey="key"
           loading={loading}
           columns={columns}
-          dataSource={tasks}
+          dataSource={rows}
           pagination={{ pageSize: 20, showSizeChanger: false }}
-          scroll={{ x: 1330 }}
+          scroll={{ x: 1220 }}
           className="data-table"
         />
       </div>
@@ -322,9 +446,7 @@ export default function PrintTaskListPage() {
       <Modal
         open={Boolean(activeTask)}
         title={
-          activeTask
-            ? `打印预览：${activeTask.orderNo || activeTask.taskNo} / ${activeTask.printTypeText || activeTask.printType}`
-            : "打印预览"
+          activeRow ? `打印预览：${activeRow.orderNo || activeRow.orderId || ""}` : "打印预览"
         }
         onCancel={closePrintModal}
         width={1120}
@@ -334,9 +456,25 @@ export default function PrintTaskListPage() {
         <div className="print-modal-body">
           <Space wrap className="print-options">
             <Button
+              type={activePrintType === PRINT_TYPES.ORDER ? "primary" : "default"}
+              loading={previewLoading === PRINT_TYPES.ORDER}
+              disabled={!activeRow?.orderTask}
+              onClick={() => void loadPreview(PRINT_TYPES.ORDER)}
+            >
+              订单
+            </Button>
+            <Button
+              type={activePrintType === PRINT_TYPES.PACKING ? "primary" : "default"}
+              loading={previewLoading === PRINT_TYPES.PACKING}
+              disabled={!activeRow?.packingTask}
+              onClick={() => void loadPreview(PRINT_TYPES.PACKING)}
+            >
+              装箱单
+            </Button>
+            <Button
               danger
               icon={<ReloadOutlined />}
-              disabled={!previewUrl || previewLoading}
+              disabled={!activeTask || !previewUrl || Boolean(previewLoading)}
               loading={regenerating}
               onClick={() => void regeneratePreview()}
             >
@@ -344,11 +482,29 @@ export default function PrintTaskListPage() {
             </Button>
             <Button
               icon={<CheckCircleOutlined />}
-              disabled={!previewUrl || previewLoading || activeTask?.status === "PRINTED"}
-              loading={markingPrinted}
-              onClick={() => void markPrinted()}
+              disabled={
+                activePrintType !== PRINT_TYPES.ORDER ||
+                !previewUrl ||
+                Boolean(previewLoading) ||
+                activeRow?.orderTask?.status === "PRINTED"
+              }
+              loading={markingPrinted === PRINT_TYPES.ORDER}
+              onClick={() => void markPrinted(PRINT_TYPES.ORDER)}
             >
-              标记已打印
+              订单已打印
+            </Button>
+            <Button
+              icon={<CheckCircleOutlined />}
+              disabled={
+                activePrintType !== PRINT_TYPES.PACKING ||
+                !previewUrl ||
+                Boolean(previewLoading) ||
+                activeRow?.packingTask?.status === "PRINTED"
+              }
+              loading={markingPrinted === PRINT_TYPES.PACKING}
+              onClick={() => void markPrinted(PRINT_TYPES.PACKING)}
+            >
+              装箱单已打印
             </Button>
             <Typography.Text type="secondary">
               生成预览后，使用 PDF 预览窗口里的打印功能即可。

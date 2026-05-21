@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS `order_record` (
   `total_carton_count` int NOT NULL DEFAULT 0 COMMENT '总箱数',
 
   `source_type` tinyint DEFAULT NULL COMMENT '订单来源: 1 Excel, 2 图片, 3 手动录入',
-  `recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
   `order_recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '订单识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
   `packing_recognition_status` tinyint NOT NULL DEFAULT 0 COMMENT '装箱单识别状态: 0待识别, 1已识别, 2待人工处理, 3识别失败',
 

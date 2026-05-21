@@ -50,8 +50,6 @@ export interface OrderRecord {
   totalCartonCount?: number;
   sourceType?: number;
   sourceTypeText?: string;
-  recognitionStatus?: number;
-  recognitionStatusText?: string;
   orderRecognitionStatus?: number;
   orderRecognitionStatusText?: string;
   packingRecognitionStatus?: number;

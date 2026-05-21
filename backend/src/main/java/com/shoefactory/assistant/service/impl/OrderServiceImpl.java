@@ -115,10 +115,38 @@ public class OrderServiceImpl implements OrderService {
         StoredFile storedFile = fileStorageUtil.saveOriginal(file, fileNo);
         OrderRecord orderRecord = readUploadSummary(storedFile, fileNo);
         initializeRecognitionFields(orderRecord);
+        ensureOrderNoNotUploaded(orderRecord.getOrderNo());
         orderRecordMapper.insert(orderRecord);
         List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(orderRecord, storedFile);
         styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
         return buildUploadResponse(orderRecord, firstTaskId(printTasks), 0);
+    }
+
+    @Override
+    @Transactional
+    public OrderUploadResponse reuploadOrderSource(Long orderId, MultipartFile file) {
+        OrderRecord existingOrder = getRequiredOrder(orderId);
+        String extension = fileStorageUtil.extractExtension(file == null ? null : file.getOriginalFilename());
+        FileType fileType = toFileType(extension);
+        if (fileType != FileType.EXCEL) {
+            throw new BusinessException("V1 仅支持上传 Excel 订单文件");
+        }
+
+        String fileNo = FileStorageUtil.newBusinessNo("SF");
+        StoredFile storedFile = fileStorageUtil.saveOriginal(file, fileNo);
+        OrderRecord parsedOrder = readUploadSummary(storedFile, fileNo);
+        initializeRecognitionFields(parsedOrder);
+        ensureReuploadOrderNoMatches(existingOrder, parsedOrder);
+
+        applyReuploadSummary(existingOrder, parsedOrder);
+        deleteOrderDetailRows(orderId);
+        deletePackingDetailRows(orderId);
+        invalidateSheetPrintTasks(orderId);
+        orderRecordMapper.updateById(existingOrder);
+
+        List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(existingOrder, storedFile);
+        styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(existingOrder.getDevelopmentNos()));
+        return buildUploadResponse(existingOrder, firstTaskId(printTasks), 0);
     }
 
     @Override
@@ -489,7 +517,7 @@ public class OrderServiceImpl implements OrderService {
             order.setOrderRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
             order.setOrderErrorMessage(null);
             order.setUpdatedAt(LocalDateTime.now());
-            syncLegacyRecognitionFields(order);
+            syncRecognitionErrorMessage(order);
             orderRecordMapper.updateById(order);
         } catch (RuntimeException ex) {
             markRecognitionFailed(order, true, ex);
@@ -520,7 +548,7 @@ public class OrderServiceImpl implements OrderService {
             order.setPackingRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
             order.setPackingErrorMessage(null);
             order.setUpdatedAt(LocalDateTime.now());
-            syncLegacyRecognitionFields(order);
+            syncRecognitionErrorMessage(order);
             orderRecordMapper.updateById(order);
         } catch (RuntimeException ex) {
             markRecognitionFailed(order, false, ex);
@@ -614,7 +642,7 @@ public class OrderServiceImpl implements OrderService {
         order.setPackingRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
         order.setOrderErrorMessage(null);
         order.setPackingErrorMessage(null);
-        syncLegacyRecognitionFields(order);
+        syncRecognitionErrorMessage(order);
         LocalDateTime now = LocalDateTime.now();
         if (order.getCreatedAt() == null) {
             order.setCreatedAt(now);
@@ -639,6 +667,51 @@ public class OrderServiceImpl implements OrderService {
         response.setPrintTaskId(firstTaskId);
         response.setPrintTaskNo(orderRecord.getOrderNo());
         return response;
+    }
+
+    private void ensureOrderNoNotUploaded(String orderNo) {
+        if (!hasText(orderNo)) {
+            return;
+        }
+        OrderRecord existing = orderRecordMapper.selectOne(new LambdaQueryWrapper<OrderRecord>()
+                .eq(OrderRecord::getOrderNo, orderNo)
+                .last("LIMIT 1"));
+        if (existing != null) {
+            throw new BusinessException("订单流水号 " + orderNo + " 已经上传过，请在对应记录上点“重新上传”。");
+        }
+    }
+
+    private void ensureReuploadOrderNoMatches(OrderRecord existingOrder, OrderRecord parsedOrder) {
+        String existingOrderNo = normalizeOrderNo(existingOrder == null ? null : existingOrder.getOrderNo());
+        String parsedOrderNo = normalizeOrderNo(parsedOrder == null ? null : parsedOrder.getOrderNo());
+        if (!hasText(existingOrderNo) || !hasText(parsedOrderNo) || !existingOrderNo.equals(parsedOrderNo)) {
+            throw new BusinessException("重新上传文件里的订单流水号必须和当前订单一致，当前订单："
+                    + (hasText(existingOrderNo) ? existingOrderNo : "空")
+                    + "，上传文件："
+                    + (hasText(parsedOrderNo) ? parsedOrderNo : "空"));
+        }
+    }
+
+    private void applyReuploadSummary(OrderRecord target, OrderRecord parsed) {
+        applyOrderSummary(target, parsed);
+        target.setOrderRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
+        target.setPackingRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
+        target.setOrderErrorMessage(null);
+        target.setPackingErrorMessage(null);
+        syncRecognitionErrorMessage(target);
+        target.setUpdatedAt(LocalDateTime.now());
+    }
+
+    private void invalidateSheetPrintTasks(Long orderId) {
+        List<OrderSheetPrintTask> tasks = orderSheetPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderSheetPrintTask>()
+                .eq(OrderSheetPrintTask::getOrderId, orderId)
+                .ne(OrderSheetPrintTask::getStatus, PrintTaskStatus.INVALID.getCode()));
+        LocalDateTime now = LocalDateTime.now();
+        for (OrderSheetPrintTask task : tasks) {
+            task.setStatus(PrintTaskStatus.INVALID.getCode());
+            task.setUpdatedAt(now);
+            orderSheetPrintTaskMapper.updateById(task);
+        }
     }
 
     private List<OrderSheetPrintTask> createSheetPrintTasks(OrderRecord order, StoredFile storedFile) {
@@ -747,30 +820,12 @@ public class OrderServiceImpl implements OrderService {
             order.setPackingErrorMessage(message);
         }
         order.setUpdatedAt(LocalDateTime.now());
-        syncLegacyRecognitionFields(order);
+        syncRecognitionErrorMessage(order);
         orderRecordMapper.updateById(order);
     }
 
-    private void syncLegacyRecognitionFields(OrderRecord order) {
-        int orderStatus = statusOrPending(order.getOrderRecognitionStatus());
-        int packingStatus = statusOrPending(order.getPackingRecognitionStatus());
-        int failed = OrderRecognitionStatus.FAILED.getCode();
-        int manual = OrderRecognitionStatus.PENDING_MANUAL.getCode();
-        int recognized = OrderRecognitionStatus.RECOGNIZED.getCode();
-        if (orderStatus == failed || packingStatus == failed) {
-            order.setRecognitionStatus(failed);
-        } else if (orderStatus == manual || packingStatus == manual) {
-            order.setRecognitionStatus(manual);
-        } else if (orderStatus == recognized && packingStatus == recognized) {
-            order.setRecognitionStatus(recognized);
-        } else {
-            order.setRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
-        }
+    private void syncRecognitionErrorMessage(OrderRecord order) {
         order.setErrorMessage(firstText(order.getOrderErrorMessage(), order.getPackingErrorMessage()));
-    }
-
-    private int statusOrPending(Integer status) {
-        return status == null ? OrderRecognitionStatus.PENDING.getCode() : status;
     }
 
     private String firstText(String left, String right) {
@@ -778,6 +833,10 @@ public class OrderServiceImpl implements OrderService {
             return left;
         }
         return hasText(right) ? right : null;
+    }
+
+    private String normalizeOrderNo(String value) {
+        return hasText(value) ? value.trim() : "";
     }
 
     private List<String> splitDevelopmentNos(String value) {

@@ -46,6 +46,14 @@ public class OrderController {
         return ApiResponse.ok(orderService.uploadOrderSource(file));
     }
 
+    @PostMapping(value = "/{id}/reupload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<OrderUploadResponse> reupload(
+            @PathVariable Long id,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.ok(orderService.reuploadOrderSource(id, file));
+    }
+
     @GetMapping
     public ApiResponse<PageResponse<OrderRecordResponse>> listOrders(
             @RequestParam(required = false) String orderNo,

@@ -21,8 +21,6 @@ public class OrderRecordResponse {
     private Integer totalCartonCount;
     private Integer sourceType;
     private String sourceTypeText;
-    private Integer recognitionStatus;
-    private String recognitionStatusText;
     private Integer orderRecognitionStatus;
     private String orderRecognitionStatusText;
     private Integer packingRecognitionStatus;
@@ -46,9 +44,6 @@ public class OrderRecordResponse {
         response.setSourceType(order.getSourceType());
         OrderSourceType sourceType = OrderSourceType.fromCode(order.getSourceType());
         response.setSourceTypeText(sourceType == null ? null : sourceType.getLabel());
-        response.setRecognitionStatus(order.getRecognitionStatus());
-        OrderRecognitionStatus status = OrderRecognitionStatus.fromCode(order.getRecognitionStatus());
-        response.setRecognitionStatusText(status == null ? null : status.getLabel());
         response.setOrderRecognitionStatus(order.getOrderRecognitionStatus());
         OrderRecognitionStatus orderStatus = OrderRecognitionStatus.fromCode(order.getOrderRecognitionStatus());
         response.setOrderRecognitionStatusText(orderStatus == null ? null : orderStatus.getLabel());
@@ -152,22 +147,6 @@ public class OrderRecordResponse {
 
     public void setSourceTypeText(String sourceTypeText) {
         this.sourceTypeText = sourceTypeText;
-    }
-
-    public Integer getRecognitionStatus() {
-        return recognitionStatus;
-    }
-
-    public void setRecognitionStatus(Integer recognitionStatus) {
-        this.recognitionStatus = recognitionStatus;
-    }
-
-    public String getRecognitionStatusText() {
-        return recognitionStatusText;
-    }
-
-    public void setRecognitionStatusText(String recognitionStatusText) {
-        this.recognitionStatusText = recognitionStatusText;
     }
 
     public Integer getOrderRecognitionStatus() {

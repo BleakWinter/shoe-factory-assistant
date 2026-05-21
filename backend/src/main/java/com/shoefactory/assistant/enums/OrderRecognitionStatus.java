@@ -3,7 +3,7 @@ package com.shoefactory.assistant.enums;
 import java.util.Locale;
 
 public enum OrderRecognitionStatus {
-    // 和 order_record.recognition_status 的 tinyint 编码保持一致。
+    // 和 order_record 的订单/装箱单识别状态 tinyint 编码保持一致。
     PENDING(0, "待识别"),
     RECOGNIZED(1, "已识别"),
     PENDING_MANUAL(2, "待人工处理"),

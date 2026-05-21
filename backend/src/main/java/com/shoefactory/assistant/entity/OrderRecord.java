@@ -20,7 +20,6 @@ public class OrderRecord {
     private Integer totalQuantity;
     private Integer totalCartonCount;
     private Integer sourceType;
-    private Integer recognitionStatus;
     private Integer orderRecognitionStatus;
     private Integer packingRecognitionStatus;
     private String remark;
@@ -100,14 +99,6 @@ public class OrderRecord {
 
     public void setSourceType(Integer sourceType) {
         this.sourceType = sourceType;
-    }
-
-    public Integer getRecognitionStatus() {
-        return recognitionStatus;
-    }
-
-    public void setRecognitionStatus(Integer recognitionStatus) {
-        this.recognitionStatus = recognitionStatus;
     }
 
     public Integer getOrderRecognitionStatus() {

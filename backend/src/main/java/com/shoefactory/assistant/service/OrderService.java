@@ -17,6 +17,8 @@ public interface OrderService {
     // 上传订单 Excel，保存原稿、解析主表和明细。
     OrderUploadResponse uploadOrderSource(MultipartFile file);
 
+    OrderUploadResponse reuploadOrderSource(Long orderId, MultipartFile file);
+
     // 查询订单主表，页面订单列表和打印列表都以它为入口。
     PageResponse<OrderRecordResponse> listOrders(
             String orderNo,
