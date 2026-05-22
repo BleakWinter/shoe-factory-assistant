@@ -891,8 +891,8 @@ a {
 }
 
 .shipping-note-sheet {
-  width: 287mm;
-  min-width: 287mm;
+  width: calc(297mm*0.61);
+  min-height: calc(210mm*0.61);
   padding: 0;
   color: #000000;
   background: #ffffff;
@@ -901,7 +901,8 @@ a {
 }
 
 .shipping-note-table {
-  width: 100%;
+  width: calc(297mm*0.61);
+  min-height: calc(210mm*0.61);
   table-layout: fixed;
   border-collapse: collapse;
   color: #000000;

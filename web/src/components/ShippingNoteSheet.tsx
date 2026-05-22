@@ -2,16 +2,41 @@ import type { ShippingNoteItem } from "../types/order";
 
 const usSizes = ["5", "5.5", "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10", "11", "12"];
 const euGroups = [
-  { label: "35", span: 2 },
-  { label: "36", span: 2 },
-  { label: "37", span: 2 },
-  { label: "38", span: 2 },
-  { label: "39", span: 2 },
+    { label: "", span: 1 },
+  { label: "35", span: 1 },
+  { label: "", span: 1 },
+  { label: "36", span: 1 },
+  { label: "37", span: 1 },
+  { label: "", span: 1 },
+  { label: "38", span: 1 },
+  { label: "39", span: 1 },
+  { label: "", span: 1 },
   { label: "40", span: 1 },
   { label: "41", span: 1 },
   { label: "42", span: 1 },
+  { label: "", span: 1 },
 ];
-const colWidths = [74, 92, 70, 70, 106, 100, 76, 48, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 46, 42, 44, 58, 64];
+const colWidths = [
+  46, // 订单号
+  52, // 开发编号
+  38, // 客人
+  42, // 客人型体
+  58, // 英文颜色
+  58, // 英文材质
+  52, // 颜色/材质
+  32, // 商标
+
+  // 尺码列
+  24, 24, 24, 24, 24, 24, 24,
+  24, 24, 24, 24, 24, 24,
+
+  // 后面统计列
+  34, // 双数
+  32, // 件数
+  36, // 合计
+  42, // 开始箱号
+  42, // 结束箱号
+];
 
 export interface ShippingNoteSheetProps {
   recipientName?: string;
@@ -31,6 +56,13 @@ export function sumShippingNoteCartons(items: ShippingNoteItem[]) {
 
 function sumSizeQuantities(value?: Record<string, number>) {
   return Object.values(value || {}).reduce((total, count) => total + (Number(count) > 0 ? Number(count) : 0), 0);
+}
+
+function getDisplayYear(date?: string) {
+  if (date) {
+    return new Date(date).getFullYear();
+  }
+  return new Date().getFullYear();
 }
 
 function formatDate(value?: string) {
@@ -82,7 +114,7 @@ export default function ShippingNoteSheet({
         </colgroup>
         <tbody>
           <tr className="shipping-note-title-row">
-            <td colSpan={26}>清化鞋厂2026年出货单</td>
+            <td colSpan={26}>清化鞋厂{getDisplayYear(shippingDate)}年出货单</td>
           </tr>
           <tr className="shipping-note-meta-row">
             <td colSpan={4}>收货单位：{recipientName}</td>
