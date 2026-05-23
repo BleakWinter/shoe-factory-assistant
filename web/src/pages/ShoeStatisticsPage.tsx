@@ -1,14 +1,19 @@
 import {
   BarChartOutlined,
+  FileSearchOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { App, Button, Empty, Skeleton, Space, Statistic, Tag, Typography } from "antd";
+import { App, Button, Empty, Modal, Skeleton, Space, Statistic, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOrderStatistics } from "../api/statisticsApi";
-import type { DevelopmentNoStatisticNode, OrderStatistics } from "../types/order";
+import type { DevelopmentNoOrderReference, DevelopmentNoStatisticNode, OrderStatistics } from "../types/order";
 
 function formatCount(value?: number) {
   return new Intl.NumberFormat("zh-CN").format(value || 0);
+}
+
+function formatText(value?: string) {
+  return value?.trim() || "-";
 }
 
 const DONUT_COLORS = [
@@ -132,6 +137,7 @@ export default function ShoeStatisticsPage() {
   const [loading, setLoading] = useState(false);
   const [drillPath, setDrillPath] = useState<DevelopmentNoStatisticNode[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
+  const [orderReferenceNode, setOrderReferenceNode] = useState<DevelopmentNoStatisticNode | null>(null);
 
   const loadStatistics = useCallback(async () => {
     setLoading(true);
@@ -140,6 +146,7 @@ export default function ShoeStatisticsPage() {
       setStatistics(next);
       setDrillPath([]);
       setSelectedKey("");
+      setOrderReferenceNode(null);
     } catch (error) {
       setStatistics(null);
       message.error(error instanceof Error ? error.message : "统计数据加载失败");
@@ -160,6 +167,25 @@ export default function ShoeStatisticsPage() {
   const visiblePairTotal = visibleNodes.reduce((sum, node) => sum + (node.pairCount || 0), 0);
   const topNodes = statistics?.topDevelopmentNos || [];
   const maxTopPairs = Math.max(1, ...topNodes.map((node) => node.pairCount || 0));
+  const orderReferences = orderReferenceNode?.orderReferences || [];
+  const orderReferenceColumns = useMemo(
+    () => [
+      {
+        title: "发票编号",
+        dataIndex: "invoiceNo",
+        key: "invoiceNo",
+        render: (value?: string) => formatText(value),
+      },
+      {
+        title: "双数",
+        dataIndex: "pairCount",
+        key: "pairCount",
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+    ],
+    [],
+  );
 
   const openNode = useCallback((node: DevelopmentNoStatisticNode) => {
     if (getNodeChildren(node).length > 0) {
@@ -293,26 +319,56 @@ export default function ShoeStatisticsPage() {
                   ) : (
                     donutSlices.map((slice) => {
                       const childCount = getNodeChildren(slice.node).length;
+                      const canOpen = !!slice.node;
+                      const isLeaf = canOpen && childCount === 0;
+                      const orderReferenceCount = slice.node?.orderReferences?.length || 0;
                       return (
-                      <button
-                        key={slice.key}
-                        type="button"
-                        className={`statistics-donut-legend-item${
-                          slice.node?.key === selectedKey ? " statistics-donut-legend-item-active" : ""
-                        }`}
-                        disabled={!slice.node}
-                        onClick={() => slice.node && openNode(slice.node)}
-                      >
-                        <span className="statistics-donut-swatch" style={{ background: slice.color }} />
-                        <span className="statistics-donut-legend-main">
-                          <strong>{slice.label}</strong>
-                          <small>
-                            {formatCount(slice.value)} 双
-                            {childCount > 0 ? ` / ${childCount} 个下级` : ""}
-                          </small>
-                        </span>
-                        <strong className="statistics-donut-percent">{slice.percent}%</strong>
-                      </button>
+                        <div
+                          key={slice.key}
+                          role="button"
+                          tabIndex={canOpen ? 0 : -1}
+                          aria-disabled={!canOpen}
+                          className={[
+                            "statistics-donut-legend-item",
+                            slice.node?.key === selectedKey ? "statistics-donut-legend-item-active" : "",
+                            !canOpen ? "statistics-donut-legend-item-disabled" : "",
+                          ].filter(Boolean).join(" ")}
+                          onClick={() => slice.node && openNode(slice.node)}
+                          onKeyDown={(event) => {
+                            if (!slice.node || (event.key !== "Enter" && event.key !== " ")) {
+                              return;
+                            }
+                            event.preventDefault();
+                            openNode(slice.node);
+                          }}
+                        >
+                          <span className="statistics-donut-swatch" style={{ background: slice.color }} />
+                          <span className="statistics-donut-legend-main">
+                            <strong>{slice.label}</strong>
+                            <small>
+                              {formatCount(slice.value)} 双
+                              {childCount > 0 ? ` / ${childCount} 个下级` : ""}
+                            </small>
+                          </span>
+                          <strong className="statistics-donut-percent">{slice.percent}%</strong>
+                          {isLeaf ? (
+                            <Button
+                              size="small"
+                              type="link"
+                              className="statistics-order-link"
+                              icon={<FileSearchOutlined />}
+                              disabled={orderReferenceCount === 0}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (slice.node) {
+                                  setOrderReferenceNode(slice.node);
+                                }
+                              }}
+                            >
+                              查看发票编号
+                            </Button>
+                          ) : null}
+                        </div>
                       );
                     })
                   )}
@@ -354,6 +410,32 @@ export default function ShoeStatisticsPage() {
 
         </>
       )}
+      <Modal
+        open={!!orderReferenceNode}
+        title={
+          orderReferenceNode
+            ? `发票编号：${orderReferenceNode.fullDevelopmentNo || orderReferenceNode.label}`
+            : "发票编号"
+        }
+        width={560}
+        footer={null}
+        onCancel={() => setOrderReferenceNode(null)}
+        destroyOnClose
+      >
+        <Table<DevelopmentNoOrderReference>
+          rowKey={(record, index) => [
+            record.orderId || "order",
+            record.invoiceNo || "invoice",
+            record.orderNo || "customer-order",
+            index,
+          ].join("-")}
+          columns={orderReferenceColumns}
+          dataSource={orderReferences}
+          pagination={orderReferences.length > 10 ? { pageSize: 10, showSizeChanger: false } : false}
+          size="small"
+          className="statistics-order-reference-table"
+        />
+      </Modal>
     </div>
   );
 }

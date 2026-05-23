@@ -7,12 +7,12 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@TableName("shipping_note_record")
-public class ShippingNoteRecord {
+@TableName("shipping_note_task")
+public class ShippingNoteTask {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String printNo;
+    private String taskNo;
     private Long orderId;
     private String orderNo;
     private String customerName;
@@ -22,14 +22,13 @@ public class ShippingNoteRecord {
     private Integer itemCount;
     private Integer totalPairs;
     private Integer totalCartonCount;
-    private String dataJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public String getPrintNo() { return printNo; }
-    public void setPrintNo(String printNo) { this.printNo = printNo; }
+    public String getTaskNo() { return taskNo; }
+    public void setTaskNo(String taskNo) { this.taskNo = taskNo; }
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
     public String getOrderNo() { return orderNo; }
@@ -48,8 +47,6 @@ public class ShippingNoteRecord {
     public void setTotalPairs(Integer totalPairs) { this.totalPairs = totalPairs; }
     public Integer getTotalCartonCount() { return totalCartonCount; }
     public void setTotalCartonCount(Integer totalCartonCount) { this.totalCartonCount = totalCartonCount; }
-    public String getDataJson() { return dataJson; }
-    public void setDataJson(String dataJson) { this.dataJson = dataJson; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

@@ -3,7 +3,8 @@ import type {
   PageResponse,
   ShippingNoteCreatePayload,
   ShippingNoteQueryParams,
-  ShippingNoteRecord,
+  ShippingNoteTask,
+  ShippingNoteTaskQueryParams,
 } from "../types/order";
 
 function normalizePage<T>(
@@ -22,15 +23,23 @@ function normalizePage<T>(
   };
 }
 
-export async function createShippingNote(payload: ShippingNoteCreatePayload) {
-  const { data } = await request.post<ShippingNoteRecord>("/shipping-notes", payload);
+export async function createShippingNoteTask(payload: ShippingNoteCreatePayload) {
+  const { data } = await request.post<ShippingNoteTask>("/shipping-note-tasks", payload);
   return data;
 }
 
-export async function fetchShippingNotes(params: ShippingNoteQueryParams) {
+export async function fetchShippingNoteTasks(params: ShippingNoteTaskQueryParams) {
   const { data } = await request.get<
-    PageResponse<ShippingNoteRecord> | ShippingNoteRecord[] | { records?: ShippingNoteRecord[]; total?: number }
-  >("/shipping-notes", { params });
+    PageResponse<ShippingNoteTask> | ShippingNoteTask[] | { records?: ShippingNoteTask[]; total?: number }
+  >("/shipping-note-tasks", { params });
 
   return normalizePage(data, params.page, params.size);
 }
+
+export async function fetchShippingNoteTask(id: number) {
+  const { data } = await request.get<ShippingNoteTask>(`/shipping-note-tasks/${id}`);
+  return data;
+}
+
+export const createShippingNote = createShippingNoteTask;
+export const fetchShippingNotes = fetchShippingNoteTasks as (params: ShippingNoteQueryParams) => Promise<PageResponse<ShippingNoteTask>>;

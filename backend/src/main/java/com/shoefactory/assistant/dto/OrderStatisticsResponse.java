@@ -34,6 +34,7 @@ public class OrderStatisticsResponse {
         private Integer pairCount;
         private Integer detailCount;
         private Integer styleCount;
+        private List<DevelopmentNoOrderReference> orderReferences = new ArrayList<>();
         private List<DevelopmentNoStatisticNode> children = new ArrayList<>();
 
         public String getKey() { return key; }
@@ -50,7 +51,30 @@ public class OrderStatisticsResponse {
         public void setDetailCount(Integer detailCount) { this.detailCount = detailCount; }
         public Integer getStyleCount() { return styleCount; }
         public void setStyleCount(Integer styleCount) { this.styleCount = styleCount; }
+        public List<DevelopmentNoOrderReference> getOrderReferences() { return orderReferences; }
+        public void setOrderReferences(List<DevelopmentNoOrderReference> orderReferences) {
+            this.orderReferences = orderReferences;
+        }
         public List<DevelopmentNoStatisticNode> getChildren() { return children; }
         public void setChildren(List<DevelopmentNoStatisticNode> children) { this.children = children; }
+    }
+
+    public static class DevelopmentNoOrderReference {
+        private Long orderId;
+        private String invoiceNo;
+        private String orderNo;
+        private Integer pairCount;
+        private Integer detailCount;
+
+        public Long getOrderId() { return orderId; }
+        public void setOrderId(Long orderId) { this.orderId = orderId; }
+        public String getInvoiceNo() { return invoiceNo; }
+        public void setInvoiceNo(String invoiceNo) { this.invoiceNo = invoiceNo; }
+        public String getOrderNo() { return orderNo; }
+        public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+        public Integer getPairCount() { return pairCount; }
+        public void setPairCount(Integer pairCount) { this.pairCount = pairCount; }
+        public Integer getDetailCount() { return detailCount; }
+        public void setDetailCount(Integer detailCount) { this.detailCount = detailCount; }
     }
 }

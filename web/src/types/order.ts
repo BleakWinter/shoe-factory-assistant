@@ -76,6 +76,14 @@ export interface DevelopmentNoOption {
   children?: DevelopmentNoOption[];
 }
 
+export interface DevelopmentNoOrderReference {
+  orderId?: number;
+  invoiceNo?: string;
+  orderNo?: string;
+  pairCount?: number;
+  detailCount?: number;
+}
+
 export interface DevelopmentNoStatisticNode {
   key: string;
   label: string;
@@ -84,6 +92,7 @@ export interface DevelopmentNoStatisticNode {
   pairCount: number;
   detailCount: number;
   styleCount: number;
+  orderReferences?: DevelopmentNoOrderReference[];
   children?: DevelopmentNoStatisticNode[];
 }
 
@@ -225,8 +234,9 @@ export interface ShippingNoteItem {
   cartonEnd?: string;
 }
 
-export interface ShippingNoteRecord {
+export interface ShippingNoteTask {
   id: number;
+  taskNo?: string;
   printNo: string;
   orderId: number;
   orderNo?: string;
@@ -241,6 +251,8 @@ export interface ShippingNoteRecord {
   createdAt?: string;
 }
 
+export type ShippingNoteRecord = ShippingNoteTask;
+
 export interface ShippingNoteCreatePayload {
   orderId: number;
   recipientName?: string;
@@ -254,3 +266,5 @@ export interface ShippingNoteQueryParams {
   page?: number;
   size?: number;
 }
+
+export type ShippingNoteTaskQueryParams = ShippingNoteQueryParams;

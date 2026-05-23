@@ -1,15 +1,22 @@
 import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
+  EyeOutlined,
+  FileAddOutlined,
   PrinterOutlined,
   ReloadOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Input, Modal, Select, Space, Table, Typography } from "antd";
+import { App, Button, Cascader, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
 import { fetchOrderDetails, fetchOrders } from "../api/orderApi";
-import { createShippingNote } from "../api/shippingNoteApi";
+import {
+  createShippingNoteTask,
+  fetchShippingNoteTask,
+  fetchShippingNoteTasks,
+} from "../api/shippingNoteApi";
 import ShippingNoteSheet, {
   sumShippingNoteCartons,
   sumShippingNotePairs,
@@ -19,9 +26,10 @@ import type {
   OrderRecord,
   OrderRecordDetail,
   ShippingNoteItem,
-  ShippingNoteRecord,
+  ShippingNoteTask,
+  ShippingNoteTaskQueryParams,
 } from "../types/order";
-import { formatEmpty } from "../utils/format";
+import { formatDateTime, formatEmpty } from "../utils/format";
 
 const defaultRecipient = "达为鞋业";
 
@@ -86,6 +94,23 @@ function renderSizeQuantities(value?: Record<string, number>) {
         </span>
       ))}
     </div>
+  );
+}
+
+function renderDevelopmentNos(value?: string) {
+  const values = (value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (values.length === 0) {
+    return "-";
+  }
+  return (
+    <Space size={[4, 4]} wrap>
+      {values.map((item) => (
+        <Tag key={item}>{item}</Tag>
+      ))}
+    </Space>
   );
 }
 
@@ -162,6 +187,14 @@ function applyShippingNotePrintSize() {
 
 export default function ShippingNotePrintPage() {
   const { message } = App.useApp();
+  const [taskForm] = Form.useForm<ShippingNoteTaskQueryParams>();
+  const [tasks, setTasks] = useState<ShippingNoteTask[]>([]);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(20);
+  const [total, setTotal] = useState(0);
+
+  const [createOpen, setCreateOpen] = useState(false);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
@@ -171,23 +204,53 @@ export default function ShippingNotePrintPage() {
   const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
   const [recipientName, setRecipientName] = useState(defaultRecipient);
   const [shippingDate, setShippingDate] = useState(todayText());
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [orderLoading, setOrderLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savedPrintRecord, setSavedPrintRecord] = useState<ShippingNoteRecord | null>(null);
+
+  const [detailTask, setDetailTask] = useState<ShippingNoteTask | null>(null);
+  const [previewTask, setPreviewTask] = useState<ShippingNoteTask | null>(null);
+  const [taskActionLoadingId, setTaskActionLoadingId] = useState<number>();
 
   const selectedOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId),
     [orders, selectedOrderId],
   );
 
+  const loadTasks = useCallback(
+    async (nextPage = page, nextSize = size) => {
+      setTaskLoading(true);
+      try {
+        const values = taskForm.getFieldsValue();
+        const result = await fetchShippingNoteTasks({
+          ...values,
+          page: nextPage,
+          size: nextSize,
+        });
+        setTasks(result.records);
+        setPage(result.page || nextPage);
+        setSize(result.size || nextSize);
+        setTotal(result.total);
+      } catch (error) {
+        setTasks([]);
+        message.error(error instanceof Error ? error.message : "出货单任务加载失败");
+      } finally {
+        setTaskLoading(false);
+      }
+    },
+    [message, page, size, taskForm],
+  );
+
+  useEffect(() => {
+    void loadTasks(1, size);
+  }, []);
+
   const loadOrders = useCallback(async () => {
     setOrderLoading(true);
     try {
-      const page = await fetchOrders({ page: 1, size: 100 });
-      setOrders(page.records);
-      setSelectedOrderId((current) => current || page.records[0]?.id);
+      const result = await fetchOrders({ page: 1, size: 100 });
+      setOrders(result.records);
+      setSelectedOrderId((current) => current || result.records[0]?.id);
     } catch (error) {
       setOrders([]);
       message.error(error instanceof Error ? error.message : "订单加载失败");
@@ -197,7 +260,7 @@ export default function ShippingNotePrintPage() {
   }, [message]);
 
   const loadDetails = useCallback(async () => {
-    if (!selectedOrderId) {
+    if (!createOpen || !selectedOrderId) {
       setDetails([]);
       return;
     }
@@ -206,6 +269,7 @@ export default function ShippingNotePrintPage() {
       const data = await fetchOrderDetails(selectedOrderId);
       setDetails(data);
       setSelectedDetailIds([]);
+      setSelectedPrintIds([]);
       setDevelopmentNoPaths([]);
     } catch (error) {
       setDetails([]);
@@ -213,15 +277,30 @@ export default function ShippingNotePrintPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, [message, selectedOrderId]);
-
-  useEffect(() => {
-    void loadOrders();
-  }, [loadOrders]);
+  }, [createOpen, message, selectedOrderId]);
 
   useEffect(() => {
     void loadDetails();
   }, [loadDetails]);
+
+  const openCreateModal = () => {
+    setRecipientName(defaultRecipient);
+    setShippingDate(todayText());
+    setSelectedDetailIds([]);
+    setSelectedPrintIds([]);
+    setPrintItems([]);
+    setDevelopmentNoPaths([]);
+    setCreateOpen(true);
+    void loadOrders();
+  };
+
+  const closeCreateModal = () => {
+    setCreateOpen(false);
+    setSelectedDetailIds([]);
+    setSelectedPrintIds([]);
+    setPrintItems([]);
+    setDevelopmentNoPaths([]);
+  };
 
   const printItemKeys = useMemo<Key[]>(() => printItems.map((item) => item.sourceDetailId), [printItems]);
   const printItemKeySet = useMemo(() => new Set<Key>(printItemKeys), [printItemKeys]);
@@ -276,29 +355,61 @@ export default function ShippingNotePrintPage() {
     setSelectedPrintIds([]);
   };
 
-  const saveAndPrint = async () => {
+  const saveTask = async () => {
     if (!selectedOrderId || printItems.length === 0) {
-      message.warning("请先选择要打印的出货单明细");
+      message.warning("请先选择要保存的出货单明细");
       return;
     }
     setSaving(true);
     try {
-      const record = await createShippingNote({
+      await createShippingNoteTask({
         orderId: selectedOrderId,
         recipientName,
         shippingDate,
         items: printItems,
       });
-      setSavedPrintRecord(record);
-      message.success("出货单数据已保存，正在打开打印窗口");
-      setPreviewOpen(false);
-      applyShippingNotePrintSize();
-      window.setTimeout(() => window.print(), 0);
+      message.success("出货单任务已保存");
+      closeCreateModal();
+      await loadTasks(1, size);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "出货单保存失败");
+      message.error(error instanceof Error ? error.message : "出货单任务保存失败");
     } finally {
       setSaving(false);
     }
+  };
+
+  const loadTaskDetail = async (task: ShippingNoteTask) => {
+    setTaskActionLoadingId(task.id);
+    try {
+      return await fetchShippingNoteTask(task.id);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "出货单任务详情加载失败");
+      return null;
+    } finally {
+      setTaskActionLoadingId(undefined);
+    }
+  };
+
+  const openTaskDetail = async (task: ShippingNoteTask) => {
+    const detail = await loadTaskDetail(task);
+    if (detail) {
+      setDetailTask(detail);
+    }
+  };
+
+  const openTaskPreview = async (task: ShippingNoteTask) => {
+    const detail = await loadTaskDetail(task);
+    if (detail) {
+      setPreviewTask(detail);
+    }
+  };
+
+  const printPreviewTask = () => {
+    if (!previewTask) {
+      return;
+    }
+    applyShippingNotePrintSize();
+    window.setTimeout(() => window.print(), 0);
   };
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
@@ -333,6 +444,46 @@ export default function ShippingNotePrintPage() {
     [],
   );
 
+  const taskColumns = useMemo<ColumnsType<ShippingNoteTask>>(
+    () => [
+      { title: "任务编号", dataIndex: "taskNo", width: 160, fixed: "left", render: (_, record) => record.taskNo || record.printNo || "-" },
+      { title: "订单号", dataIndex: "orderNo", width: 150, render: formatEmpty },
+      { title: "收货单位", dataIndex: "recipientName", width: 140, render: formatEmpty },
+      { title: "出货日期", dataIndex: "shippingDate", width: 120, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNos", minWidth: 220, render: renderDevelopmentNos },
+      { title: "明细行", dataIndex: "itemCount", width: 90, align: "right", render: formatEmpty },
+      { title: "件数", dataIndex: "totalCartonCount", width: 90, align: "right", render: formatEmpty },
+      { title: "双数", dataIndex: "totalPairs", width: 90, align: "right", render: formatEmpty },
+      { title: "保存时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
+      {
+        title: "操作",
+        key: "actions",
+        width: 210,
+        fixed: "right",
+        render: (_, record) => (
+          <Space size={8}>
+            <Button
+              icon={<EyeOutlined />}
+              loading={taskActionLoadingId === record.id}
+              onClick={() => void openTaskDetail(record)}
+            >
+              查看明细
+            </Button>
+            <Button
+              type="primary"
+              icon={<PrinterOutlined />}
+              loading={taskActionLoadingId === record.id}
+              onClick={() => void openTaskPreview(record)}
+            >
+              预览
+            </Button>
+          </Space>
+        ),
+      },
+    ],
+    [taskActionLoadingId],
+  );
+
   const leftRowSelection = {
     selectedRowKeys: leftSelectedRowKeys,
     getCheckboxProps: (record: OrderRecordDetail) => ({
@@ -361,160 +512,245 @@ export default function ShippingNotePrintPage() {
     },
   });
 
-  const printRootItems = savedPrintRecord?.items?.length ? savedPrintRecord.items : printItems;
-  const printRootRecipient = savedPrintRecord?.recipientName || recipientName;
-  const printRootDate = savedPrintRecord?.shippingDate || shippingDate;
-
   return (
     <div className="workspace">
       <div className="toolbar-band">
         <div>
           <Typography.Title level={3}>打印出货单</Typography.Title>
           <Typography.Text type="secondary">
-            从订单明细中选择本次出货内容，前端直接绘制出货单；点击打印时保存一份数据快照。
+            保存每次出货单打印任务，可查看明细并按任务快照预览打印。
           </Typography.Text>
         </div>
         <Space wrap>
-          <Input
-            addonBefore="收货单位"
-            value={recipientName}
-            onChange={(event) => setRecipientName(event.target.value)}
-          />
-          <Input
-            className="shipping-note-date-input"
-            type="date"
-            value={shippingDate}
-            onChange={(event) => setShippingDate(event.target.value)}
-          />
-          <Button
-            type="primary"
-            icon={<PrinterOutlined />}
-            disabled={!printItems.length}
-            onClick={() => setPreviewOpen(true)}
-          >
-            预览出货单
+          <Button type="primary" icon={<FileAddOutlined />} onClick={openCreateModal}>
+            新建出货单
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={() => void loadTasks(1, size)}>
+            刷新
           </Button>
         </Space>
       </div>
 
-      <div className="print-transfer-layout">
-        <div className="page-panel print-transfer-panel">
-          <div className="print-transfer-heading">
-            <div className="print-transfer-heading-main">
-              <Typography.Title level={4}>订单明细</Typography.Title>
-              <Space className="print-transfer-filters" wrap>
-                <Select
-                  className="print-order-select"
-                  loading={orderLoading}
-                  placeholder="订单号"
-                  showSearch
-                  optionFilterProp="label"
-                  value={selectedOrderId}
-                  options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
-                  onChange={(value) => setSelectedOrderId(value)}
-                />
-                <Cascader
-                  allowClear
-                  className="print-development-cascader"
-                  displayRender={(labels) => labels.join("-")}
-                  maxTagCount="responsive"
-                  multiple
-                  options={developmentNoOptions}
-                  placeholder="开发编号"
-                  showCheckedStrategy={Cascader.SHOW_CHILD}
-                  showSearch
-                  value={developmentNoPaths}
-                  onChange={(value) => setDevelopmentNoPaths(value as string[][])}
-                />
-                <Button icon={<ReloadOutlined />} onClick={() => void loadDetails()}>
-                  刷新明细
-                </Button>
-              </Space>
-            </div>
-            <Typography.Text type="secondary">{filteredDetails.length} 条明细</Typography.Text>
-          </div>
-          <Table
-            rowKey="id"
-            loading={detailLoading}
-            columns={detailColumns}
-            dataSource={filteredDetails}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 1370 }}
-            className="data-table"
-            rowClassName={leftRowClassName}
-            rowSelection={leftRowSelection}
-            onRow={getLeftRowProps}
-          />
-        </div>
+      <div className="page-panel">
+        <Form
+          className="filter-form"
+          form={taskForm}
+          layout="vertical"
+          onFinish={() => void loadTasks(1, size)}
+        >
+          <Form.Item label="订单号" name="orderNo">
+            <Input allowClear placeholder="输入订单号" />
+          </Form.Item>
+          <Form.Item label="开发编号" name="developmentNo">
+            <Input allowClear placeholder="输入开发编号" />
+          </Form.Item>
+          <Form.Item label=" " colon={false}>
+            <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
+              查询
+            </Button>
+          </Form.Item>
+        </Form>
 
-        <div className="print-transfer-actions">
-          <Button
-            type="primary"
-            icon={<ArrowRightOutlined />}
-            disabled={!selectedDetailIds.length}
-            onClick={addSelectedPrintItems}
-          />
-          <Button
-            icon={<ArrowLeftOutlined />}
-            disabled={!selectedPrintIds.length}
-            onClick={removePrintItems}
-          />
-        </div>
-
-        <div className="page-panel print-transfer-panel">
-          <div className="print-transfer-heading">
-            <div className="print-transfer-heading-main">
-              <Typography.Title level={4}>待打印出货单</Typography.Title>
-            </div>
-            <Typography.Text type="secondary">
-              {printItems.length} 行，{sumShippingNoteCartons(printItems)} 件，{sumShippingNotePairs(printItems)} 双
-            </Typography.Text>
-          </div>
-          <Table
-            rowKey="sourceDetailId"
-            columns={printColumns}
-            dataSource={printItems}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 1290 }}
-            className="data-table"
-            rowSelection={{
-              selectedRowKeys: selectedPrintIds,
-              onChange: setSelectedPrintIds,
-            }}
-          />
-        </div>
+        <Table
+          rowKey="id"
+          loading={taskLoading}
+          columns={taskColumns}
+          dataSource={tasks}
+          pagination={{
+            current: page,
+            pageSize: size,
+            total,
+            showSizeChanger: true,
+            onChange: (nextPage, nextSize) => void loadTasks(nextPage, nextSize),
+          }}
+          scroll={{ x: 1450 }}
+          className="data-table"
+        />
       </div>
 
       <Modal
-        open={previewOpen}
-        title="出货单预览"
-        onCancel={() => setPreviewOpen(false)}
-        width={1220}
+        open={createOpen}
+        title="新建出货单"
+        onCancel={closeCreateModal}
+        width={1500}
         footer={[
-          <Button key="close" onClick={() => setPreviewOpen(false)}>
+          <Button key="close" onClick={closeCreateModal}>
             取消
           </Button>,
-          <Button key="print" type="primary" icon={<PrinterOutlined />} loading={saving} onClick={() => void saveAndPrint()}>
-            保存并打印
+          <Button key="save" type="primary" loading={saving} disabled={!printItems.length} onClick={() => void saveTask()}>
+            保存任务
           </Button>,
         ]}
         destroyOnClose
       >
-        <div className="shipping-note-preview">
-          <ShippingNoteSheet
-            recipientName={recipientName}
-            shippingDate={shippingDate}
-            items={printItems}
-          />
+        <div className="shipping-note-task-form">
+          <Space wrap>
+            <Input
+              addonBefore="收货单位"
+              value={recipientName}
+              onChange={(event) => setRecipientName(event.target.value)}
+            />
+            <Input
+              className="shipping-note-date-input"
+              type="date"
+              value={shippingDate}
+              onChange={(event) => setShippingDate(event.target.value)}
+            />
+          </Space>
+        </div>
+        <div className="print-transfer-layout">
+          <div className="page-panel print-transfer-panel">
+            <div className="print-transfer-heading">
+              <div className="print-transfer-heading-main">
+                <Typography.Title level={4}>订单明细</Typography.Title>
+                <Space className="print-transfer-filters" wrap>
+                  <Select
+                    className="print-order-select"
+                    loading={orderLoading}
+                    placeholder="订单号"
+                    showSearch
+                    optionFilterProp="label"
+                    value={selectedOrderId}
+                    options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
+                    onChange={(value) => {
+                      setSelectedOrderId(value);
+                      setPrintItems([]);
+                      setSelectedPrintIds([]);
+                    }}
+                  />
+                  <Cascader
+                    allowClear
+                    className="print-development-cascader"
+                    displayRender={(labels) => labels.join("-")}
+                    maxTagCount="responsive"
+                    multiple
+                    options={developmentNoOptions}
+                    placeholder="开发编号"
+                    showCheckedStrategy={Cascader.SHOW_CHILD}
+                    showSearch
+                    value={developmentNoPaths}
+                    onChange={(value) => setDevelopmentNoPaths(value as string[][])}
+                  />
+                  <Button icon={<ReloadOutlined />} onClick={() => void loadDetails()}>
+                    刷新明细
+                  </Button>
+                </Space>
+              </div>
+              <Typography.Text type="secondary">{filteredDetails.length} 条明细</Typography.Text>
+            </div>
+            <Table
+              rowKey="id"
+              loading={detailLoading}
+              columns={detailColumns}
+              dataSource={filteredDetails}
+              pagination={{ pageSize: 10, showSizeChanger: false }}
+              scroll={{ x: 1370 }}
+              className="data-table"
+              rowClassName={leftRowClassName}
+              rowSelection={leftRowSelection}
+              onRow={getLeftRowProps}
+            />
+          </div>
+
+          <div className="print-transfer-actions">
+            <Button
+              type="primary"
+              icon={<ArrowRightOutlined />}
+              disabled={!selectedDetailIds.length}
+              onClick={addSelectedPrintItems}
+            />
+            <Button
+              icon={<ArrowLeftOutlined />}
+              disabled={!selectedPrintIds.length}
+              onClick={removePrintItems}
+            />
+          </div>
+
+          <div className="page-panel print-transfer-panel">
+            <div className="print-transfer-heading">
+              <div className="print-transfer-heading-main">
+                <Typography.Title level={4}>待保存出货单</Typography.Title>
+              </div>
+              <Typography.Text type="secondary">
+                {printItems.length} 行，{sumShippingNoteCartons(printItems)} 件，{sumShippingNotePairs(printItems)} 双
+              </Typography.Text>
+            </div>
+            <Table
+              rowKey="sourceDetailId"
+              columns={printColumns}
+              dataSource={printItems}
+              pagination={{ pageSize: 10, showSizeChanger: false }}
+              scroll={{ x: 1290 }}
+              className="data-table"
+              rowSelection={{
+                selectedRowKeys: selectedPrintIds,
+                onChange: setSelectedPrintIds,
+              }}
+            />
+          </div>
         </div>
       </Modal>
 
-      <div className="shipping-note-print-root" aria-hidden>
-        <ShippingNoteSheet
-          recipientName={printRootRecipient}
-          shippingDate={printRootDate}
-          items={printRootItems}
+      <Modal
+        open={Boolean(detailTask)}
+        title={detailTask ? `出货单明细：${detailTask.taskNo || detailTask.printNo}` : "出货单明细"}
+        onCancel={() => setDetailTask(null)}
+        width={1220}
+        footer={[
+          <Button key="close" onClick={() => setDetailTask(null)}>
+            关闭
+          </Button>,
+        ]}
+        destroyOnClose
+      >
+        <Table
+          rowKey={(record, index) => `${record.sourceDetailId}-${index}`}
+          columns={printColumns}
+          dataSource={detailTask?.items || []}
+          pagination={{ pageSize: 10, showSizeChanger: false }}
+          scroll={{ x: 1290 }}
+          className="data-table"
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(previewTask)}
+        title={previewTask ? `出货单预览：${previewTask.taskNo || previewTask.printNo}` : "出货单预览"}
+        onCancel={() => setPreviewTask(null)}
+        width={1220}
+        footer={[
+          <Button key="close" onClick={() => setPreviewTask(null)}>
+            关闭
+          </Button>,
+          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={printPreviewTask}>
+            打印
+          </Button>,
+        ]}
+        destroyOnClose
+      >
+        {previewTask ? (
+          <div className="shipping-note-preview">
+            <ShippingNoteSheet
+              recipientName={previewTask.recipientName}
+              shippingDate={previewTask.shippingDate}
+              items={previewTask.items || []}
+              totalPairs={previewTask.totalPairs}
+              totalCartonCount={previewTask.totalCartonCount}
+            />
+          </div>
+        ) : null}
+      </Modal>
+
+      <div className="shipping-note-print-root" aria-hidden>
+        {previewTask ? (
+          <ShippingNoteSheet
+            recipientName={previewTask.recipientName}
+            shippingDate={previewTask.shippingDate}
+            items={previewTask.items || []}
+            totalPairs={previewTask.totalPairs}
+            totalCartonCount={previewTask.totalCartonCount}
+          />
+        ) : null}
       </div>
     </div>
   );

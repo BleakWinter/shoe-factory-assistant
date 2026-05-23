@@ -15,8 +15,8 @@
 
 1. 安装 JDK 17、Maven、MySQL 8、LibreOffice。
 2. 执行 `sql/init.sql` 和 `sql/print_table.sql`。
-3. 修改 `src/main/resources/application.yml` 中的数据库账号和 LibreOffice 命令。
-4. 启动后端：
+3. 按环境修改 `src/main/resources/application-dev.yml` 或 `src/main/resources/application-prod.yml` 中的数据库账号和 LibreOffice 命令。
+4. 启动后端，默认使用 `dev` 环境：
 
 ```powershell
 cd D:\work\shoe-factory-assistant\backend
@@ -24,6 +24,15 @@ $env:JAVA_HOME="D:\develop\JAVA\jdk-17.0.18"
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 mvn spring-boot:run
 ```
+
+如需启动 `prod` 环境：
+
+```powershell
+cd D:\work\shoe-factory-assistant\backend
+mvn spring-boot:run -Pprod
+```
+
+IDEA 里直接启动 `ShoeFactoryAssistantApplication` 时，请在 Spring Boot Run Configuration 的 Active profiles 填 `dev` 或 `prod`。如果没有 Active profiles 输入框，就在 Program arguments 填 `--spring.profiles.active=dev` 或 `--spring.profiles.active=prod`。
 
 如果 `soffice` 不在系统 PATH 中，把 `app.file-storage.libre-office-command` 改成完整路径，例如：
 

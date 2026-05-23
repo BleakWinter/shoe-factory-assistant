@@ -8,7 +8,6 @@ import {
   SettingOutlined,
   ShoppingCartOutlined,
   TableOutlined,
-  UnorderedListOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Button, Layout, Menu, Tabs, Typography } from "antd";
 import type { MenuProps, TabsProps } from "antd";
@@ -55,13 +54,6 @@ const navLeafItems: NavLeafItem[] = [
     path: "/tasks/shipping-note",
     label: "打印出货单",
     icon: <FileDoneOutlined />,
-    parentKey: "print-center",
-    parentLabel: "打印中心",
-  },
-  {
-    path: "/shipping-notes",
-    label: "出货单记录",
-    icon: <UnorderedListOutlined />,
     parentKey: "print-center",
     parentLabel: "打印中心",
   },
@@ -121,7 +113,6 @@ const menuItems: MenuProps["items"] = [
       { key: "/tasks/outer-carton-label", label: "打印外箱贴标" },
       { key: "/tasks/inner-box-label", label: "打印内盒贴标" },
       { key: "/tasks/shipping-note", label: "打印出货单" },
-      { key: "/shipping-notes", label: "出货单记录" },
     ],
   },
   {

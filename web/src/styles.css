@@ -878,6 +878,10 @@ a {
   width: 160px;
 }
 
+.shipping-note-task-form {
+  margin-bottom: 12px;
+}
+
 .shipping-note-preview {
   display: flex;
   justify-content: center;
@@ -1184,7 +1188,7 @@ a {
 
 .statistics-donut-legend-item {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -1198,14 +1202,20 @@ a {
   cursor: pointer;
 }
 
-.statistics-donut-legend-item:disabled {
+.statistics-donut-legend-item-disabled {
   cursor: default;
 }
 
-.statistics-donut-legend-item:hover,
+.statistics-donut-legend-item:not(.statistics-donut-legend-item-disabled):hover,
 .statistics-donut-legend-item-active {
   background: #eef7f6;
   border-color: #62b7ac;
+}
+
+.statistics-order-link {
+  justify-self: end;
+  padding-inline: 4px;
+  white-space: nowrap;
 }
 
 .statistics-donut-swatch {

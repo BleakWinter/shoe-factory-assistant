@@ -301,16 +301,7 @@ export default function ShoePriceConfigPage() {
             {editingConfig ? (
               <Input disabled />
             ) : (
-              <Select
-                allowClear
-                showSearch
-                loading={optionLoading}
-                placeholder="选择未配置价格的开发编号"
-                options={unpricedDevelopmentNos.map((developmentNo) => ({
-                  label: developmentNo,
-                  value: developmentNo,
-                }))}
-              />
+              <Input />
             )}
           </Form.Item>
           <Form.Item name="shoePrice" label="鞋子单价">

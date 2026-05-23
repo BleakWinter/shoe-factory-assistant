@@ -10,6 +10,7 @@ import com.shoefactory.assistant.dto.OrderPackingDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordDetailResponse;
 import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoOrderReference;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
@@ -297,16 +298,24 @@ public class OrderServiceImpl implements OrderService {
         List<OrderRecordDetail> details = orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
                 .select(
                         OrderRecordDetail::getDevelopmentNo,
+                        OrderRecordDetail::getOrderId,
+                        OrderRecordDetail::getCustomerOrderNo,
                         OrderRecordDetail::getQuantity,
                         OrderRecordDetail::getSizeQuantitiesJson
                 ));
+        Map<Long, OrderRecord> ordersById = loadStatisticsOrdersById(details);
         Map<String, DevelopmentNoBucket> buckets = new LinkedHashMap<>();
         int totalPairs = 0;
         for (OrderRecordDetail detail : details) {
             int pairCount = detailPairCount(detail);
             totalPairs += pairCount;
             String developmentNo = normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo());
-            buckets.computeIfAbsent(developmentNo, DevelopmentNoBucket::new).add(pairCount);
+            DevelopmentNoOrderReference orderReference = buildDevelopmentNoOrderReference(
+                    detail,
+                    ordersById.get(detail.getOrderId()),
+                    pairCount
+            );
+            buckets.computeIfAbsent(developmentNo, DevelopmentNoBucket::new).add(pairCount, orderReference);
         }
 
         OrderStatisticsResponse response = new OrderStatisticsResponse();
@@ -353,6 +362,7 @@ public class OrderServiceImpl implements OrderService {
             node.setStyleCount(nullToZero(node.getStyleCount()) + 1);
             if (index == parts.size() - 1) {
                 node.setFullDevelopmentNo(bucket.getDevelopmentNo());
+                node.setOrderReferences(bucket.getOrderReferences());
             }
             siblings = node.getChildren();
         }
@@ -406,8 +416,48 @@ public class OrderServiceImpl implements OrderService {
         node.setPairCount(bucket.getPairCount());
         node.setDetailCount(bucket.getDetailCount());
         node.setStyleCount(1);
+        node.setOrderReferences(bucket.getOrderReferences());
         node.setChildren(List.of());
         return node;
+    }
+
+    private Map<Long, OrderRecord> loadStatisticsOrdersById(List<OrderRecordDetail> details) {
+        List<Long> orderIds = details.stream()
+                .map(OrderRecordDetail::getOrderId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
+                        .select(OrderRecord::getId, OrderRecord::getOrderNo)
+                        .in(OrderRecord::getId, orderIds))
+                .stream()
+                .collect(Collectors.toMap(
+                        OrderRecord::getId,
+                        order -> order,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+    }
+
+    private DevelopmentNoOrderReference buildDevelopmentNoOrderReference(
+            OrderRecordDetail detail,
+            OrderRecord order,
+            int pairCount
+    ) {
+        DevelopmentNoOrderReference reference = new DevelopmentNoOrderReference();
+        reference.setOrderId(detail.getOrderId());
+        reference.setInvoiceNo(cleanStatisticText(order == null ? null : order.getOrderNo()));
+        reference.setOrderNo(cleanStatisticText(detail.getCustomerOrderNo()));
+        reference.setPairCount(pairCount);
+        reference.setDetailCount(1);
+        return reference;
+    }
+
+    private String cleanStatisticText(String value) {
+        return hasText(value) ? value.trim() : null;
     }
 
     private int detailPairCount(OrderRecordDetail detail) {
@@ -1028,6 +1078,7 @@ public class OrderServiceImpl implements OrderService {
 
     private static class DevelopmentNoBucket {
         private final String developmentNo;
+        private final Map<String, DevelopmentNoOrderReference> orderReferences = new LinkedHashMap<>();
         private int pairCount;
         private int detailCount;
 
@@ -1035,9 +1086,31 @@ public class OrderServiceImpl implements OrderService {
             this.developmentNo = developmentNo;
         }
 
-        private void add(int pairs) {
+        private void add(int pairs, DevelopmentNoOrderReference orderReference) {
             pairCount += pairs;
             detailCount += 1;
+            addOrderReference(orderReference);
+        }
+
+        private void addOrderReference(DevelopmentNoOrderReference source) {
+            if (source == null) {
+                return;
+            }
+            String key = String.join("|",
+                    String.valueOf(source.getOrderId()),
+                    sortText(source.getInvoiceNo()),
+                    sortText(source.getOrderNo()));
+            DevelopmentNoOrderReference target = orderReferences.computeIfAbsent(key, ignored -> {
+                DevelopmentNoOrderReference reference = new DevelopmentNoOrderReference();
+                reference.setOrderId(source.getOrderId());
+                reference.setInvoiceNo(source.getInvoiceNo());
+                reference.setOrderNo(source.getOrderNo());
+                reference.setPairCount(0);
+                reference.setDetailCount(0);
+                return reference;
+            });
+            target.setPairCount(nullToZero(target.getPairCount()) + nullToZero(source.getPairCount()));
+            target.setDetailCount(nullToZero(target.getDetailCount()) + nullToZero(source.getDetailCount()));
         }
 
         private String getDevelopmentNo() {
@@ -1050,6 +1123,22 @@ public class OrderServiceImpl implements OrderService {
 
         private int getDetailCount() {
             return detailCount;
+        }
+
+        private List<DevelopmentNoOrderReference> getOrderReferences() {
+            return orderReferences.values()
+                    .stream()
+                    .sorted(Comparator.comparing((DevelopmentNoOrderReference reference) -> sortText(reference.getInvoiceNo()))
+                            .thenComparing(reference -> sortText(reference.getOrderNo())))
+                    .toList();
+        }
+
+        private static int nullToZero(Integer value) {
+            return value == null ? 0 : value;
+        }
+
+        private static String sortText(String value) {
+            return value == null ? "" : value;
         }
     }
 }

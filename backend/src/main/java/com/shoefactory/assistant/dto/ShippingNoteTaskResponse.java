@@ -2,20 +2,23 @@ package com.shoefactory.assistant.dto;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shoefactory.assistant.entity.ShippingNoteRecord;
+import com.shoefactory.assistant.entity.ShippingNoteTask;
+import com.shoefactory.assistant.entity.ShippingNoteTaskItem;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
-public class ShippingNoteRecordResponse {
+public class ShippingNoteTaskResponse {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final TypeReference<List<ShippingNoteItemRequest>> ITEM_LIST_TYPE = new TypeReference<>() {
+    private static final TypeReference<Map<String, Integer>> SIZE_MAP_TYPE = new TypeReference<>() {
     };
 
     private Long id;
+    private String taskNo;
     private String printNo;
     private Long orderId;
     private String orderNo;
@@ -29,37 +32,62 @@ public class ShippingNoteRecordResponse {
     private List<ShippingNoteItemRequest> items;
     private LocalDateTime createdAt;
 
-    public static ShippingNoteRecordResponse from(ShippingNoteRecord record) {
-        ShippingNoteRecordResponse response = new ShippingNoteRecordResponse();
-        response.setId(record.getId());
-        response.setPrintNo(record.getPrintNo());
-        response.setOrderId(record.getOrderId());
-        response.setOrderNo(record.getOrderNo());
-        response.setCustomerName(record.getCustomerName());
-        response.setRecipientName(record.getRecipientName());
-        response.setShippingDate(record.getShippingDate());
-        response.setDevelopmentNos(record.getDevelopmentNos());
-        response.setItemCount(record.getItemCount());
-        response.setTotalPairs(record.getTotalPairs());
-        response.setTotalCartonCount(record.getTotalCartonCount());
-        response.setItems(parseItems(record.getDataJson()));
-        response.setCreatedAt(record.getCreatedAt());
+    public static ShippingNoteTaskResponse from(ShippingNoteTask task, List<ShippingNoteTaskItem> items) {
+        ShippingNoteTaskResponse response = new ShippingNoteTaskResponse();
+        response.setId(task.getId());
+        response.setTaskNo(task.getTaskNo());
+        response.setPrintNo(task.getTaskNo());
+        response.setOrderId(task.getOrderId());
+        response.setOrderNo(task.getOrderNo());
+        response.setCustomerName(task.getCustomerName());
+        response.setRecipientName(task.getRecipientName());
+        response.setShippingDate(task.getShippingDate());
+        response.setDevelopmentNos(task.getDevelopmentNos());
+        response.setItemCount(task.getItemCount());
+        response.setTotalPairs(task.getTotalPairs());
+        response.setTotalCartonCount(task.getTotalCartonCount());
+        response.setItems(items == null ? List.of() : items.stream()
+                .map(ShippingNoteTaskResponse::toItemResponse)
+                .toList());
+        response.setCreatedAt(task.getCreatedAt());
         return response;
     }
 
-    private static List<ShippingNoteItemRequest> parseItems(String json) {
+    private static ShippingNoteItemRequest toItemResponse(ShippingNoteTaskItem item) {
+        ShippingNoteItemRequest response = new ShippingNoteItemRequest();
+        response.setSourceDetailId(item.getSourceDetailId());
+        response.setOrderNo(item.getOrderNo());
+        response.setDevelopmentNo(item.getDevelopmentNo());
+        response.setCustomerName(item.getCustomerName());
+        response.setCustomerStyleNo(item.getCustomerStyleNo());
+        response.setEnglishColor(item.getEnglishColor());
+        response.setEnglishMaterial(item.getEnglishMaterial());
+        response.setColorMaterial(item.getColorMaterial());
+        response.setTrademark(item.getTrademark());
+        response.setSizeQuantities(parseSizeQuantities(item.getSizeQuantitiesJson()));
+        response.setPairCount(item.getPairCount());
+        response.setCartonCount(item.getCartonCount());
+        response.setTotalPairs(item.getTotalPairs());
+        response.setCartonStart(item.getCartonStart());
+        response.setCartonEnd(item.getCartonEnd());
+        return response;
+    }
+
+    private static Map<String, Integer> parseSizeQuantities(String json) {
         if (json == null || json.isBlank()) {
-            return Collections.emptyList();
+            return Collections.emptyMap();
         }
         try {
-            return OBJECT_MAPPER.readValue(json, ITEM_LIST_TYPE);
+            return OBJECT_MAPPER.readValue(json, SIZE_MAP_TYPE);
         } catch (Exception ex) {
-            return Collections.emptyList();
+            return Collections.emptyMap();
         }
     }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public String getTaskNo() { return taskNo; }
+    public void setTaskNo(String taskNo) { this.taskNo = taskNo; }
     public String getPrintNo() { return printNo; }
     public void setPrintNo(String printNo) { this.printNo = printNo; }
     public Long getOrderId() { return orderId; }
