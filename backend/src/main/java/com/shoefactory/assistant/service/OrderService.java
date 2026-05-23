@@ -47,4 +47,6 @@ public interface OrderService {
 
     // 加载某一行装箱单明细对应的鞋图。
     Path loadOrderPackingDetailImage(Long detailId);
+
+    Boolean removeOrderDetailById(Long id);
 }

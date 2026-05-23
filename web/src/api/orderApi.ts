@@ -132,6 +132,13 @@ export async function fetchOrderDetails(orderId: number) {
   return data || [];
 }
 
+/**
+ * 删除订单明细
+ */
+export async function deleteOrderDetail(detailId: number) {
+  await request.delete(`/orders/${detailId}/detail`);
+}
+
 export async function fetchOrderPackingDetails(orderId: number) {
   const { data } = await request.get<OrderPackingDetail[]>(`/orders/${orderId}/packing-details`);
   return data || [];

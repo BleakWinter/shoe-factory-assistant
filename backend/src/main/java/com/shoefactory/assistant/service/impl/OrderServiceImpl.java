@@ -608,6 +608,11 @@ public class OrderServiceImpl implements OrderService {
         return imagePath;
     }
 
+    @Override
+    public Boolean removeOrderDetailById(Long id) {
+        return orderRecordDetailMapper.deleteById(id) > 0;
+    }
+
     private OrderRecord readUploadSummary(StoredFile storedFile, String fileNo) {
         try {
             return orderExcelImportService.readOrderSummary(
