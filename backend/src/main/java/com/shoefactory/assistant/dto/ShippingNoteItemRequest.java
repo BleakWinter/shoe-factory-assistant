@@ -8,6 +8,7 @@ public class ShippingNoteItemRequest {
 
     @NotNull
     private Long sourceDetailId;
+    private Long orderId;
     private String orderNo;
     private String developmentNo;
     private String customerName;
@@ -25,6 +26,8 @@ public class ShippingNoteItemRequest {
 
     public Long getSourceDetailId() { return sourceDetailId; }
     public void setSourceDetailId(Long sourceDetailId) { this.sourceDetailId = sourceDetailId; }
+    public Long getOrderId() { return orderId; }
+    public void setOrderId(Long orderId) { this.orderId = orderId; }
     public String getOrderNo() { return orderNo; }
     public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
     public String getDevelopmentNo() { return developmentNo; }

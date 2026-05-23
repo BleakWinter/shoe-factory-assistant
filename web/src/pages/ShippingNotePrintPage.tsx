@@ -11,7 +11,7 @@ import { App, Button, Cascader, Form, Input, Modal, Select, Space, Table, Tag, T
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
-import { fetchOrderDetails, fetchOrders } from "../api/orderApi";
+import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import {
   createShippingNoteTask,
   fetchShippingNoteTask,
@@ -23,6 +23,7 @@ import ShippingNoteSheet, {
 } from "../components/ShippingNoteSheet";
 import type {
   DevelopmentNoOption,
+  OrderPackingDetail,
   OrderRecord,
   OrderRecordDetail,
   ShippingNoteItem,
@@ -30,6 +31,8 @@ import type {
   ShippingNoteTaskQueryParams,
 } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
+import { getMatchingPackingDetails } from "../utils/orderMatching";
+import { getPackingTotalPairs, sumSizeQuantities as sumPackingSizeQuantities } from "../utils/packingTotals";
 
 const defaultRecipient = "达为鞋业";
 
@@ -58,24 +61,26 @@ function sumSizeQuantities(value?: Record<string, number>) {
   return Object.values(value || {}).reduce((total, count) => total + (Number(count) > 0 ? Number(count) : 0), 0);
 }
 
-function buildShippingItem(detail: OrderRecordDetail, order?: OrderRecord): ShippingNoteItem {
-  const pairCount = detail.quantity || sumSizeQuantities(detail.sizeQuantities);
+function buildShippingItemFromPacking(packingDetail: OrderPackingDetail, order?: OrderRecord): ShippingNoteItem {
+  const perCartonPairs = sumPackingSizeQuantities(packingDetail.sizeQuantities);
+  const totalPairs = getPackingTotalPairs(packingDetail) || perCartonPairs;
   return {
-    sourceDetailId: detail.id,
+    sourceDetailId: packingDetail.id,
+    orderId: packingDetail.orderId,
     orderNo: order ? buildOrderLabel(order) : undefined,
-    developmentNo: detail.developmentNo,
-    customerName: pickFirstText(detail.customerName, order?.customerName),
-    customerStyleNo: detail.customerStyleNo,
-    englishColor: detail.englishColor,
-    englishMaterial: detail.englishMaterial,
-    colorMaterial: pickFirstText(detail.upperMaterial, detail.englishColor),
-    trademark: detail.trademark,
-    sizeQuantities: detail.sizeQuantities || {},
-    pairCount,
-    cartonCount: detail.cartonCount || 0,
-    totalPairs: pairCount,
-    cartonStart: detail.cartonStart,
-    cartonEnd: detail.cartonEnd,
+    developmentNo: packingDetail.companyStyleNo,
+    customerName: pickFirstText(packingDetail.customerName, order?.customerName),
+    customerStyleNo: packingDetail.customerStyleNo,
+    englishColor: packingDetail.customerColor,
+    englishMaterial: packingDetail.material,
+    colorMaterial: pickFirstText(packingDetail.material, packingDetail.customerColor),
+    trademark: packingDetail.trademark,
+    sizeQuantities: packingDetail.sizeQuantities || {},
+    pairCount: perCartonPairs || totalPairs,
+    cartonCount: packingDetail.cartonCount || 0,
+    totalPairs,
+    cartonStart: packingDetail.cartonStart,
+    cartonEnd: packingDetail.cartonEnd,
   };
 }
 
@@ -198,6 +203,7 @@ export default function ShippingNotePrintPage() {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
+  const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
   const [selectedDetailIds, setSelectedDetailIds] = useState<Key[]>([]);
   const [selectedPrintIds, setSelectedPrintIds] = useState<Key[]>([]);
   const [printItems, setPrintItems] = useState<ShippingNoteItem[]>([]);
@@ -262,17 +268,23 @@ export default function ShippingNotePrintPage() {
   const loadDetails = useCallback(async () => {
     if (!createOpen || !selectedOrderId) {
       setDetails([]);
+      setPackingDetails([]);
       return;
     }
     setDetailLoading(true);
     try {
-      const data = await fetchOrderDetails(selectedOrderId);
-      setDetails(data);
+      const [orderDetails, nextPackingDetails] = await Promise.all([
+        fetchOrderDetails(selectedOrderId),
+        fetchOrderPackingDetails(selectedOrderId),
+      ]);
+      setDetails(orderDetails);
+      setPackingDetails(nextPackingDetails);
       setSelectedDetailIds([]);
       setSelectedPrintIds([]);
       setDevelopmentNoPaths([]);
     } catch (error) {
       setDetails([]);
+      setPackingDetails([]);
       message.error(error instanceof Error ? error.message : "订单明细加载失败");
     } finally {
       setDetailLoading(false);
@@ -330,16 +342,27 @@ export default function ShippingNotePrintPage() {
   }, [details, selectedDevelopmentNos]);
 
   const addPrintItems = (items: OrderRecordDetail[]) => {
+    let unmatchedCount = 0;
     setPrintItems((current) => {
       const currentIdSet = new Set(current.map((item) => item.sourceDetailId));
-      const nextItems = items
-        .filter((item) => !currentIdSet.has(item.id))
-        .map((item) => buildShippingItem(item, selectedOrder));
+      const nextItems = items.flatMap((item) => {
+        const matchedPackingDetails = getMatchingPackingDetails(item, packingDetails);
+        if (matchedPackingDetails.length === 0) {
+          unmatchedCount += 1;
+          return [];
+        }
+        return matchedPackingDetails
+          .filter((packingDetail) => !currentIdSet.has(packingDetail.id))
+          .map((packingDetail) => buildShippingItemFromPacking(packingDetail, selectedOrder));
+      });
       if (nextItems.length === 0) {
         return current;
       }
       return [...current, ...nextItems];
     });
+    if (unmatchedCount > 0) {
+      message.warning(`${unmatchedCount} 条订单明细没有匹配到装箱单明细，未加入出货单`);
+    }
     setSelectedPrintIds([]);
   };
 
@@ -356,14 +379,13 @@ export default function ShippingNotePrintPage() {
   };
 
   const saveTask = async () => {
-    if (!selectedOrderId || printItems.length === 0) {
+    if (printItems.length === 0) {
       message.warning("请先选择要保存的出货单明细");
       return;
     }
     setSaving(true);
     try {
       await createShippingNoteTask({
-        orderId: selectedOrderId,
         recipientName,
         shippingDate,
         items: printItems,
@@ -414,7 +436,7 @@ export default function ShippingNotePrintPage() {
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
     () => [
-      { title: "订单号", width: 130, render: () => formatEmpty(selectedOrder ? buildOrderLabel(selectedOrder) : "") },
+      { title: "发票编号", width: 130, render: () => formatEmpty(selectedOrder ? buildOrderLabel(selectedOrder) : "") },
       { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
       { title: "客人型体", dataIndex: "customerStyleNo", width: 120, render: formatEmpty },
       { title: "英文颜色", dataIndex: "englishColor", width: 150, render: formatEmpty },
@@ -430,7 +452,7 @@ export default function ShippingNotePrintPage() {
 
   const printColumns = useMemo<ColumnsType<ShippingNoteItem>>(
     () => [
-      { title: "订单号", dataIndex: "orderNo", width: 130, render: formatEmpty },
+      { title: "发票编号", dataIndex: "orderNo", width: 130, render: formatEmpty },
       { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
       { title: "客人型体", dataIndex: "customerStyleNo", width: 120, render: formatEmpty },
       { title: "英文颜色", dataIndex: "englishColor", width: 150, render: formatEmpty },
@@ -447,7 +469,7 @@ export default function ShippingNotePrintPage() {
   const taskColumns = useMemo<ColumnsType<ShippingNoteTask>>(
     () => [
       { title: "任务编号", dataIndex: "taskNo", width: 160, fixed: "left", render: (_, record) => record.taskNo || record.printNo || "-" },
-      { title: "订单号", dataIndex: "orderNo", width: 150, render: formatEmpty },
+      { title: "发票编号", dataIndex: "invoiceNos", width: 220, render: renderDevelopmentNos },
       { title: "收货单位", dataIndex: "recipientName", width: 140, render: formatEmpty },
       { title: "出货日期", dataIndex: "shippingDate", width: 120, render: formatEmpty },
       { title: "开发编号", dataIndex: "developmentNos", minWidth: 220, render: renderDevelopmentNos },
@@ -538,8 +560,8 @@ export default function ShippingNotePrintPage() {
           layout="vertical"
           onFinish={() => void loadTasks(1, size)}
         >
-          <Form.Item label="订单号" name="orderNo">
-            <Input allowClear placeholder="输入订单号" />
+          <Form.Item label="发票编号" name="orderNo">
+            <Input allowClear placeholder="输入发票编号" />
           </Form.Item>
           <Form.Item label="开发编号" name="developmentNo">
             <Input allowClear placeholder="输入开发编号" />
@@ -612,11 +634,7 @@ export default function ShippingNotePrintPage() {
                     optionFilterProp="label"
                     value={selectedOrderId}
                     options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
-                    onChange={(value) => {
-                      setSelectedOrderId(value);
-                      setPrintItems([]);
-                      setSelectedPrintIds([]);
-                    }}
+                    onChange={(value) => setSelectedOrderId(value)}
                   />
                   <Cascader
                     allowClear

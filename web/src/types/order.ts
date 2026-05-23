@@ -218,6 +218,7 @@ export interface PrintPreview {
 
 export interface ShippingNoteItem {
   sourceDetailId: number;
+  orderId?: number;
   orderNo?: string;
   developmentNo?: string;
   customerName?: string;
@@ -238,11 +239,9 @@ export interface ShippingNoteTask {
   id: number;
   taskNo?: string;
   printNo: string;
-  orderId: number;
-  orderNo?: string;
-  customerName?: string;
   recipientName?: string;
   shippingDate?: string;
+  invoiceNos?: string;
   developmentNos?: string;
   itemCount?: number;
   totalPairs?: number;
@@ -254,7 +253,6 @@ export interface ShippingNoteTask {
 export type ShippingNoteRecord = ShippingNoteTask;
 
 export interface ShippingNoteCreatePayload {
-  orderId: number;
   recipientName?: string;
   shippingDate?: string;
   items: ShippingNoteItem[];

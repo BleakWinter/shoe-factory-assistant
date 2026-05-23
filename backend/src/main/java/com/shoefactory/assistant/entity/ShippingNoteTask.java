@@ -13,11 +13,9 @@ public class ShippingNoteTask {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String taskNo;
-    private Long orderId;
-    private String orderNo;
-    private String customerName;
     private String recipientName;
     private LocalDate shippingDate;
+    private String invoiceNos;
     private String developmentNos;
     private Integer itemCount;
     private Integer totalPairs;
@@ -29,16 +27,12 @@ public class ShippingNoteTask {
     public void setId(Long id) { this.id = id; }
     public String getTaskNo() { return taskNo; }
     public void setTaskNo(String taskNo) { this.taskNo = taskNo; }
-    public Long getOrderId() { return orderId; }
-    public void setOrderId(Long orderId) { this.orderId = orderId; }
-    public String getOrderNo() { return orderNo; }
-    public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
-    public String getCustomerName() { return customerName; }
-    public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getRecipientName() { return recipientName; }
     public void setRecipientName(String recipientName) { this.recipientName = recipientName; }
     public LocalDate getShippingDate() { return shippingDate; }
     public void setShippingDate(LocalDate shippingDate) { this.shippingDate = shippingDate; }
+    public String getInvoiceNos() { return invoiceNos; }
+    public void setInvoiceNos(String invoiceNos) { this.invoiceNos = invoiceNos; }
     public String getDevelopmentNos() { return developmentNos; }
     public void setDevelopmentNos(String developmentNos) { this.developmentNos = developmentNos; }
     public Integer getItemCount() { return itemCount; }
