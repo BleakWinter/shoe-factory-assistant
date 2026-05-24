@@ -36,6 +36,8 @@ import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.service.OrderService;
 import com.shoefactory.assistant.service.StyleConfigService;
 import com.shoefactory.assistant.util.FileStorageUtil;
+import com.shoefactory.assistant.util.PackingDetailMatchUtil;
+import com.shoefactory.assistant.util.PackingDetailFallbackUtil;
 import com.shoefactory.assistant.util.StoredFile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -587,9 +589,6 @@ public class OrderServiceImpl implements OrderService {
                     order,
                     FileStorageUtil.newBusinessNo("SF")
             );
-            if (packingDetails.isEmpty()) {
-                throw new BusinessException("装箱单未解析到明细行");
-            }
             for (OrderPackingDetail detail : packingDetails) {
                 detail.setOrderId(order.getId());
                 orderPackingDetailMapper.insert(detail);
@@ -631,7 +630,27 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public List<OrderPackingDetailResponse> listOrderPackingDetails(Long orderId) {
         getRequiredOrder(orderId);
-        return loadPackingDetails(orderId).stream()
+        List<OrderPackingDetail> packingDetails = loadPackingDetails(orderId);
+        if (packingDetails.isEmpty()) {
+            packingDetails = PackingDetailFallbackUtil.fromOrderDetails(loadDetails(orderId));
+        }
+        return packingDetails.stream()
+                .map(OrderPackingDetailResponse::from)
+                .toList();
+    }
+
+    @Override
+    public List<OrderPackingDetailResponse> listMatchingPackingDetails(Long detailId) {
+        OrderRecordDetail detail = orderRecordDetailMapper.selectById(detailId);
+        if (detail == null) {
+            throw new BusinessException("订单明细不存在: " + detailId);
+        }
+        List<OrderPackingDetail> packingDetails = loadPackingDetails(detail.getOrderId());
+        if (packingDetails.isEmpty()) {
+            return List.of(OrderPackingDetailResponse.from(PackingDetailFallbackUtil.fromOrderDetail(detail)));
+        }
+        return packingDetails.stream()
+                .filter(packingDetail -> PackingDetailMatchUtil.isMatchingPackingDetail(detail, packingDetail))
                 .map(OrderPackingDetailResponse::from)
                 .toList();
     }

@@ -8,6 +8,10 @@ export function sumSizeQuantities(value?: Record<string, number>) {
 }
 
 export function getPackingTotalPairs(detail: Pick<OrderPackingDetail, "sizeQuantities" | "cartonCount" | "totalPairs">) {
+  const totalPairs = Number(detail.totalPairs);
+  if (Number.isFinite(totalPairs) && totalPairs > 0) {
+    return totalPairs;
+  }
   const perCartonPairs = sumSizeQuantities(detail.sizeQuantities);
   const cartonCount = Number(detail.cartonCount);
   if (perCartonPairs > 0 && Number.isFinite(cartonCount) && cartonCount > 0) {

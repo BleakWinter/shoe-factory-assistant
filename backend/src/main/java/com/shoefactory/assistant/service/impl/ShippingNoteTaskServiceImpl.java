@@ -21,6 +21,8 @@ import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskMapper;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
 import com.shoefactory.assistant.util.FileStorageUtil;
+import com.shoefactory.assistant.util.PackingDetailFallbackUtil;
+import com.shoefactory.assistant.util.PackingDetailMatchUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,7 +81,8 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                 .map(item -> orderDetailMap.get(item.getSourceDetailId()))
                 .toList();
         Map<Long, OrderRecord> orderMap = loadOrdersByOrderDetails(selectedOrderDetails);
-        ensureOrderDetailsHaveMatchingPackingDetails(selectedOrderDetails);
+        Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderDetails(selectedOrderDetails);
+        ensureOrderDetailsHaveMatchingPackingDetails(selectedOrderDetails, packingDetailsByOrderId);
 
         LocalDateTime now = LocalDateTime.now();
         ShippingNoteTask task = new ShippingNoteTask();
@@ -291,17 +294,30 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         if (orderIds.isEmpty()) {
             return Map.of();
         }
-        return orderPackingDetailMapper.selectList(new LambdaQueryWrapper<OrderPackingDetail>()
+        Map<Long, List<OrderPackingDetail>> detailsByOrderId = orderPackingDetailMapper.selectList(new LambdaQueryWrapper<OrderPackingDetail>()
                         .in(OrderPackingDetail::getOrderId, orderIds)
                         .orderByAsc(OrderPackingDetail::getRowIndex)
                         .orderByAsc(OrderPackingDetail::getLineNo)
                         .orderByAsc(OrderPackingDetail::getId))
                 .stream()
                 .collect(Collectors.groupingBy(OrderPackingDetail::getOrderId));
+        Map<Long, List<OrderRecordDetail>> orderDetailsByOrderId = orderDetails.stream()
+                .filter(detail -> detail.getOrderId() != null)
+                .collect(Collectors.groupingBy(OrderRecordDetail::getOrderId));
+        for (Long orderId : orderIds) {
+            if (detailsByOrderId.getOrDefault(orderId, List.of()).isEmpty()) {
+                detailsByOrderId.put(orderId, PackingDetailFallbackUtil.fromOrderDetails(
+                        orderDetailsByOrderId.getOrDefault(orderId, List.of())
+                ));
+            }
+        }
+        return detailsByOrderId;
     }
 
-    private void ensureOrderDetailsHaveMatchingPackingDetails(List<OrderRecordDetail> orderDetails) {
-        Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderDetails(orderDetails);
+    private void ensureOrderDetailsHaveMatchingPackingDetails(
+            List<OrderRecordDetail> orderDetails,
+            Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId
+    ) {
         List<String> missingDetails = orderDetails.stream()
                 .filter(detail -> getMatchingPackingDetails(detail, packingDetailsByOrderId).isEmpty())
                 .map(this::describeOrderDetail)
@@ -323,7 +339,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         return packingDetailsByOrderId
                 .getOrDefault(orderDetail.getOrderId(), List.of())
                 .stream()
-                .filter(packingDetail -> isMatchingPackingDetail(orderDetail, packingDetail))
+                .filter(packingDetail -> PackingDetailMatchUtil.isMatchingPackingDetail(orderDetail, packingDetail))
                 .toList();
     }
 
@@ -388,12 +404,12 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
     }
 
     private int getPackingTotalPairs(OrderPackingDetail item, int sizeTotal) {
+        if (item.getTotalPairs() != null && item.getTotalPairs() > 0) {
+            return item.getTotalPairs();
+        }
         int cartonCount = nullToZero(item.getCartonCount());
         if (sizeTotal > 0 && cartonCount > 0) {
             return sizeTotal * cartonCount;
-        }
-        if (item.getTotalPairs() != null && item.getTotalPairs() > 0) {
-            return item.getTotalPairs();
         }
         return sizeTotal;
     }

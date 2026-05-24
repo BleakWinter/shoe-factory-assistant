@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
     fetchOrderDetails,
-    fetchOrderPackingDetails,
+    fetchMatchingPackingDetails,
     toAssetUrl,
     deleteOrderDetail,
 } from "../api/orderApi";
@@ -25,7 +25,6 @@ import type {
     OrderRecordDetail,
 } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
-import { getMatchingPackingDetails } from "../utils/orderMatching";
 import { getPackingTotalPairs } from "../utils/packingTotals";
 
 function renderSizeQuantities(value?: Record<string, number>) {
@@ -108,9 +107,12 @@ export default function OrderDetailPage() {
     const order = routeState?.order || null;
 
     const [details, setDetails] = useState<OrderRecordDetail[]>([]);
-    const [packingDetails, setPackingDetails] = useState<
-        OrderPackingDetail[]
-    >([]);
+    const [packingDetailsByDetailId, setPackingDetailsByDetailId] = useState<
+        Record<number, OrderPackingDetail[]>
+    >({});
+    const [packingLoadingIds, setPackingLoadingIds] = useState<Set<number>>(
+        () => new Set(),
+    );
     const [loading, setLoading] = useState(false);
 
     const loadDetailPage = useCallback(async () => {
@@ -122,17 +124,13 @@ export default function OrderDetailPage() {
         setLoading(true);
 
         try {
-            const [nextDetails, nextPackingDetails] = await Promise.all([
-                fetchOrderDetails(orderId),
-                fetchOrderPackingDetails(orderId),
-            ]);
-
-            setDetails(nextDetails);
-            setPackingDetails(nextPackingDetails);
+            setDetails(await fetchOrderDetails(orderId));
+            setPackingDetailsByDetailId({});
+            setPackingLoadingIds(new Set());
         } catch (error) {
             setDetails([]);
-            setPackingDetails([]);
-
+            setPackingDetailsByDetailId({});
+            setPackingLoadingIds(new Set());
             message.error(
                 error instanceof Error
                     ? error.message
@@ -166,6 +164,39 @@ export default function OrderDetailPage() {
             }
         },
         [loadDetailPage, message],
+    );
+
+    const loadMatchingPackingDetails = useCallback(
+        async (record: OrderRecordDetail) => {
+            if (packingDetailsByDetailId[record.id] || packingLoadingIds.has(record.id)) {
+                return;
+            }
+            setPackingLoadingIds((current) => new Set(current).add(record.id));
+            try {
+                const nextPackingDetails = await fetchMatchingPackingDetails(record.id);
+                setPackingDetailsByDetailId((current) => ({
+                    ...current,
+                    [record.id]: nextPackingDetails,
+                }));
+            } catch (error) {
+                setPackingDetailsByDetailId((current) => ({
+                    ...current,
+                    [record.id]: [],
+                }));
+                message.error(
+                    error instanceof Error
+                        ? error.message
+                        : "装箱单明细加载失败",
+                );
+            } finally {
+                setPackingLoadingIds((current) => {
+                    const next = new Set(current);
+                    next.delete(record.id);
+                    return next;
+                });
+            }
+        },
+        [message, packingDetailsByDetailId, packingLoadingIds],
     );
 
     const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
@@ -494,23 +525,11 @@ export default function OrderDetailPage() {
         [],
     );
 
-    const packingDetailsByDetailId = useMemo(() => {
-        const next = new Map<number, OrderPackingDetail[]>();
-
-        details.forEach((detail) => {
-            next.set(
-                detail.id,
-                getMatchingPackingDetails(detail, packingDetails),
-            );
-        });
-
-        return next;
-    }, [details, packingDetails]);
-
     const renderExpandedDetail = useCallback(
         (record: OrderRecordDetail) => {
             const matchedPackingDetails =
-                packingDetailsByDetailId.get(record.id) || [];
+                packingDetailsByDetailId[record.id] || [];
+            const packingLoading = packingLoadingIds.has(record.id);
 
             return (
                 <div className="order-packing-expanded">
@@ -528,6 +547,7 @@ export default function OrderDetailPage() {
 
                     <Table
                         rowKey="id"
+                        loading={packingLoading}
                         columns={packingDetailColumns}
                         dataSource={matchedPackingDetails}
                         pagination={false}
@@ -539,7 +559,7 @@ export default function OrderDetailPage() {
                 </div>
             );
         },
-        [packingDetailColumns, packingDetailsByDetailId],
+        [packingDetailColumns, packingDetailsByDetailId, packingLoadingIds],
     );
 
     return (
@@ -588,6 +608,11 @@ export default function OrderDetailPage() {
                     expandable={{
                         columnTitle: "装箱单",
                         expandedRowRender: renderExpandedDetail,
+                        onExpand: (expanded, record) => {
+                            if (expanded) {
+                                void loadMatchingPackingDetails(record);
+                            }
+                        },
                         fixed: "left",
                         rowExpandable: () => true,
                     }}

@@ -11,6 +11,7 @@ import com.shoefactory.assistant.enums.OrderExcelTemplate;
 import com.shoefactory.assistant.enums.OrderSourceType;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
+import com.shoefactory.assistant.util.ExcelCellImageUtil;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.StoredFile;
 import org.apache.poi.ooxml.POIXMLDocumentPart;
@@ -699,6 +700,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private Map<Integer, PictureInfo> extractPicturesByRow(Sheet sheet, int imageColumn, int firstDataRowIndex) {
         Map<Integer, PictureInfo> result = new LinkedHashMap<>();
+        if (imageColumn < 0) {
+            return result;
+        }
         if (!(sheet instanceof XSSFSheet xssfSheet)) {
             return result;
         }
@@ -777,6 +781,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         }
         Cell cell = row.getCell(colIndex);
         if (cell == null) {
+            return "";
+        }
+        if (ExcelCellImageUtil.findCellImageId(cell).isPresent()) {
             return "";
         }
         String value = formatter.formatCellValue(cell);

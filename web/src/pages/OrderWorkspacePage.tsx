@@ -224,15 +224,25 @@ export default function OrderWorkspacePage() {
     try {
       const next = type === "ORDER" ? await recognizeOrder(order.id) : await recognizePacking(order.id);
       updateOrderInList(next);
-      if (type === "ORDER") {
-        setDetails([]);
-      } else {
-        setPackingDetails([]);
-      }
       const failed = type === "ORDER"
         ? next.orderRecognitionStatus === FAILED_STATUS
         : next.packingRecognitionStatus === FAILED_STATUS;
       const errorMessage = type === "ORDER" ? next.orderErrorMessage : next.packingErrorMessage;
+      if (type === "ORDER") {
+        setDetails([]);
+      } else {
+        setPackingDetails([]);
+        if (!failed) {
+          setPackingDetailLoading(true);
+          try {
+            setPackingDetails(await fetchOrderPackingDetails(order.id));
+          } catch (detailError) {
+            message.warning(detailError instanceof Error ? detailError.message : "装箱单已识别，但明细刷新失败");
+          } finally {
+            setPackingDetailLoading(false);
+          }
+        }
+      }
       if (failed) {
         message.error(errorMessage || `${type === "ORDER" ? "订单" : "装箱单"}识别失败`);
       } else {

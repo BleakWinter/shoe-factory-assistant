@@ -471,6 +471,14 @@ export default function ShippingNotePrintPage() {
     }
   };
 
+  const ensureShippingItemsCanPrint = (items: ShippingNoteItem[]) => {
+    if (hasMissingPackingItems(items)) {
+      message.warning("出货单明细必须有对应的装箱单明细，不能预览打印");
+      return false;
+    }
+    return true;
+  };
+
   const openTaskDetail = async (task: ShippingNoteTask) => {
     const detail = await loadTaskDetail(task);
     if (detail) {
@@ -481,8 +489,7 @@ export default function ShippingNotePrintPage() {
   const openTaskPreview = async (task: ShippingNoteTask) => {
     const detail = await loadTaskDetail(task);
     if (detail) {
-      if (hasMissingPackingItems(detail.items || [])) {
-        message.warning("出货单明细必须有对应的装箱单明细，不能预览打印");
+      if (!ensureShippingItemsCanPrint(detail.items || [])) {
         return;
       }
       setPreviewTask(detail);
@@ -493,8 +500,7 @@ export default function ShippingNotePrintPage() {
     if (!previewTask) {
       return;
     }
-    if (hasMissingPackingItems(previewTask.items || [])) {
-      message.warning("出货单明细必须有对应的装箱单明细，不能打印");
+    if (!ensureShippingItemsCanPrint(previewTask.items || [])) {
       return;
     }
     applyShippingNotePrintSize();
@@ -878,7 +884,7 @@ export default function ShippingNotePrintPage() {
           <Button key="close" onClick={() => setPreviewTask(null)}>
             关闭
           </Button>,
-          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={printPreviewTask}>
+          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => void printPreviewTask()}>
             打印
           </Button>,
         ]}

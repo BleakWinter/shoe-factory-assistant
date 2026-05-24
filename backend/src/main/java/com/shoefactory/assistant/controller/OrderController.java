@@ -103,6 +103,11 @@ public class OrderController {
         return ApiResponse.ok(orderService.listOrderPackingDetails(id));
     }
 
+    @GetMapping("/details/{id}/packing-details")
+    public ApiResponse<List<OrderPackingDetailResponse>> listMatchingPackingDetails(@PathVariable Long id) {
+        return ApiResponse.ok(orderService.listMatchingPackingDetails(id));
+    }
+
     @GetMapping("/details/{id}/image")
     public ResponseEntity<UrlResource> orderDetailImage(@PathVariable Long id) throws MalformedURLException {
         // 图片是 Excel 内嵌图提取后的本地文件，这里以内联资源返回给浏览器预览。

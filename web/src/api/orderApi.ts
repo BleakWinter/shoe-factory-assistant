@@ -144,6 +144,11 @@ export async function fetchOrderPackingDetails(orderId: number) {
   return data || [];
 }
 
+export async function fetchMatchingPackingDetails(detailId: number) {
+  const { data } = await request.get<OrderPackingDetail[]>(`/orders/details/${detailId}/packing-details`);
+  return data || [];
+}
+
 export async function recognizeOrder(orderId: number) {
   const { data } = await request.post<OrderRecord>(`/orders/${orderId}/recognize-order`);
   return data;

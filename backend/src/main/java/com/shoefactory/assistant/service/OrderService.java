@@ -42,6 +42,9 @@ public interface OrderService {
     // 查询某个订单下的装箱单明细。
     List<OrderPackingDetailResponse> listOrderPackingDetails(Long orderId);
 
+    // 查询某一条订单明细匹配到的装箱单明细。
+    List<OrderPackingDetailResponse> listMatchingPackingDetails(Long detailId);
+
     // 加载某一行订单明细对应的鞋图。
     Path loadOrderDetailImage(Long detailId);
 

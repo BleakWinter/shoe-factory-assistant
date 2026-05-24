@@ -3,6 +3,7 @@ package com.shoefactory.assistant.service.impl;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.config.FileStorageProperties;
 import com.shoefactory.assistant.service.ExcelPdfService;
+import com.shoefactory.assistant.util.ExcelCellImageUtil;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.PrintSetup;
@@ -73,6 +74,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
             }
 
             Sheet sheet = workbook.getSheetAt(0);
+            ExcelCellImageUtil.clearCellImageFormulas(sheet);
             configurePrintSettings(workbook, sheet, sheetName);
             workbook.setActiveSheet(0);
             workbook.setSelectedTab(0);
@@ -193,11 +195,11 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
 
     private int findBusinessEndColumn(Sheet sheet, String sheetName) {
         String normalizedSheetName = normalizeSheetName(sheetName);
-        if ("订单".equals(normalizedSheetName)) {
+        if (normalizedSheetName.contains("订单")) {
             // 订单 PDF 只打印到“总数量”这一列。
             return findHeaderColumn(sheet, value -> value.contains("总数量"));
         }
-        if ("装箱单".equals(normalizedSheetName)) {
+        if (normalizedSheetName.contains("装箱单") || normalizedSheetName.contains("箱")) {
             // 装箱单 PDF 只打印到“CTN END / 结束箱号”这一列。
             return findHeaderColumn(sheet, value -> value.contains("CTNEND") || value.contains("结束箱号"));
         }

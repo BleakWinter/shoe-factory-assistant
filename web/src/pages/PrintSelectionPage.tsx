@@ -275,6 +275,10 @@ function findStyleConfig(
   );
 }
 
+function hasWeightConfig(config?: StyleConfig) {
+  return Number(config?.netWeightPerPair) > 0 && Number(config?.grossWeightPerPair) > 0;
+}
+
 function formatWeightKgs(value?: number) {
   if (!Number.isFinite(value) || Number(value) <= 0) {
     return "";
@@ -662,12 +666,43 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     [packingDetails],
   );
 
+  const hasRequiredWeightConfig = useCallback(
+    (detail: OrderRecordDetail) => {
+      if (printFormatTarget !== "outer-carton") {
+        return true;
+      }
+      const matchedPackingDetails = getMatchingPackingDetails(detail, packingDetails);
+      if (matchedPackingDetails.length === 0) {
+        return false;
+      }
+      return hasWeightConfig(findStyleConfig(styleConfigsByDevelopmentNo, detail, matchedPackingDetails[0]));
+    },
+    [packingDetails, printFormatTarget, styleConfigsByDevelopmentNo],
+  );
+
+  const ensurePrintItemsReady = () => {
+    if (printItems.length === 0) {
+      message.warning(`请先添加待打印${printTargetTitle}`);
+      return false;
+    }
+    if (printFormatTarget === "outer-carton" && printItems.some((item) => !hasWeightConfig(item.styleConfig))) {
+      message.warning("外箱贴标必须先维护净重/毛重，不能打印");
+      return false;
+    }
+    return true;
+  };
+
   const addPrintItems = (items: OrderRecordDetail[]) => {
     const printOrderNo = selectedOrder ? buildOrderLabel(selectedOrder) : selectedOrderId ? `订单 ${selectedOrderId}` : "-";
-    const eligibleItems = items.filter(hasMatchedPacking);
-    const blockedCount = items.length - eligibleItems.length;
-    if (blockedCount > 0) {
-      message.warning(`${blockedCount} 条订单明细没有对应的装箱单明细，不能移动到右侧`);
+    const missingPackingCount = items.filter((item) => !hasMatchedPacking(item)).length;
+    const missingWeightCount = items.filter((item) => hasMatchedPacking(item) && !hasRequiredWeightConfig(item)).length;
+    const eligibleItems = items.filter((item) => hasMatchedPacking(item) && hasRequiredWeightConfig(item));
+    const blockedMessages = [
+      missingPackingCount > 0 ? `${missingPackingCount} 条没有对应的装箱单明细` : "",
+      missingWeightCount > 0 ? `${missingWeightCount} 条缺少净重/毛重` : "",
+    ].filter(Boolean);
+    if (blockedMessages.length > 0) {
+      message.warning(`${blockedMessages.join("，")}，不能移动到右侧`);
     }
     if (eligibleItems.length === 0) {
       setSelectedPrintIds([]);
@@ -708,8 +743,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const openPrintFormatModal = () => {
-    if (printItems.length === 0) {
-      message.warning(`请先添加待打印${printTargetTitle}`);
+    if (!ensurePrintItemsReady()) {
       return;
     }
     setPreviewMode("print");
@@ -722,8 +756,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const printSelectedFormat = () => {
-    if (printItems.length === 0) {
-      message.warning(`请先添加待打印${printTargetTitle}`);
+    if (!ensurePrintItemsReady()) {
       return;
     }
     setFormatModalOpen(false);
@@ -732,8 +765,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const previewSelectedFormat = (format: PrintFormatKey = selectedPrintFormat) => {
-    if (previewMode === "print" && printItems.length === 0) {
-      message.warning(`请先添加待打印${printTargetTitle}`);
+    if (previewMode === "print" && !ensurePrintItemsReady()) {
       return;
     }
     setSelectedPrintFormat(format);
@@ -749,12 +781,12 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const leftRowSelection = {
     selectedRowKeys: leftSelectedRowKeys,
     getCheckboxProps: (record: OrderRecordDetail) => ({
-      disabled: printItemKeySet.has(record.id) || !hasMatchedPacking(record),
+      disabled: printItemKeySet.has(record.id) || !hasMatchedPacking(record) || !hasRequiredWeightConfig(record),
     }),
     onChange: (nextKeys: Key[]) => {
       setSelectedDetailIds(nextKeys.filter((key) => {
         const detail = details.find((item) => item.id === key);
-        return detail && !printItemKeySet.has(key) && hasMatchedPacking(detail);
+        return detail && !printItemKeySet.has(key) && hasMatchedPacking(detail) && hasRequiredWeightConfig(detail);
       }));
     },
     onSelectAll: (selected: boolean, _selectedRows: OrderRecordDetail[], changedRows: OrderRecordDetail[]) => {
@@ -764,7 +796,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           return Array.from(
             new Set<Key>([
               ...current,
-              ...changedRows.filter(hasMatchedPacking).map((item) => item.id),
+              ...changedRows.filter((item) => hasMatchedPacking(item) && hasRequiredWeightConfig(item)).map((item) => item.id),
             ]),
           );
         }
@@ -774,7 +806,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const leftRowClassName = (record: OrderRecordDetail) => {
-    return printItemKeySet.has(record.id) || !hasMatchedPacking(record)
+    return printItemKeySet.has(record.id) || !hasMatchedPacking(record) || !hasRequiredWeightConfig(record)
       ? "print-transfer-row-disabled"
       : "print-transfer-row-clickable";
   };
@@ -790,6 +822,10 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       }
       if (!hasMatchedPacking(record)) {
         message.warning("这条订单明细没有对应的装箱单明细，不能移动到右侧");
+        return;
+      }
+      if (!hasRequiredWeightConfig(record)) {
+        message.warning("这条订单明细缺少净重/毛重，不能移动到右侧");
         return;
       }
       setSelectedDetailIds((current) =>
