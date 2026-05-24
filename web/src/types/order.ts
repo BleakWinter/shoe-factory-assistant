@@ -233,6 +233,7 @@ export interface ShippingNoteItem {
   totalPairs?: number;
   cartonStart?: string;
   cartonEnd?: string;
+  packingItems?: ShippingNoteItem[];
 }
 
 export interface ShippingNoteTask {

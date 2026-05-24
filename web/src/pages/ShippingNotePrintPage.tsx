@@ -84,6 +84,34 @@ function buildShippingItemFromPacking(packingDetail: OrderPackingDetail, order?:
   };
 }
 
+function buildShippingItemFromOrderDetail(
+  detail: OrderRecordDetail,
+  order: OrderRecord | undefined,
+  packingDetails: OrderPackingDetail[],
+): ShippingNoteItem {
+  const pairCount = detail.quantity || sumSizeQuantities(detail.sizeQuantities);
+  return {
+    sourceDetailId: detail.id,
+    orderId: detail.orderId,
+    orderNo: order ? buildOrderLabel(order) : detail.customerOrderNo,
+    developmentNo: detail.developmentNo,
+    customerName: pickFirstText(detail.customerName, order?.customerName),
+    sizeQuantities: detail.sizeQuantities || {},
+    pairCount,
+    cartonCount: detail.cartonCount || 0,
+    totalPairs: pairCount,
+    cartonStart: detail.cartonStart,
+    cartonEnd: detail.cartonEnd,
+    packingItems: getMatchingPackingDetails(detail, packingDetails).map((packingDetail) =>
+      buildShippingItemFromPacking(packingDetail, order),
+    ),
+  };
+}
+
+function getTaskPackingItems(task?: ShippingNoteTask | null) {
+  return (task?.items || []).flatMap((item) => item.packingItems || []);
+}
+
 function renderSizeQuantities(value?: Record<string, number>) {
   const entries = Object.entries(value || {})
     .filter(([, count]) => Number(count) > 0)
@@ -222,6 +250,9 @@ export default function ShippingNotePrintPage() {
     () => orders.find((order) => order.id === selectedOrderId),
     [orders, selectedOrderId],
   );
+  const previewItems = useMemo(() => getTaskPackingItems(previewTask), [previewTask]);
+  const previewTotalPairs = useMemo(() => sumShippingNotePairs(previewItems), [previewItems]);
+  const previewTotalCartonCount = useMemo(() => sumShippingNoteCartons(previewItems), [previewItems]);
 
   const loadTasks = useCallback(
     async (nextPage = page, nextSize = size) => {
@@ -342,27 +373,16 @@ export default function ShippingNotePrintPage() {
   }, [details, selectedDevelopmentNos]);
 
   const addPrintItems = (items: OrderRecordDetail[]) => {
-    let unmatchedCount = 0;
     setPrintItems((current) => {
       const currentIdSet = new Set(current.map((item) => item.sourceDetailId));
-      const nextItems = items.flatMap((item) => {
-        const matchedPackingDetails = getMatchingPackingDetails(item, packingDetails);
-        if (matchedPackingDetails.length === 0) {
-          unmatchedCount += 1;
-          return [];
-        }
-        return matchedPackingDetails
-          .filter((packingDetail) => !currentIdSet.has(packingDetail.id))
-          .map((packingDetail) => buildShippingItemFromPacking(packingDetail, selectedOrder));
-      });
+      const nextItems = items
+        .filter((item) => !currentIdSet.has(item.id))
+        .map((item) => buildShippingItemFromOrderDetail(item, selectedOrder, packingDetails));
       if (nextItems.length === 0) {
         return current;
       }
       return [...current, ...nextItems];
     });
-    if (unmatchedCount > 0) {
-      message.warning(`${unmatchedCount} 条订单明细没有匹配到装箱单明细，未加入出货单`);
-    }
     setSelectedPrintIds([]);
   };
 
@@ -388,7 +408,10 @@ export default function ShippingNotePrintPage() {
       await createShippingNoteTask({
         recipientName,
         shippingDate,
-        items: printItems,
+        items: printItems.map((item) => ({
+          sourceDetailId: item.sourceDetailId,
+          orderId: item.orderId,
+        })),
       });
       message.success("出货单任务已保存");
       closeCreateModal();
@@ -422,6 +445,9 @@ export default function ShippingNotePrintPage() {
   const openTaskPreview = async (task: ShippingNoteTask) => {
     const detail = await loadTaskDetail(task);
     if (detail) {
+      if (getTaskPackingItems(detail).length === 0) {
+        message.warning("所选订单明细暂未匹配到装箱单明细，预览内容为空");
+      }
       setPreviewTask(detail);
     }
   };
@@ -438,9 +464,6 @@ export default function ShippingNotePrintPage() {
     () => [
       { title: "发票编号", width: 130, render: () => formatEmpty(selectedOrder ? buildOrderLabel(selectedOrder) : "") },
       { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
-      { title: "客人型体", dataIndex: "customerStyleNo", width: 120, render: formatEmpty },
-      { title: "英文颜色", dataIndex: "englishColor", width: 150, render: formatEmpty },
-      { title: "英文材质", dataIndex: "englishMaterial", width: 140, render: formatEmpty },
       { title: "尺码数量", dataIndex: "sizeQuantities", width: 220, render: renderSizeQuantities },
       { title: "双数", dataIndex: "quantity", width: 80, align: "right", render: formatEmpty },
       { title: "件数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
@@ -454,11 +477,22 @@ export default function ShippingNotePrintPage() {
     () => [
       { title: "发票编号", dataIndex: "orderNo", width: 130, render: formatEmpty },
       { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
-      { title: "客人型体", dataIndex: "customerStyleNo", width: 120, render: formatEmpty },
-      { title: "英文颜色", dataIndex: "englishColor", width: 150, render: formatEmpty },
-      { title: "英文材质", dataIndex: "englishMaterial", width: 140, render: formatEmpty },
       { title: "尺码数量", dataIndex: "sizeQuantities", width: 220, render: renderSizeQuantities },
       { title: "双数", dataIndex: "pairCount", width: 80, align: "right", render: formatEmpty },
+      { title: "件数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
+      { title: "开始箱号", dataIndex: "cartonStart", width: 110, render: formatEmpty },
+      { title: "结束箱号", dataIndex: "cartonEnd", width: 110, render: formatEmpty },
+    ],
+    [],
+  );
+
+  const packingColumns = useMemo<ColumnsType<ShippingNoteItem>>(
+    () => [
+      { title: "发票编号", dataIndex: "orderNo", width: 130, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
+      { title: "颜色/材质", dataIndex: "colorMaterial", width: 180, render: formatEmpty },
+      { title: "尺码数量", dataIndex: "sizeQuantities", width: 220, render: renderSizeQuantities },
+      { title: "双数", dataIndex: "totalPairs", width: 80, align: "right", render: formatEmpty },
       { title: "件数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
       { title: "开始箱号", dataIndex: "cartonStart", width: 110, render: formatEmpty },
       { title: "结束箱号", dataIndex: "cartonEnd", width: 110, render: formatEmpty },
@@ -505,6 +539,23 @@ export default function ShippingNotePrintPage() {
     ],
     [taskActionLoadingId],
   );
+
+  const renderPackingItems = (record: ShippingNoteItem) => (
+    <Table
+      rowKey={(item, index) => `${item.sourceDetailId}-${index}`}
+      columns={packingColumns}
+      dataSource={record.packingItems || []}
+      pagination={false}
+      scroll={{ x: 1050 }}
+      size="small"
+      className="data-table"
+    />
+  );
+
+  const packingExpandable = {
+    expandedRowRender: renderPackingItems,
+    rowExpandable: (record: ShippingNoteItem) => Boolean(record.packingItems?.length),
+  };
 
   const leftRowSelection = {
     selectedRowKeys: leftSelectedRowKeys,
@@ -662,7 +713,7 @@ export default function ShippingNotePrintPage() {
               columns={detailColumns}
               dataSource={filteredDetails}
               pagination={{ pageSize: 10, showSizeChanger: false }}
-              scroll={{ x: 1370 }}
+              scroll={{ x: 920 }}
               className="data-table"
               rowClassName={leftRowClassName}
               rowSelection={leftRowSelection}
@@ -698,8 +749,9 @@ export default function ShippingNotePrintPage() {
               columns={printColumns}
               dataSource={printItems}
               pagination={{ pageSize: 10, showSizeChanger: false }}
-              scroll={{ x: 1290 }}
+              scroll={{ x: 920 }}
               className="data-table"
+              expandable={packingExpandable}
               rowSelection={{
                 selectedRowKeys: selectedPrintIds,
                 onChange: setSelectedPrintIds,
@@ -726,8 +778,9 @@ export default function ShippingNotePrintPage() {
           columns={printColumns}
           dataSource={detailTask?.items || []}
           pagination={{ pageSize: 10, showSizeChanger: false }}
-          scroll={{ x: 1290 }}
+          scroll={{ x: 920 }}
           className="data-table"
+          expandable={packingExpandable}
         />
       </Modal>
 
@@ -751,9 +804,9 @@ export default function ShippingNotePrintPage() {
             <ShippingNoteSheet
               recipientName={previewTask.recipientName}
               shippingDate={previewTask.shippingDate}
-              items={previewTask.items || []}
-              totalPairs={previewTask.totalPairs}
-              totalCartonCount={previewTask.totalCartonCount}
+              items={previewItems}
+              totalPairs={previewTotalPairs}
+              totalCartonCount={previewTotalCartonCount}
             />
           </div>
         ) : null}
@@ -764,9 +817,9 @@ export default function ShippingNotePrintPage() {
           <ShippingNoteSheet
             recipientName={previewTask.recipientName}
             shippingDate={previewTask.shippingDate}
-            items={previewTask.items || []}
-            totalPairs={previewTask.totalPairs}
-            totalCartonCount={previewTask.totalCartonCount}
+            items={previewItems}
+            totalPairs={previewTotalPairs}
+            totalCartonCount={previewTotalCartonCount}
           />
         ) : null}
       </div>

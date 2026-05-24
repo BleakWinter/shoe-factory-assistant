@@ -2,6 +2,7 @@ package com.shoefactory.assistant.dto;
 
 import jakarta.validation.constraints.NotNull;
 
+import java.util.List;
 import java.util.Map;
 
 public class ShippingNoteItemRequest {
@@ -23,6 +24,7 @@ public class ShippingNoteItemRequest {
     private Integer totalPairs;
     private String cartonStart;
     private String cartonEnd;
+    private List<ShippingNoteItemRequest> packingItems;
 
     public Long getSourceDetailId() { return sourceDetailId; }
     public void setSourceDetailId(Long sourceDetailId) { this.sourceDetailId = sourceDetailId; }
@@ -56,4 +58,6 @@ public class ShippingNoteItemRequest {
     public void setCartonStart(String cartonStart) { this.cartonStart = cartonStart; }
     public String getCartonEnd() { return cartonEnd; }
     public void setCartonEnd(String cartonEnd) { this.cartonEnd = cartonEnd; }
+    public List<ShippingNoteItemRequest> getPackingItems() { return packingItems; }
+    public void setPackingItems(List<ShippingNoteItemRequest> packingItems) { this.packingItems = packingItems; }
 }

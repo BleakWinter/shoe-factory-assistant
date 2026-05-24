@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS `shipping_note_task_item` (
   `task_id` bigint NOT NULL COMMENT '出货单任务ID',
   `line_no` int NOT NULL DEFAULT 0 COMMENT '任务内行号',
   `order_id` bigint DEFAULT NULL COMMENT '订单主表ID',
-  `source_detail_id` bigint NOT NULL COMMENT '来源装箱单明细ID',
+  `source_detail_id` bigint NOT NULL COMMENT '来源订单明细ID',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
 

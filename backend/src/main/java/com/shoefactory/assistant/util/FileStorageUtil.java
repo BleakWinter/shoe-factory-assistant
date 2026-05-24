@@ -11,36 +11,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.UUID;
 
 @Component
 public class FileStorageUtil {
 
-    // PDF 预览按日期分目录保存，BASIC_ISO_DATE 会生成类似 20260513 的目录名。
-    private static final DateTimeFormatter DATE_DIR_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
-
-    // rootPath 存系统兜底文件；订单原稿、图片和 PDF 会走专门的归档目录。
+    // rootPath 是归档根目录，下面按 年份/月/类型 保存文件。
     private final Path rootPath;
-    private final Path orderArchiveRootPath;
-    private final Path orderImageArchiveRootPath;
-    private final Path pdfArchiveRootPath;
-    private final Path printImageSwapPath;
-    private final FileStorageProperties properties;
 
     public FileStorageUtil(FileStorageProperties properties) {
-        this.properties = properties;
         this.rootPath = Paths.get(properties.getRootPath()).toAbsolutePath().normalize();
-        this.orderArchiveRootPath = archiveRootPath(properties);
-        this.orderImageArchiveRootPath = imageArchiveRootPath(properties);
-        this.pdfArchiveRootPath = pdfArchiveRootPath(properties);
-        this.printImageSwapPath = printImageSwapPath(properties);
         createDirectories(this.rootPath);
-        createDirectories(this.orderArchiveRootPath);
-        createDirectories(this.orderImageArchiveRootPath);
-        createDirectories(this.pdfArchiveRootPath);
-        createDirectories(this.printImageSwapPath);
     }
 
     public StoredFile saveOriginal(MultipartFile file, String fileNo) {
@@ -51,13 +33,8 @@ public class FileStorageUtil {
         String extension = extractExtension(originalName);
         LocalDate today = LocalDate.now();
 
-        // 原始 Excel 归档格式：D:/清化资料/年份/客户/月。
-        Path directory = orderArchiveRootPath
-                .resolve(String.valueOf(today.getYear()))
-                .resolve(cleanDirectoryName(properties.getOrderArchiveCustomer()))
-                .resolve(today.getMonthValue() + "月")
-                .toAbsolutePath()
-                .normalize();
+        // 原始 Excel 归档格式：根目录/年份/月/original。
+        Path directory = archiveDirectory(today, "original");
         createDirectories(directory);
         Path target = uniqueOriginalPath(directory, originalName, fileNo, extension);
         ensureAllowedPath(target);
@@ -74,12 +51,7 @@ public class FileStorageUtil {
         String safeOriginalName = cleanOriginalName(originalName);
         String extension = extractExtension(safeOriginalName);
         LocalDate archiveDate = date == null ? LocalDate.now() : date;
-        Path directory = orderArchiveRootPath
-                .resolve(String.valueOf(archiveDate.getYear()))
-                .resolve(cleanDirectoryName(properties.getOrderArchiveCustomer()))
-                .resolve(archiveDate.getMonthValue() + "月")
-                .toAbsolutePath()
-                .normalize();
+        Path directory = archiveDirectory(archiveDate, "original");
         createDirectories(directory);
         Path target = uniqueOriginalPath(directory, safeOriginalName, fileNo, extension);
         ensureAllowedPath(target);
@@ -87,15 +59,10 @@ public class FileStorageUtil {
     }
 
     public Path archiveOrderDetailImagePath(String sourceFileName, String fileNo, String orderNo, int rowIndex, LocalDate date) {
-        // 旧图片迁移时使用：按订单号和行号生成稳定图片路径。
+        // 旧图片迁移时使用：按文件编号和行号生成稳定图片路径。
         String extension = extensionOrDefault(sourceFileName, "png");
         LocalDate archiveDate = date == null ? LocalDate.now() : date;
-        Path directory = orderImageArchiveRootPath
-                .resolve(String.valueOf(archiveDate.getYear()))
-                .resolve(archiveDate.getMonthValue() + "月")
-                .resolve(cleanDirectoryName(orderNo == null || orderNo.isBlank() ? fileNo : orderNo))
-                .toAbsolutePath()
-                .normalize();
+        Path directory = archiveDirectory(archiveDate, "images");
         createDirectories(directory);
         Path target = directory.resolve(fileNo + "-r" + rowIndex + "." + extension).normalize();
         ensureAllowedPath(target);
@@ -119,11 +86,8 @@ public class FileStorageUtil {
 
     public Path allocatePreviewPdfPath(String fileNo, String suffix) {
         String safeSuffix = suffix == null || suffix.isBlank() ? "" : "-" + suffix.toLowerCase(Locale.ROOT);
-        // PDF 预览是可再生成文件，统一归档到 D:/清化资料/pdf/日期 下。
-        Path directory = pdfArchiveRootPath
-                .resolve(LocalDate.now().format(DATE_DIR_FORMATTER))
-                .toAbsolutePath()
-                .normalize();
+        // PDF 预览是可再生成文件，统一归档到 根目录/年份/月/pdf 下。
+        Path directory = archiveDirectory(LocalDate.now(), "pdf");
         createDirectories(directory);
         Path target = directory.resolve(fileNo + safeSuffix + ".pdf").normalize();
         ensureAllowedPath(target);
@@ -135,13 +99,8 @@ public class FileStorageUtil {
                 ? FileStorageUtil.newBusinessNo("ORDER")
                 : orderNo);
         String suffix = printType == null || printType.isBlank() ? "preview" : printType.toLowerCase(Locale.ROOT);
-        // 固定保存为 D:/清化资料/pdf/年份/月/订单号/订单号-order.pdf。
-        Path directory = pdfArchiveRootPath
-                .resolve(String.valueOf(LocalDate.now().getYear()))
-                .resolve(LocalDate.now().getMonthValue() + "月")
-                .resolve(safeOrderNo)
-                .toAbsolutePath()
-                .normalize();
+        // 固定保存为 根目录/年份/月/pdf/订单号-order.pdf。
+        Path directory = archiveDirectory(LocalDate.now(), "pdf");
         createDirectories(directory);
         Path target = directory.resolve(safeOrderNo + "-" + suffix + ".pdf").normalize();
         ensureAllowedPath(target);
@@ -155,13 +114,8 @@ public class FileStorageUtil {
         String safeExtension = extension == null || extension.isBlank() ? "png" : extension.toLowerCase(Locale.ROOT);
         LocalDate today = LocalDate.now();
 
-        // Excel 内嵌图片归档格式：D:/清化资料/image/年份/月/订单号。
-        Path directory = orderImageArchiveRootPath
-                .resolve(String.valueOf(today.getYear()))
-                .resolve(today.getMonthValue() + "月")
-                .resolve(cleanDirectoryName(orderNo == null || orderNo.isBlank() ? fileNo : orderNo))
-                .toAbsolutePath()
-                .normalize();
+        // Excel 内嵌图片归档格式：根目录/年份/月/images。
+        Path directory = archiveDirectory(today, "images");
         createDirectories(directory);
         Path target = directory.resolve(fileNo + "-r" + rowIndex + "." + safeExtension).normalize();
         ensureAllowedPath(target);
@@ -184,11 +138,11 @@ public class FileStorageUtil {
     }
 
     public boolean isArchivedOriginalPath(Path path) {
-        return path != null && path.toAbsolutePath().normalize().startsWith(orderArchiveRootPath);
+        return path != null && path.toAbsolutePath().normalize().startsWith(rootPath);
     }
 
     public boolean isArchivedOrderImagePath(Path path) {
-        return path != null && path.toAbsolutePath().normalize().startsWith(orderImageArchiveRootPath);
+        return path != null && path.toAbsolutePath().normalize().startsWith(rootPath);
     }
 
     public void copyPdf(Path source, Path target) {
@@ -231,40 +185,14 @@ public class FileStorageUtil {
         return prefix + millis + random;
     }
 
-    private Path archiveRootPath(FileStorageProperties properties) {
-        // 没有配置清化资料目录时，退回到 rootPath/original，方便开发环境直接运行。
-        String archiveRoot = properties.getOrderArchiveRootPath();
-        if (archiveRoot == null || archiveRoot.isBlank()) {
-            return rootPath.resolve("original").toAbsolutePath().normalize();
-        }
-        return Paths.get(archiveRoot).toAbsolutePath().normalize();
-    }
-
-    private Path imageArchiveRootPath(FileStorageProperties properties) {
-        // 没有配置图片归档目录时，退回到 rootPath/images。
-        String imageArchiveRoot = properties.getOrderImageArchiveRootPath();
-        if (imageArchiveRoot == null || imageArchiveRoot.isBlank()) {
-            return rootPath.resolve("images").toAbsolutePath().normalize();
-        }
-        return Paths.get(imageArchiveRoot).toAbsolutePath().normalize();
-    }
-
-    private Path pdfArchiveRootPath(FileStorageProperties properties) {
-        // 没有配置 PDF 归档目录时，退回到 rootPath/pdf。
-        String pdfArchiveRoot = properties.getPdfArchiveRootPath();
-        if (pdfArchiveRoot == null || pdfArchiveRoot.isBlank()) {
-            return rootPath.resolve("pdf").toAbsolutePath().normalize();
-        }
-        return Paths.get(pdfArchiveRoot).toAbsolutePath().normalize();
-    }
-
-    private Path printImageSwapPath(FileStorageProperties properties) {
-        // 预留给后续“手动替换打印图片”功能，目前只参与路径白名单。
-        String swapPath = properties.getPrintImageSwapPath();
-        if (swapPath == null || swapPath.isBlank()) {
-            return orderImageArchiveRootPath.resolve("swap").toAbsolutePath().normalize();
-        }
-        return Paths.get(swapPath).toAbsolutePath().normalize();
+    private Path archiveDirectory(LocalDate date, String type) {
+        LocalDate archiveDate = date == null ? LocalDate.now() : date;
+        return rootPath
+                .resolve(String.valueOf(archiveDate.getYear()))
+                .resolve(archiveDate.getMonthValue() + "月")
+                .resolve(type)
+                .toAbsolutePath()
+                .normalize();
     }
 
     private Path uniqueOriginalPath(Path directory, String originalName, String fileNo, String extension) {
@@ -297,12 +225,8 @@ public class FileStorageUtil {
 
     private void ensureAllowedPath(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
-        // 只允许访问系统配置的几个目录，避免接口读取任意本机文件。
-        if (!normalized.startsWith(rootPath)
-                && !normalized.startsWith(orderArchiveRootPath)
-                && !normalized.startsWith(orderImageArchiveRootPath)
-                && !normalized.startsWith(pdfArchiveRootPath)
-                && !normalized.startsWith(printImageSwapPath)) {
+        // 只允许访问系统配置的归档根目录，避免接口读取任意本机文件。
+        if (!normalized.startsWith(rootPath)) {
             throw new BusinessException("非法文件路径: " + path);
         }
     }

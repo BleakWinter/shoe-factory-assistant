@@ -1,0 +1,17 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend/Dockerfile
+    container_name: shoe-factory-backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      APP_FILE_STORAGE_ROOT_PATH: /data/shoe-factory-assistant/files
+      APP_FILE_STORAGE_LIBRE_OFFICE_COMMAND: soffice
+      APP_FILE_STORAGE_LIBRE_OFFICE_TIMEOUT_SECONDS: "120"
+      TZ: Asia/Shanghai
+    volumes:
+      - ../data/files:/data/shoe-factory-assistant/files
+    ports:
+      - "8080:8080"

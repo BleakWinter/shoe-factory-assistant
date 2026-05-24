@@ -21,4 +21,3 @@ mybatis-plus:
 app:
   file-storage:
     root-path: ${user.home}/shoe-factory-assistant/files
-    preview-url-prefix: /api/print-previews

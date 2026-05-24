@@ -7,10 +7,6 @@ spring:
 
 app:
   file-storage:
-    order-archive-root-path: D:/清化资料
-    order-archive-customer: 达维
-    order-image-archive-root-path: D:/清化资料/image
-    pdf-archive-root-path: D:/清化资料/pdf
-    print-image-swap-path: D:/清化资料/image/swap
+    root-path: /data/shoe-factory-assistant/files
     libre-office-command: soffice
     libre-office-timeout-seconds: 120
