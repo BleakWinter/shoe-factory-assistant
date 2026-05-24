@@ -890,13 +890,18 @@ a {
   background: #eef2f6;
 }
 
+.shipping-note-inline-preview {
+  margin-top: 12px;
+  border: 1px solid #d8dee8;
+}
+
 .shipping-note-print-root {
   display: none;
 }
 
 .shipping-note-sheet {
-  width: calc(297mm*0.61);
-  min-height: calc(210mm*0.61);
+  --shipping-note-sheet-width: 285mm;
+  width: var(--shipping-note-sheet-width);
   padding: 0;
   color: #000000;
   background: #ffffff;
@@ -905,19 +910,18 @@ a {
 }
 
 .shipping-note-table {
-  width: calc(297mm*0.61);
-  min-height: calc(210mm*0.61);
+  width: var(--shipping-note-sheet-width);
   table-layout: fixed;
   border-collapse: collapse;
   color: #000000;
   font-family: "Microsoft YaHei", SimSun, Arial, sans-serif;
   background: #ffffff;
-  border: 2px solid #0000ff;
+  border: 1px solid #000000;
 }
 
 .shipping-note-table td {
-  height: 9mm;
-  padding: 1mm 1.2mm;
+  height: 6.8mm;
+  padding: 0.55mm 0.8mm;
   color: #000000;
   font-size: 11px;
   line-height: 1.15;
@@ -928,11 +932,16 @@ a {
 }
 
 .shipping-note-title-row td {
-  height: 8mm;
+  height: 7mm;
   color: #ff0000;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   text-align: center;
+}
+
+.shipping-note-meta-row td {
+  height: 5.8mm;
+  border-top: 0;
 }
 
 .shipping-note-meta-row td,
@@ -943,13 +952,13 @@ a {
 }
 
 .shipping-note-header-row td {
-  height: 10mm;
-  font-size: 12px;
+  height: 6.6mm;
+  font-size: 11px;
   font-weight: 500;
 }
 
 .shipping-note-fixed-header td {
-  height: 8mm;
+  height: 6.6mm;
 }
 
 .shipping-note-size-header {
@@ -957,12 +966,12 @@ a {
 }
 
 .shipping-note-detail-row td {
-  height: 10mm;
-  font-size: 10px;
+  height: 6.8mm;
+  font-size: 9.5px;
 }
 
 .shipping-note-footer-row td {
-  height: 8mm;
+  height: 7.4mm;
 }
 
 .shipping-note-footer-row td:nth-last-child(-n + 5) {
@@ -1569,9 +1578,9 @@ a {
   }
 
   .shipping-note-sheet {
-    width: 287mm;
-    min-width: 287mm;
-    margin: 6mm 5mm 0;
+    width: var(--shipping-note-sheet-width);
+    min-width: var(--shipping-note-sheet-width);
+    margin: 10mm 6mm 0;
     box-shadow: none;
   }
 }

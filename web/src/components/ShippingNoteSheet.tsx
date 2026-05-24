@@ -2,7 +2,7 @@ import type { ShippingNoteItem } from "../types/order";
 
 const usSizes = ["5", "5.5", "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10", "11", "12"];
 const euGroups = [
-    { label: "", span: 1 },
+  { label: "", span: 1 },
   { label: "35", span: 1 },
   { label: "", span: 1 },
   { label: "36", span: 1 },
@@ -17,25 +17,25 @@ const euGroups = [
   { label: "", span: 1 },
 ];
 const colWidths = [
-  46, // 订单号
-  52, // 开发编号
-  38, // 客人
-  42, // 客人型体
-  58, // 英文颜色
-  58, // 英文材质
-  52, // 颜色/材质
-  32, // 商标
+  88, // 订单号
+  77, // 开发编号
+  55, // 客人
+  55, // 客人型体
+  71, // 英文颜色
+  70, // 英文材质
+  63, // 颜色/材质
+  39, // 商标
 
   // 尺码列
-  24, 24, 24, 24, 24, 24, 24,
-  24, 24, 24, 24, 24, 24,
+  28, 28, 28, 28, 28, 28, 28,
+  28, 28, 28, 28, 28, 28,
 
   // 后面统计列
-  34, // 双数
-  32, // 件数
-  36, // 合计
-  42, // 开始箱号
-  42, // 结束箱号
+  29, // 双数
+  37, // 件数
+  37, // 合计
+  44, // 开始箱号
+  52, // 结束箱号
 ];
 
 export interface ShippingNoteSheetProps {
@@ -69,7 +69,11 @@ function formatDate(value?: string) {
   if (!value) {
     return "";
   }
-  return value.replace(/-/g, "/");
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) {
+    return value.replace(/-/g, "/");
+  }
+  return `${year}/${Number(month)}/${Number(day)}`;
 }
 
 function text(value?: string | number) {
@@ -117,9 +121,12 @@ export default function ShippingNoteSheet({
             <td colSpan={26}>清化鞋厂{getDisplayYear(shippingDate)}年出货单</td>
           </tr>
           <tr className="shipping-note-meta-row">
-            <td colSpan={4}>收货单位：{recipientName}</td>
-            <td colSpan={4}>日期：{formatDate(shippingDate)}</td>
-            <td colSpan={18} />
+            <td colSpan={2}>收货单位:{recipientName}</td>
+            <td />
+            <td />
+            <td />
+            <td colSpan={4}>日期:{formatDate(shippingDate)}</td>
+            <td colSpan={17} />
           </tr>
           <tr className="shipping-note-header-row shipping-note-fixed-header">
             <td rowSpan={2}>订单号</td>
@@ -130,8 +137,8 @@ export default function ShippingNoteSheet({
             <td rowSpan={2}>英文材质</td>
             <td rowSpan={2}>颜色/材质</td>
             <td rowSpan={2}>商标</td>
-            {euGroups.map((group) => (
-              <td className="shipping-note-size-header" colSpan={group.span} key={group.label}>
+            {euGroups.map((group, index) => (
+              <td className="shipping-note-size-header" colSpan={group.span} key={`${group.label}-${index}`}>
                 {group.label}
               </td>
             ))}
@@ -167,9 +174,11 @@ export default function ShippingNoteSheet({
             </tr>
           ))}
           <tr className="shipping-note-footer-row">
-            <td colSpan={3}>收货人签字：</td>
-            <td colSpan={3}>验货人签字：</td>
-            <td colSpan={5}>司机签字：</td>
+            <td colSpan={3}>收货人签字:</td>
+            <td colSpan={2}>验货人签字:</td>
+            <td />
+            <td colSpan={4}>司机签字:</td>
+            <td />
             <td colSpan={10}>出货单位：清化鞋业</td>
             <td />
             <td>{cartons || ""}</td>

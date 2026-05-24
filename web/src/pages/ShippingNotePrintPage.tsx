@@ -31,7 +31,7 @@ import type {
   ShippingNoteTaskQueryParams,
 } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
-import { getMatchingPackingDetails } from "../utils/orderMatching";
+import { getMatchingPackingDetails, hasMatchingPackingDetails } from "../utils/orderMatching";
 import { getPackingTotalPairs, sumSizeQuantities as sumPackingSizeQuantities } from "../utils/packingTotals";
 
 const defaultRecipient = "达为鞋业";
@@ -61,9 +61,17 @@ function sumSizeQuantities(value?: Record<string, number>) {
   return Object.values(value || {}).reduce((total, count) => total + (Number(count) > 0 ? Number(count) : 0), 0);
 }
 
-function buildShippingItemFromPacking(packingDetail: OrderPackingDetail, order?: OrderRecord): ShippingNoteItem {
+function buildShippingItemFromPacking(
+  packingDetail: OrderPackingDetail,
+  order?: OrderRecord,
+  orderDetail?: OrderRecordDetail,
+): ShippingNoteItem {
   const perCartonPairs = sumPackingSizeQuantities(packingDetail.sizeQuantities);
   const totalPairs = getPackingTotalPairs(packingDetail) || perCartonPairs;
+  const combinedColorMaterial = [packingDetail.customerColor, packingDetail.material]
+    .map((item) => item?.trim())
+    .filter(Boolean)
+    .join(" ");
   return {
     sourceDetailId: packingDetail.id,
     orderId: packingDetail.orderId,
@@ -71,10 +79,10 @@ function buildShippingItemFromPacking(packingDetail: OrderPackingDetail, order?:
     developmentNo: packingDetail.companyStyleNo,
     customerName: pickFirstText(packingDetail.customerName, order?.customerName),
     customerStyleNo: packingDetail.customerStyleNo,
-    englishColor: packingDetail.customerColor,
-    englishMaterial: packingDetail.material,
-    colorMaterial: pickFirstText(packingDetail.material, packingDetail.customerColor),
-    trademark: packingDetail.trademark,
+    englishColor: pickFirstText(packingDetail.customerColor, orderDetail?.englishColor),
+    englishMaterial: pickFirstText(packingDetail.material, orderDetail?.englishMaterial),
+    colorMaterial: pickFirstText(orderDetail?.upperMaterial, combinedColorMaterial, packingDetail.material, packingDetail.customerColor),
+    trademark: pickFirstText(packingDetail.trademark, orderDetail?.trademark),
     sizeQuantities: packingDetail.sizeQuantities || {},
     pairCount: perCartonPairs || totalPairs,
     cartonCount: packingDetail.cartonCount || 0,
@@ -103,13 +111,17 @@ function buildShippingItemFromOrderDetail(
     cartonStart: detail.cartonStart,
     cartonEnd: detail.cartonEnd,
     packingItems: getMatchingPackingDetails(detail, packingDetails).map((packingDetail) =>
-      buildShippingItemFromPacking(packingDetail, order),
+      buildShippingItemFromPacking(packingDetail, order, detail),
     ),
   };
 }
 
 function getTaskPackingItems(task?: ShippingNoteTask | null) {
   return (task?.items || []).flatMap((item) => item.packingItems || []);
+}
+
+function hasMissingPackingItems(items: ShippingNoteItem[]) {
+  return items.some((item) => !item.packingItems?.length);
 }
 
 function renderSizeQuantities(value?: Record<string, number>) {
@@ -244,6 +256,12 @@ export default function ShippingNotePrintPage() {
 
   const [detailTask, setDetailTask] = useState<ShippingNoteTask | null>(null);
   const [previewTask, setPreviewTask] = useState<ShippingNoteTask | null>(null);
+  const [packingPreview, setPackingPreview] = useState<{
+    title: string;
+    recipientName?: string;
+    shippingDate?: string;
+    items: ShippingNoteItem[];
+  } | null>(null);
   const [taskActionLoadingId, setTaskActionLoadingId] = useState<number>();
 
   const selectedOrder = useMemo(
@@ -372,10 +390,24 @@ export default function ShippingNotePrintPage() {
     );
   }, [details, selectedDevelopmentNos]);
 
+  const hasMatchedPacking = useCallback(
+    (detail: OrderRecordDetail) => hasMatchingPackingDetails(detail, packingDetails),
+    [packingDetails],
+  );
+
   const addPrintItems = (items: OrderRecordDetail[]) => {
+    const eligibleItems = items.filter(hasMatchedPacking);
+    const blockedCount = items.length - eligibleItems.length;
+    if (blockedCount > 0) {
+      message.warning(`${blockedCount} 条订单明细没有对应的装箱单明细，不能移动到右侧`);
+    }
+    if (eligibleItems.length === 0) {
+      setSelectedPrintIds([]);
+      return;
+    }
     setPrintItems((current) => {
       const currentIdSet = new Set(current.map((item) => item.sourceDetailId));
-      const nextItems = items
+      const nextItems = eligibleItems
         .filter((item) => !currentIdSet.has(item.id))
         .map((item) => buildShippingItemFromOrderDetail(item, selectedOrder, packingDetails));
       if (nextItems.length === 0) {
@@ -401,6 +433,10 @@ export default function ShippingNotePrintPage() {
   const saveTask = async () => {
     if (printItems.length === 0) {
       message.warning("请先选择要保存的出货单明细");
+      return;
+    }
+    if (printItems.some((item) => !item.packingItems?.length)) {
+      message.warning("出货单明细必须有对应的装箱单明细，不能保存任务");
       return;
     }
     setSaving(true);
@@ -445,8 +481,9 @@ export default function ShippingNotePrintPage() {
   const openTaskPreview = async (task: ShippingNoteTask) => {
     const detail = await loadTaskDetail(task);
     if (detail) {
-      if (getTaskPackingItems(detail).length === 0) {
-        message.warning("所选订单明细暂未匹配到装箱单明细，预览内容为空");
+      if (hasMissingPackingItems(detail.items || [])) {
+        message.warning("出货单明细必须有对应的装箱单明细，不能预览打印");
+        return;
       }
       setPreviewTask(detail);
     }
@@ -456,8 +493,26 @@ export default function ShippingNotePrintPage() {
     if (!previewTask) {
       return;
     }
+    if (hasMissingPackingItems(previewTask.items || [])) {
+      message.warning("出货单明细必须有对应的装箱单明细，不能打印");
+      return;
+    }
     applyShippingNotePrintSize();
     window.setTimeout(() => window.print(), 0);
+  };
+
+  const openPackingPreview = (record: ShippingNoteItem) => {
+    const items = record.packingItems || [];
+    if (items.length === 0) {
+      message.warning("这条订单明细暂未匹配到装箱单明细");
+      return;
+    }
+    setPackingPreview({
+      title: `${record.orderNo || "-"} / ${record.developmentNo || "-"}`,
+      recipientName: detailTask?.recipientName || recipientName,
+      shippingDate: detailTask?.shippingDate || shippingDate,
+      items,
+    });
   };
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
@@ -482,8 +537,24 @@ export default function ShippingNotePrintPage() {
       { title: "件数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
       { title: "开始箱号", dataIndex: "cartonStart", width: 110, render: formatEmpty },
       { title: "结束箱号", dataIndex: "cartonEnd", width: 110, render: formatEmpty },
+      {
+        title: "出货单",
+        key: "shippingNote",
+        width: 120,
+        fixed: "right",
+        render: (_, record) => (
+          <Button
+            size="small"
+            icon={<EyeOutlined />}
+            disabled={!record.packingItems?.length}
+            onClick={() => openPackingPreview(record)}
+          >
+            查看
+          </Button>
+        ),
+      },
     ],
-    [],
+    [detailTask, recipientName, shippingDate],
   );
 
   const packingColumns = useMemo<ColumnsType<ShippingNoteItem>>(
@@ -540,35 +611,23 @@ export default function ShippingNotePrintPage() {
     [taskActionLoadingId],
   );
 
-  const renderPackingItems = (record: ShippingNoteItem) => (
-    <Table
-      rowKey={(item, index) => `${item.sourceDetailId}-${index}`}
-      columns={packingColumns}
-      dataSource={record.packingItems || []}
-      pagination={false}
-      scroll={{ x: 1050 }}
-      size="small"
-      className="data-table"
-    />
-  );
-
-  const packingExpandable = {
-    expandedRowRender: renderPackingItems,
-    rowExpandable: (record: ShippingNoteItem) => Boolean(record.packingItems?.length),
-  };
-
   const leftRowSelection = {
     selectedRowKeys: leftSelectedRowKeys,
     getCheckboxProps: (record: OrderRecordDetail) => ({
-      disabled: printItemKeySet.has(record.id),
+      disabled: printItemKeySet.has(record.id) || !hasMatchedPacking(record),
     }),
     onChange: (nextKeys: Key[]) => {
-      setSelectedDetailIds(nextKeys.filter((key) => !printItemKeySet.has(key)));
+      setSelectedDetailIds(nextKeys.filter((key) => {
+        const detail = details.find((item) => item.id === key);
+        return detail && !printItemKeySet.has(key) && hasMatchedPacking(detail);
+      }));
     },
   };
 
   const leftRowClassName = (record: OrderRecordDetail) => {
-    return printItemKeySet.has(record.id) ? "print-transfer-row-disabled" : "print-transfer-row-clickable";
+    return printItemKeySet.has(record.id) || !hasMatchedPacking(record)
+      ? "print-transfer-row-disabled"
+      : "print-transfer-row-clickable";
   };
 
   const getLeftRowProps = (record: OrderRecordDetail) => ({
@@ -577,11 +636,16 @@ export default function ShippingNotePrintPage() {
       if (target.closest(".ant-checkbox-wrapper, .ant-table-selection-column, button, a")) {
         return;
       }
-      if (!printItemKeySet.has(record.id)) {
-        setSelectedDetailIds((current) =>
-          current.includes(record.id) ? current.filter((key) => key !== record.id) : [...current, record.id],
-        );
+      if (printItemKeySet.has(record.id)) {
+        return;
       }
+      if (!hasMatchedPacking(record)) {
+        message.warning("这条订单明细没有对应的装箱单明细，不能移动到右侧");
+        return;
+      }
+      setSelectedDetailIds((current) =>
+        current.includes(record.id) ? current.filter((key) => key !== record.id) : [...current, record.id],
+      );
     },
   });
 
@@ -749,9 +813,8 @@ export default function ShippingNotePrintPage() {
               columns={printColumns}
               dataSource={printItems}
               pagination={{ pageSize: 10, showSizeChanger: false }}
-              scroll={{ x: 920 }}
+              scroll={{ x: 1040 }}
               className="data-table"
-              expandable={packingExpandable}
               rowSelection={{
                 selectedRowKeys: selectedPrintIds,
                 onChange: setSelectedPrintIds,
@@ -778,9 +841,31 @@ export default function ShippingNotePrintPage() {
           columns={printColumns}
           dataSource={detailTask?.items || []}
           pagination={{ pageSize: 10, showSizeChanger: false }}
-          scroll={{ x: 920 }}
+          scroll={{ x: 1040 }}
           className="data-table"
-          expandable={packingExpandable}
+        />
+      </Modal>
+
+      <Modal
+        open={Boolean(packingPreview)}
+        title={packingPreview ? `装箱单明细：${packingPreview.title}` : "装箱单明细"}
+        onCancel={() => setPackingPreview(null)}
+        width={1220}
+        footer={[
+          <Button key="close" onClick={() => setPackingPreview(null)}>
+            关闭
+          </Button>,
+        ]}
+        destroyOnClose
+      >
+        <Table
+          rowKey={(record, index) => `${record.sourceDetailId}-${index}`}
+          columns={packingColumns}
+          dataSource={packingPreview?.items || []}
+          pagination={false}
+          scroll={{ x: 1050 }}
+          size="small"
+          className="data-table"
         />
       </Modal>
 

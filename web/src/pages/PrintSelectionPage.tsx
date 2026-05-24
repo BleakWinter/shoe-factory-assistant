@@ -14,7 +14,7 @@ import { fetchStyleConfigs } from "../api/styleConfigApi";
 import type { DevelopmentNoOption, OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
 import type { StyleConfig } from "../types/styleConfig";
 import { formatEmpty } from "../utils/format";
-import { getMatchingPackingDetails } from "../utils/orderMatching";
+import { getMatchingPackingDetails, hasMatchingPackingDetails } from "../utils/orderMatching";
 
 interface PrintSelectionPageProps {
   title: string;
@@ -657,18 +657,35 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     );
   }, [details, selectedDevelopmentNos]);
 
+  const hasMatchedPacking = useCallback(
+    (detail: OrderRecordDetail) => hasMatchingPackingDetails(detail, packingDetails),
+    [packingDetails],
+  );
+
   const addPrintItems = (items: OrderRecordDetail[]) => {
     const printOrderNo = selectedOrder ? buildOrderLabel(selectedOrder) : selectedOrderId ? `订单 ${selectedOrderId}` : "-";
+    const eligibleItems = items.filter(hasMatchedPacking);
+    const blockedCount = items.length - eligibleItems.length;
+    if (blockedCount > 0) {
+      message.warning(`${blockedCount} 条订单明细没有对应的装箱单明细，不能移动到右侧`);
+    }
+    if (eligibleItems.length === 0) {
+      setSelectedPrintIds([]);
+      return;
+    }
     setPrintItems((current) => {
       const currentIdSet = new Set(current.map((item) => item.id));
-      const nextItems = items
+      const nextItems = eligibleItems
         .filter((item) => !currentIdSet.has(item.id))
-        .map((item) => ({
-          ...item,
-          printOrderNo,
-          packingDetails: getMatchingPackingDetails(item, packingDetails),
-          styleConfig: findStyleConfig(styleConfigsByDevelopmentNo, item),
-        }));
+        .map((item) => {
+          const matchedPackingDetails = getMatchingPackingDetails(item, packingDetails);
+          return {
+            ...item,
+            printOrderNo,
+            packingDetails: matchedPackingDetails,
+            styleConfig: findStyleConfig(styleConfigsByDevelopmentNo, item, matchedPackingDetails[0]),
+          };
+        });
       if (nextItems.length === 0) {
         return current;
       }
@@ -732,16 +749,24 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const leftRowSelection = {
     selectedRowKeys: leftSelectedRowKeys,
     getCheckboxProps: (record: OrderRecordDetail) => ({
-      disabled: printItemKeySet.has(record.id),
+      disabled: printItemKeySet.has(record.id) || !hasMatchedPacking(record),
     }),
     onChange: (nextKeys: Key[]) => {
-      setSelectedDetailIds(nextKeys.filter((key) => !printItemKeySet.has(key)));
+      setSelectedDetailIds(nextKeys.filter((key) => {
+        const detail = details.find((item) => item.id === key);
+        return detail && !printItemKeySet.has(key) && hasMatchedPacking(detail);
+      }));
     },
     onSelectAll: (selected: boolean, _selectedRows: OrderRecordDetail[], changedRows: OrderRecordDetail[]) => {
       const changedIds = new Set(changedRows.map((item) => item.id));
       setSelectedDetailIds((current) => {
         if (selected) {
-          return Array.from(new Set<Key>([...current, ...changedRows.map((item) => item.id)]));
+          return Array.from(
+            new Set<Key>([
+              ...current,
+              ...changedRows.filter(hasMatchedPacking).map((item) => item.id),
+            ]),
+          );
         }
         return current.filter((key) => !changedIds.has(key as number));
       });
@@ -749,7 +774,9 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const leftRowClassName = (record: OrderRecordDetail) => {
-    return printItemKeySet.has(record.id) ? "print-transfer-row-disabled" : "print-transfer-row-clickable";
+    return printItemKeySet.has(record.id) || !hasMatchedPacking(record)
+      ? "print-transfer-row-disabled"
+      : "print-transfer-row-clickable";
   };
 
   const getLeftRowProps = (record: OrderRecordDetail) => ({
@@ -758,11 +785,16 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       if (target.closest(".ant-checkbox-wrapper, .ant-table-selection-column, button, a")) {
         return;
       }
-      if (!printItemKeySet.has(record.id)) {
-        setSelectedDetailIds((current) =>
-          current.includes(record.id) ? current.filter((key) => key !== record.id) : [...current, record.id],
-        );
+      if (printItemKeySet.has(record.id)) {
+        return;
       }
+      if (!hasMatchedPacking(record)) {
+        message.warning("这条订单明细没有对应的装箱单明细，不能移动到右侧");
+        return;
+      }
+      setSelectedDetailIds((current) =>
+        current.includes(record.id) ? current.filter((key) => key !== record.id) : [...current, record.id],
+      );
     },
   });
 

@@ -79,6 +79,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                 .map(item -> orderDetailMap.get(item.getSourceDetailId()))
                 .toList();
         Map<Long, OrderRecord> orderMap = loadOrdersByOrderDetails(selectedOrderDetails);
+        ensureOrderDetailsHaveMatchingPackingDetails(selectedOrderDetails);
 
         LocalDateTime now = LocalDateTime.now();
         ShippingNoteTask task = new ShippingNoteTask();
@@ -180,13 +181,9 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         OrderRecord order = orderId == null ? null : orderMap.get(orderId);
         Map<String, Integer> sizeQuantities = parseSizeQuantities(orderDetail.getSizeQuantitiesJson());
         int pairCount = getOrderPairCount(orderDetail, sizeQuantities);
-        List<OrderPackingDetail> candidatePackingDetails = orderId == null
-                ? List.of()
-                : packingDetailsByOrderId.getOrDefault(orderId, List.of());
-        List<ShippingNoteItemRequest> packingItems = candidatePackingDetails
+        List<ShippingNoteItemRequest> packingItems = getMatchingPackingDetails(orderDetail, packingDetailsByOrderId)
                 .stream()
-                .filter(packingDetail -> isMatchingPackingDetail(orderDetail, packingDetail))
-                .map(packingDetail -> toPackingItemResponse(packingDetail, order))
+                .map(packingDetail -> toPackingItemResponse(packingDetail, order, orderDetail))
                 .toList();
 
         ShippingNoteItemRequest response = new ShippingNoteItemRequest();
@@ -205,10 +202,15 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         return response;
     }
 
-    private ShippingNoteItemRequest toPackingItemResponse(OrderPackingDetail packingDetail, OrderRecord order) {
+    private ShippingNoteItemRequest toPackingItemResponse(
+            OrderPackingDetail packingDetail,
+            OrderRecord order,
+            OrderRecordDetail orderDetail
+    ) {
         Map<String, Integer> sizeQuantities = parseSizeQuantities(packingDetail.getSizeQuantitiesJson());
         int sizeTotal = sumSizeQuantities(sizeQuantities);
         int totalPairs = getPackingTotalPairs(packingDetail, sizeTotal);
+        String combinedColorMaterial = joinText(packingDetail.getCustomerColor(), packingDetail.getMaterial());
 
         ShippingNoteItemRequest response = new ShippingNoteItemRequest();
         response.setSourceDetailId(packingDetail.getId());
@@ -217,10 +219,15 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         response.setDevelopmentNo(cleanText(packingDetail.getCompanyStyleNo()));
         response.setCustomerName(firstText(packingDetail.getCustomerName(), order == null ? null : order.getCustomerName()));
         response.setCustomerStyleNo(cleanText(packingDetail.getCustomerStyleNo()));
-        response.setEnglishColor(cleanText(packingDetail.getCustomerColor()));
-        response.setEnglishMaterial(cleanText(packingDetail.getMaterial()));
-        response.setColorMaterial(firstText(packingDetail.getMaterial(), packingDetail.getCustomerColor()));
-        response.setTrademark(cleanText(packingDetail.getTrademark()));
+        response.setEnglishColor(firstText(packingDetail.getCustomerColor(), orderDetail.getEnglishColor()));
+        response.setEnglishMaterial(firstText(packingDetail.getMaterial(), orderDetail.getEnglishMaterial()));
+        response.setColorMaterial(firstText(
+                orderDetail.getUpperMaterial(),
+                combinedColorMaterial,
+                packingDetail.getMaterial(),
+                packingDetail.getCustomerColor()
+        ));
+        response.setTrademark(firstText(packingDetail.getTrademark(), orderDetail.getTrademark()));
         response.setSizeQuantities(sizeQuantities);
         response.setPairCount(sizeTotal > 0 ? sizeTotal : totalPairs);
         response.setCartonCount(nullToZero(packingDetail.getCartonCount()));
@@ -291,6 +298,38 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                         .orderByAsc(OrderPackingDetail::getId))
                 .stream()
                 .collect(Collectors.groupingBy(OrderPackingDetail::getOrderId));
+    }
+
+    private void ensureOrderDetailsHaveMatchingPackingDetails(List<OrderRecordDetail> orderDetails) {
+        Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderDetails(orderDetails);
+        List<String> missingDetails = orderDetails.stream()
+                .filter(detail -> getMatchingPackingDetails(detail, packingDetailsByOrderId).isEmpty())
+                .map(this::describeOrderDetail)
+                .distinct()
+                .limit(5)
+                .toList();
+        if (!missingDetails.isEmpty()) {
+            throw new BusinessException("订单明细没有对应的装箱单，不能创建出货单: " + String.join("、", missingDetails));
+        }
+    }
+
+    private List<OrderPackingDetail> getMatchingPackingDetails(
+            OrderRecordDetail orderDetail,
+            Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId
+    ) {
+        if (orderDetail == null || orderDetail.getOrderId() == null) {
+            return List.of();
+        }
+        return packingDetailsByOrderId
+                .getOrDefault(orderDetail.getOrderId(), List.of())
+                .stream()
+                .filter(packingDetail -> isMatchingPackingDetail(orderDetail, packingDetail))
+                .toList();
+    }
+
+    private String describeOrderDetail(OrderRecordDetail detail) {
+        String name = firstText(detail.getDevelopmentNo(), detail.getCustomerStyleNo());
+        return hasText(name) ? name : "明细ID " + detail.getId();
     }
 
     private List<ShippingNoteItemRequest> sanitizeItems(List<ShippingNoteItemRequest> items) {
@@ -485,11 +524,27 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         return value == null ? 0 : value;
     }
 
-    private String firstText(String left, String right) {
-        if (hasText(left)) {
-            return left.trim();
+    private String joinText(String... values) {
+        if (values == null) {
+            return null;
         }
-        return hasText(right) ? right.trim() : null;
+        String joined = java.util.Arrays.stream(values)
+                .filter(this::hasText)
+                .map(String::trim)
+                .collect(Collectors.joining(" "));
+        return hasText(joined) ? joined : null;
+    }
+
+    private String firstText(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private String cleanText(String value) {

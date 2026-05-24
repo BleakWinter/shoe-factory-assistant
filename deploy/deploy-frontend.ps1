@@ -1,5 +1,5 @@
 param(
-    [string]$HostName = "192.168.245.130",
+    [string]$HostName = "192.168.10.62",
     [string]$User = "root",
     [string]$KeyPath = "$env:USERPROFILE\.ssh\id_rsa",
     [string]$RemoteDir = "/data/web/shoe-factory-assistant",
@@ -12,9 +12,22 @@ $deployDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $deployDir
 $webDir = Join-Path $repoRoot "web"
 $distDir = Join-Path $webDir "dist"
-$archive = Join-Path $env:TEMP "shoe-factory-assistant-web.tar.gz"
-$remoteArchive = "/tmp/shoe-factory-assistant-web.tar.gz"
+$remoteStage = "/tmp/shoe-factory-assistant-web"
 $remote = "${User}@${HostName}"
+$ssh = Join-Path $env:WINDIR "System32\OpenSSH\ssh.exe"
+$scp = Join-Path $env:WINDIR "System32\OpenSSH\scp.exe"
+
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
+    }
+}
 
 Write-Host "Building frontend..."
 Push-Location $webDir
@@ -24,18 +37,11 @@ try {
     Pop-Location
 }
 
-if (Test-Path -LiteralPath $archive) {
-    Remove-Item -LiteralPath $archive -Force
-}
-
-Write-Host "Packing dist..."
-tar -czf $archive -C $distDir .
-
 Write-Host "Uploading to $remote..."
-ssh -i $KeyPath $remote "mkdir -p '$RemoteDir'"
-scp -i $KeyPath $archive "${remote}:${remoteArchive}"
+Invoke-Native $ssh @("-i", $KeyPath, $remote, "rm -rf '$remoteStage' && mkdir -p '$remoteStage' '$RemoteDir'")
+Invoke-Native $scp @("-i", $KeyPath, "-r", $distDir, "${remote}:${remoteStage}/")
 
 Write-Host "Deploying to $RemoteDir..."
-ssh -i $KeyPath $remote "find '$RemoteDir' -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar -xzf '$remoteArchive' -C '$RemoteDir' && rm -f '$remoteArchive' && docker restart '$NginxContainer'"
+Invoke-Native $ssh @("-i", $KeyPath, $remote, "find '$RemoteDir' -mindepth 1 -maxdepth 1 -exec rm -rf {} + && cp -a '$remoteStage'/dist/. '$RemoteDir'/ && chmod -R 755 '$RemoteDir' && rm -rf '$remoteStage' && if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx '$NginxContainer'; then docker restart '$NginxContainer'; elif command -v nginx >/dev/null 2>&1; then nginx -s reload || systemctl reload nginx; fi")
 
 Write-Host "Frontend deployed: http://$HostName/"

@@ -106,3 +106,7 @@ export function isMatchingPackingDetail(detail: OrderRecordDetail, packingDetail
 export function getMatchingPackingDetails(detail: OrderRecordDetail, packingDetails: OrderPackingDetail[]) {
   return packingDetails.filter((packingDetail) => isMatchingPackingDetail(detail, packingDetail));
 }
+
+export function hasMatchingPackingDetails(detail: OrderRecordDetail, packingDetails: OrderPackingDetail[]) {
+  return getMatchingPackingDetails(detail, packingDetails).length > 0;
+}
