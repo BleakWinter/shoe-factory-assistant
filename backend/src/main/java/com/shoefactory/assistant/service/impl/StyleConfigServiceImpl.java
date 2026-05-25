@@ -17,6 +17,7 @@ import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
 import com.shoefactory.assistant.service.StyleConfigService;
+import com.shoefactory.assistant.util.DevelopmentNoUtil;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -471,7 +472,7 @@ public class StyleConfigServiceImpl implements StyleConfigService {
     }
 
     private String normalizeDevelopmentNo(String value) {
-        return value == null ? null : value.trim();
+        return DevelopmentNoUtil.normalize(value);
     }
 
     private String blankToNull(String value) {

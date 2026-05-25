@@ -3,6 +3,7 @@ package com.shoefactory.assistant.dto;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
+import com.shoefactory.assistant.util.CustomerNameUtil;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -45,7 +46,7 @@ public class OrderPackingDetailResponse {
         response.setLineNo(detail.getLineNo());
         response.setImageUrl(detail.getStyleImagePath() == null ? null : "/api/orders/packing-details/" + detail.getId() + "/image");
         response.setCompanyStyleNo(detail.getCompanyStyleNo());
-        response.setCustomerName(detail.getCustomerName());
+        response.setCustomerName(CustomerNameUtil.normalizeWithoutChinese(detail.getCustomerName()));
         response.setCustomerOrderNo(detail.getCustomerOrderNo());
         response.setWarehouseStoreNo(detail.getWarehouseStoreNo());
         response.setPoNo(detail.getPoNo());

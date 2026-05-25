@@ -35,6 +35,7 @@ import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.service.OrderService;
 import com.shoefactory.assistant.service.StyleConfigService;
+import com.shoefactory.assistant.util.DevelopmentNoUtil;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.PackingDetailMatchUtil;
 import com.shoefactory.assistant.util.StoredFile;
@@ -308,7 +309,8 @@ public class OrderServiceImpl implements OrderService {
                 .stream()
                 .map(OrderRecordDetail::getDevelopmentNo)
                 .filter(this::hasText)
-                .map(String::trim)
+                .map(DevelopmentNoUtil::normalize)
+                .filter(this::hasText)
                 .forEach(developmentNos::add);
 
         List<DevelopmentNoOptionResponse> options = new ArrayList<>();
@@ -494,7 +496,8 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private String normalizeStatisticsDevelopmentNo(String value) {
-        return hasText(value) ? value.trim() : "未填款号";
+        String developmentNo = DevelopmentNoUtil.normalize(value);
+        return hasText(developmentNo) ? developmentNo : "未填款号";
     }
 
     private List<String> parseDevelopmentNoParts(String value) {
@@ -941,7 +944,7 @@ public class OrderServiceImpl implements OrderService {
             return List.of();
         }
         return Arrays.stream(value.split(","))
-                .map(String::trim)
+                .map(DevelopmentNoUtil::normalize)
                 .filter(this::hasText)
                 .toList();
     }
@@ -977,7 +980,8 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private String normalizeDevelopmentNo(String value) {
-        return hasText(value) ? value.trim() : "";
+        String developmentNo = DevelopmentNoUtil.normalize(value);
+        return hasText(developmentNo) ? developmentNo : "";
     }
 
     private List<OrderRecordDetail> loadDetails(Long orderId) {

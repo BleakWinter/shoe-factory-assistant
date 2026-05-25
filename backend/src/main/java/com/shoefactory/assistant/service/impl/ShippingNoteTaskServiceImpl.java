@@ -20,6 +20,7 @@ import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskMapper;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
+import com.shoefactory.assistant.util.CustomerNameUtil;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.PackingDetailMatchUtil;
 import org.springframework.stereotype.Service;
@@ -219,7 +220,9 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         response.setOrderId(packingDetail.getOrderId());
         response.setOrderNo(firstText(order == null ? null : order.getOrderNo(), packingDetail.getCustomerOrderNo()));
         response.setDevelopmentNo(cleanText(packingDetail.getCompanyStyleNo()));
-        response.setCustomerName(firstText(packingDetail.getCustomerName(), order == null ? null : order.getCustomerName()));
+        response.setCustomerName(firstText(
+                CustomerNameUtil.normalizeWithoutChinese(packingDetail.getCustomerName()),
+                order == null ? null : order.getCustomerName()));
         response.setCustomerStyleNo(cleanText(packingDetail.getCustomerStyleNo()));
         response.setEnglishColor(firstText(packingDetail.getCustomerColor(), orderDetail.getEnglishColor()));
         response.setEnglishMaterial(firstText(packingDetail.getMaterial(), orderDetail.getEnglishMaterial()));

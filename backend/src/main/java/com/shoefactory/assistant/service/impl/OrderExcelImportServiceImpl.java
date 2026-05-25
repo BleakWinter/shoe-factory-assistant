@@ -11,6 +11,8 @@ import com.shoefactory.assistant.enums.OrderExcelTemplate;
 import com.shoefactory.assistant.enums.OrderSourceType;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
+import com.shoefactory.assistant.util.CustomerNameUtil;
+import com.shoefactory.assistant.util.DevelopmentNoUtil;
 import com.shoefactory.assistant.util.ExcelCellImageUtil;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.StoredFile;
@@ -351,7 +353,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         detail.setCustomerName(blankToNull(firstText(text(row, columns.customer()), order.getCustomerName())));
         detail.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
         detail.setLastNo(blankToNull(text(row, columns.lastNo())));
-        detail.setDevelopmentNo(blankToNull(text(row, columns.developmentNo())));
+        detail.setDevelopmentNo(DevelopmentNoUtil.normalize(text(row, columns.developmentNo())));
         detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
         detail.setPoNo(blankToNull(text(row, columns.po())));
         detail.setCustomerStyleNo(blankToNull(text(row, columns.customerStyleNo())));
@@ -445,8 +447,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     ) {
         OrderPackingDetail detail = new OrderPackingDetail();
         detail.setLineNo(lineNo);
-        detail.setCompanyStyleNo(blankToNull(text(row, columns.companyStyleNo())));
-        detail.setCustomerName(blankToNull(text(row, columns.customer())));
+        detail.setCompanyStyleNo(DevelopmentNoUtil.normalize(text(row, columns.companyStyleNo())));
+        detail.setCustomerName(CustomerNameUtil.normalizeWithoutChinese(text(row, columns.customer())));
         detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
         detail.setWarehouseStoreNo(blankToNull(text(row, columns.warehouseStoreNo())));
         detail.setPoNo(blankToNull(text(row, columns.po())));
@@ -616,6 +618,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     private String joinDevelopmentNos(List<OrderRecordDetail> details) {
         return details.stream()
                 .map(OrderRecordDetail::getDevelopmentNo)
+                .map(DevelopmentNoUtil::normalize)
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
                 .collect(Collectors.joining(", "));
