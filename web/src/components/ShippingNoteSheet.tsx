@@ -27,8 +27,8 @@ const colWidths = [
   39, // 商标
 
   // 尺码列
-  28, 28, 28, 28, 28, 28, 28,
-  28, 28, 28, 28, 28, 28,
+  27.5, 27.5, 27.5, 27.5, 27.5, 27.5, 27.5,
+  27.5, 27.5, 27.5, 27.5, 27.5, 27.5,
 
   // 后面统计列
   29, // 双数
@@ -110,6 +110,14 @@ export default function ShippingNoteSheet({
 
   return (
     <section className="shipping-note-sheet">
+      <div className="shipping-note-heading">
+        <div className="shipping-note-heading-title">清化鞋厂{getDisplayYear(shippingDate)}年出货单</div>
+        <div className="shipping-note-heading-meta">
+          <span className="shipping-note-heading-recipient">收货单位:{recipientName}</span>
+          <span className="shipping-note-heading-date">日期:{formatDate(shippingDate)}</span>
+          <span />
+        </div>
+      </div>
       <table className="shipping-note-table">
         <colgroup>
           {colWidths.map((width, index) => (
@@ -117,17 +125,6 @@ export default function ShippingNoteSheet({
           ))}
         </colgroup>
         <tbody>
-          <tr className="shipping-note-title-row">
-            <td colSpan={26}>清化鞋厂{getDisplayYear(shippingDate)}年出货单</td>
-          </tr>
-          <tr className="shipping-note-meta-row">
-            <td colSpan={2}>收货单位:{recipientName}</td>
-            <td />
-            <td />
-            <td />
-            <td colSpan={4}>日期:{formatDate(shippingDate)}</td>
-            <td colSpan={17} />
-          </tr>
           <tr className="shipping-note-header-row shipping-note-fixed-header">
             <td rowSpan={2}>订单号</td>
             <td rowSpan={2}>开发编号</td>
