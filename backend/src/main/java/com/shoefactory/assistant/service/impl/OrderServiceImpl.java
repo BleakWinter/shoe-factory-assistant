@@ -37,7 +37,6 @@ import com.shoefactory.assistant.service.OrderService;
 import com.shoefactory.assistant.service.StyleConfigService;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.PackingDetailMatchUtil;
-import com.shoefactory.assistant.util.PackingDetailFallbackUtil;
 import com.shoefactory.assistant.util.StoredFile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +63,10 @@ public class OrderServiceImpl implements OrderService {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Integer>> SIZE_MAP_TYPE = new TypeReference<>() {
     };
+    private static final String ORDER_DETAILS_EXISTS_SQL =
+            "SELECT 1 FROM order_record_detail detail WHERE detail.order_id = order_record.id";
+    private static final String PACKING_DETAILS_EXISTS_SQL =
+            "SELECT 1 FROM order_packing_detail detail WHERE detail.order_id = order_record.id";
 
     private enum RecognitionFilter {
         ORDER_PENDING,
@@ -259,15 +262,35 @@ public class OrderServiceImpl implements OrderService {
                 switch (filter) {
                     case ORDER_PENDING -> nested.eq(OrderRecord::getOrderRecognitionStatus, pending);
                     case PACKING_PENDING -> nested.eq(OrderRecord::getPackingRecognitionStatus, pending);
-                    case ORDER_RECOGNIZED -> nested.eq(OrderRecord::getOrderRecognitionStatus, recognized);
-                    case PACKING_RECOGNIZED -> nested.eq(OrderRecord::getPackingRecognitionStatus, recognized);
-                    case FAILED -> nested.and(failedWrapper -> failedWrapper
-                            .eq(OrderRecord::getOrderRecognitionStatus, failed)
-                            .or()
-                            .eq(OrderRecord::getPackingRecognitionStatus, failed));
+                    case ORDER_RECOGNIZED -> nested.and(recognizedWrapper -> recognizedWrapper
+                            .eq(OrderRecord::getOrderRecognitionStatus, recognized)
+                            .exists(ORDER_DETAILS_EXISTS_SQL));
+                    case PACKING_RECOGNIZED -> nested.and(recognizedWrapper -> recognizedWrapper
+                            .eq(OrderRecord::getPackingRecognitionStatus, recognized)
+                            .exists(PACKING_DETAILS_EXISTS_SQL));
+                    case FAILED -> applyFailedRecognitionFilter(nested, recognized, failed);
                 }
             }
         });
+    }
+
+    private void applyFailedRecognitionFilter(
+            LambdaQueryWrapper<OrderRecord> wrapper,
+            int recognized,
+            int failed
+    ) {
+        wrapper.and(failedWrapper -> failedWrapper
+                .eq(OrderRecord::getOrderRecognitionStatus, failed)
+                .or()
+                .eq(OrderRecord::getPackingRecognitionStatus, failed)
+                .or()
+                .and(emptyOrderWrapper -> emptyOrderWrapper
+                        .eq(OrderRecord::getOrderRecognitionStatus, recognized)
+                        .notExists(ORDER_DETAILS_EXISTS_SQL))
+                .or()
+                .and(emptyPackingWrapper -> emptyPackingWrapper
+                        .eq(OrderRecord::getPackingRecognitionStatus, recognized)
+                        .notExists(PACKING_DETAILS_EXISTS_SQL)));
     }
 
     @Override
@@ -589,6 +612,9 @@ public class OrderServiceImpl implements OrderService {
                     order,
                     FileStorageUtil.newBusinessNo("SF")
             );
+            if (packingDetails.isEmpty()) {
+                throw new BusinessException("装箱单 sheet 未解析到明细行");
+            }
             for (OrderPackingDetail detail : packingDetails) {
                 detail.setOrderId(order.getId());
                 orderPackingDetailMapper.insert(detail);
@@ -631,9 +657,6 @@ public class OrderServiceImpl implements OrderService {
     public List<OrderPackingDetailResponse> listOrderPackingDetails(Long orderId) {
         getRequiredOrder(orderId);
         List<OrderPackingDetail> packingDetails = loadPackingDetails(orderId);
-        if (packingDetails.isEmpty()) {
-            packingDetails = PackingDetailFallbackUtil.fromOrderDetails(loadDetails(orderId));
-        }
         return packingDetails.stream()
                 .map(OrderPackingDetailResponse::from)
                 .toList();
@@ -647,7 +670,7 @@ public class OrderServiceImpl implements OrderService {
         }
         List<OrderPackingDetail> packingDetails = loadPackingDetails(detail.getOrderId());
         if (packingDetails.isEmpty()) {
-            return List.of(OrderPackingDetailResponse.from(PackingDetailFallbackUtil.fromOrderDetail(detail)));
+            return List.of();
         }
         return packingDetails.stream()
                 .filter(packingDetail -> PackingDetailMatchUtil.isMatchingPackingDetail(detail, packingDetail))
@@ -1004,6 +1027,7 @@ public class OrderServiceImpl implements OrderService {
             List<OrderRecordDetail> details,
             List<OrderPackingDetail> packingDetails
     ) {
+        normalizeRecognitionStatusForEmptyDetails(order, details, packingDetails);
         OrderRecordResponse response = OrderRecordResponse.from(order);
         DetailTotals totals = summarizeDetails(details);
         DetailTotals packingTotals = summarizePackingDetails(packingDetails);
@@ -1018,6 +1042,32 @@ public class OrderServiceImpl implements OrderService {
             response.setTotalCartonCount(totals.cartonCount());
         }
         return response;
+    }
+
+    private void normalizeRecognitionStatusForEmptyDetails(
+            OrderRecord order,
+            List<OrderRecordDetail> details,
+            List<OrderPackingDetail> packingDetails
+    ) {
+        int recognized = OrderRecognitionStatus.RECOGNIZED.getCode();
+        int failed = OrderRecognitionStatus.FAILED.getCode();
+        if (order.getOrderRecognitionStatus() != null
+                && order.getOrderRecognitionStatus() == recognized
+                && (details == null || details.isEmpty())) {
+            order.setOrderRecognitionStatus(failed);
+            if (!hasText(order.getOrderErrorMessage())) {
+                order.setOrderErrorMessage("订单 sheet 未解析到明细行");
+            }
+        }
+        if (order.getPackingRecognitionStatus() != null
+                && order.getPackingRecognitionStatus() == recognized
+                && (packingDetails == null || packingDetails.isEmpty())) {
+            order.setPackingRecognitionStatus(failed);
+            if (!hasText(order.getPackingErrorMessage())) {
+                order.setPackingErrorMessage("装箱单 sheet 未解析到明细行");
+            }
+        }
+        syncRecognitionErrorMessage(order);
     }
 
     private DetailTotals summarizeDetails(List<OrderRecordDetail> details) {

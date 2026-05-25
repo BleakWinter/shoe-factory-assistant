@@ -394,17 +394,17 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     private List<OrderPackingDetail> parsePackingSheet(Workbook workbook, String fileNo, OrderRecord order) {
         Sheet packingSheet = findPackingSheet(workbook);
         if (packingSheet == null) {
-            return List.of();
+            throw new BusinessException("Excel 中未找到“装箱单”sheet");
         }
         Row header = findPackingHeaderRow(packingSheet);
         if (header == null) {
-            return List.of();
+            throw new BusinessException("装箱单 sheet 未找到明细表头行");
         }
         PackingColumns columns = PackingColumns.from(header);
         int firstDataRowIndex = header.getRowNum() + 1;
         Map<Integer, PictureInfo> picturesByRow = extractPicturesByRow(packingSheet, columns.image(), firstDataRowIndex);
         LocalDateTime now = LocalDateTime.now();
-        return parseDataRows(
+        List<OrderPackingDetail> details = parseDataRows(
                 packingSheet,
                 columns,
                 firstDataRowIndex,
@@ -425,6 +425,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
                         lineNo
                 )
         );
+        if (details.isEmpty()) {
+            throw new BusinessException("装箱单 sheet 未解析到明细行");
+        }
+        return details;
     }
 
     private OrderPackingDetail buildPackingDetailRow(

@@ -21,7 +21,6 @@ import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskMapper;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
 import com.shoefactory.assistant.util.FileStorageUtil;
-import com.shoefactory.assistant.util.PackingDetailFallbackUtil;
 import com.shoefactory.assistant.util.PackingDetailMatchUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -301,16 +300,6 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                         .orderByAsc(OrderPackingDetail::getId))
                 .stream()
                 .collect(Collectors.groupingBy(OrderPackingDetail::getOrderId));
-        Map<Long, List<OrderRecordDetail>> orderDetailsByOrderId = orderDetails.stream()
-                .filter(detail -> detail.getOrderId() != null)
-                .collect(Collectors.groupingBy(OrderRecordDetail::getOrderId));
-        for (Long orderId : orderIds) {
-            if (detailsByOrderId.getOrDefault(orderId, List.of()).isEmpty()) {
-                detailsByOrderId.put(orderId, PackingDetailFallbackUtil.fromOrderDetails(
-                        orderDetailsByOrderId.getOrDefault(orderId, List.of())
-                ));
-            }
-        }
         return detailsByOrderId;
     }
 
