@@ -18,6 +18,7 @@ import {
   fetchShippingNoteTasks,
 } from "../api/shippingNoteApi";
 import ShippingNoteSheet, {
+  countShippingNoteRows,
   sumShippingNoteCartons,
   sumShippingNotePairs,
 } from "../components/ShippingNoteSheet";
@@ -811,7 +812,7 @@ export default function ShippingNotePrintPage() {
                 <Typography.Title level={4}>待保存出货单</Typography.Title>
               </div>
               <Typography.Text type="secondary">
-                {printItems.length} 行，{sumShippingNoteCartons(printItems)} 件，{sumShippingNotePairs(printItems)} 双
+                {countShippingNoteRows(printItems)} 行，{sumShippingNoteCartons(printItems)} 件，{sumShippingNotePairs(printItems)} 双
               </Typography.Text>
             </div>
             <Table

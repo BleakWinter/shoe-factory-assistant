@@ -890,6 +890,13 @@ a {
   background: #eef2f6;
 }
 
+.shipping-note-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
 .shipping-note-inline-preview {
   margin-top: 12px;
   border: 1px solid #d8dee8;
@@ -923,8 +930,10 @@ a {
   align-items: center;
   justify-content: center;
   height: 7mm;
+  overflow: hidden;
   font-size: 15px;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .shipping-note-heading-meta {
@@ -932,13 +941,17 @@ a {
   grid-template-columns: 40% 22% 38%;
   align-items: center;
   height: 5.8mm;
+  overflow: hidden;
   font-size: 12px;
   line-height: 1;
 }
 
 .shipping-note-heading-recipient,
 .shipping-note-heading-date {
+  overflow: hidden;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shipping-note-table {
@@ -953,13 +966,17 @@ a {
 
 .shipping-note-table td {
   height: 6.8mm;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 0.55mm 0.8mm;
   color: #000000;
   font-size: 11px;
   line-height: 1.15;
   text-align: center;
+  text-overflow: ellipsis;
   vertical-align: middle;
-  word-break: break-word;
+  white-space: nowrap;
+  word-break: normal;
   border: 1px solid #000000;
 }
 
@@ -995,13 +1012,23 @@ a {
   color: #ff0000 !important;
 }
 
+.shipping-note-detail-row {
+  height: 40px;
+}
+
 .shipping-note-detail-row td {
-  height: 6.8mm;
+  height: 40px;
+  max-height: 40px;
   font-size: 9.5px;
 }
 
+.shipping-note-footer-row {
+  height: 40px;
+}
+
 .shipping-note-footer-row td {
-  height: 7.4mm;
+  height: 40px;
+  max-height: 40px;
 }
 
 .shipping-note-footer-row td:nth-last-child(-n + 5) {
@@ -1612,5 +1639,17 @@ a {
     min-width: var(--shipping-note-sheet-width);
     margin: 10mm 6mm 0;
     box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .shipping-note-pages {
+    display: block;
+    gap: 0;
+  }
+
+  .shipping-note-sheet:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
   }
 }
