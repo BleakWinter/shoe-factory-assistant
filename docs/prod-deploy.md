@@ -41,13 +41,13 @@ docker --version
 Git Bash 里执行：
 
 ```bash
-powershell.exe -ExecutionPolicy Bypass -File ./deploy/deploy-backend.ps1
+./deploy/deploy-backend.sh
 ```
 
 脚本会执行：
 
 ```text
-1. mvn -Pprod -DskipTests package
+1. mvn -Pprod -Dmaven.test.skip=true package
 2. 上传 jar 到 /data/backend/shoe-factory-assistant/app.jar
 3. 拉取 eclipse-temurin:17-jre-jammy
 4. 如果容器不存在则创建，已存在则只重启
@@ -84,7 +84,7 @@ docker restart shoe-factory-backend
 Git Bash 里执行：
 
 ```bash
-powershell.exe -ExecutionPolicy Bypass -File ./deploy/deploy-frontend.ps1
+./deploy/deploy-frontend.sh
 ```
 
 脚本会执行：

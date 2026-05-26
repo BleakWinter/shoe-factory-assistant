@@ -221,7 +221,7 @@ export default function PrintTaskListPage() {
           const file = options.file as File;
           const result = await reuploadOrderFile(row.orderId, file);
           options.onSuccess?.(result);
-          message.success(`订单 ${result.printTaskNo || result.orderNo || ""} 已重新上传，旧打印任务已失效`);
+          message.success(`订单 ${result.printTaskNo || result.orderNo || ""} 已重新上传，原文件已替换`);
           await loadTasks();
         } catch (error) {
           const err = error instanceof Error ? error : new Error("重新上传失败");

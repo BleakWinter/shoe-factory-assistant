@@ -32,7 +32,7 @@ function Invoke-Native {
 Write-Host "Building backend jar..."
 Push-Location $backendDir
 try {
-    mvn.cmd -q -Pprod -DskipTests package
+    mvn.cmd -q -Pprod -Dmaven.test.skip=true package
 } finally {
     Pop-Location
 }

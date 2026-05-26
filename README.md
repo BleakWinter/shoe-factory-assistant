@@ -43,11 +43,12 @@ D:\清化资料\image\年份\月份\订单号
 当前整单级打印任务使用 `order_sheet_print_task` 表。
 
 - 每个订单 Excel 上传后创建订单、装箱单两条任务。
+- 重新上传同一订单时复用这两条任务，替换原稿文件并重置打印状态。
 - 任务状态：
   - `PENDING`：待打印。
   - `PRINTED`：已打印。
   - `FAILED`：生成 PDF 或打印失败。
-  - `INVALID`：旧文件任务已失效。
+  - `INVALID`：任务已废弃，不再参与打印列表。
 - PDF 生成成功后路径写入 `preview_pdf_path`。
 - 用户确认打印后，前端调用接口标记为已打印并累计 `print_count`。
 

@@ -1,6 +1,7 @@
 package com.shoefactory.assistant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,10 +40,14 @@ import com.shoefactory.assistant.util.DevelopmentNoUtil;
 import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.PackingDetailMatchUtil;
 import com.shoefactory.assistant.util.StoredFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -61,6 +66,7 @@ import java.util.stream.Collectors;
 @Service
 public class OrderServiceImpl implements OrderService {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Integer>> SIZE_MAP_TYPE = new TypeReference<>() {
     };
@@ -148,10 +154,9 @@ public class OrderServiceImpl implements OrderService {
         applyReuploadSummary(existingOrder, parsedOrder);
         deleteOrderDetailRows(orderId);
         deletePackingDetailRows(orderId);
-        invalidateSheetPrintTasks(orderId);
-        orderRecordMapper.updateById(existingOrder);
+        updateReuploadedOrder(existingOrder);
 
-        List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(existingOrder, storedFile);
+        List<OrderSheetPrintTask> printTasks = replaceSheetPrintTaskFiles(orderId, storedFile);
         styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(existingOrder.getDevelopmentNos()));
         return buildUploadResponse(existingOrder, firstTaskId(printTasks), 0);
     }
@@ -802,15 +807,91 @@ public class OrderServiceImpl implements OrderService {
         target.setUpdatedAt(LocalDateTime.now());
     }
 
-    private void invalidateSheetPrintTasks(Long orderId) {
+    private void updateReuploadedOrder(OrderRecord order) {
+        orderRecordMapper.update(null, new LambdaUpdateWrapper<OrderRecord>()
+                .eq(OrderRecord::getId, order.getId())
+                .set(OrderRecord::getOrderNo, order.getOrderNo())
+                .set(OrderRecord::getCustomerName, order.getCustomerName())
+                .set(OrderRecord::getDevelopmentNos, order.getDevelopmentNos())
+                .set(OrderRecord::getTotalQuantity, order.getTotalQuantity())
+                .set(OrderRecord::getTotalCartonCount, order.getTotalCartonCount())
+                .set(OrderRecord::getSourceType, order.getSourceType())
+                .set(OrderRecord::getOrderRecognitionStatus, order.getOrderRecognitionStatus())
+                .set(OrderRecord::getPackingRecognitionStatus, order.getPackingRecognitionStatus())
+                .set(OrderRecord::getErrorMessage, null)
+                .set(OrderRecord::getOrderErrorMessage, null)
+                .set(OrderRecord::getPackingErrorMessage, null)
+                .set(OrderRecord::getUpdatedAt, order.getUpdatedAt()));
+    }
+
+    private List<OrderSheetPrintTask> replaceSheetPrintTaskFiles(Long orderId, StoredFile storedFile) {
         List<OrderSheetPrintTask> tasks = orderSheetPrintTaskMapper.selectList(new LambdaQueryWrapper<OrderSheetPrintTask>()
                 .eq(OrderSheetPrintTask::getOrderId, orderId)
-                .ne(OrderSheetPrintTask::getStatus, PrintTaskStatus.INVALID.getCode()));
+                .ne(OrderSheetPrintTask::getStatus, PrintTaskStatus.INVALID.getCode())
+                .orderByAsc(OrderSheetPrintTask::getPrintType)
+                .orderByAsc(OrderSheetPrintTask::getId));
+        if (tasks.isEmpty()) {
+            throw new BusinessException("订单打印任务不存在，不能重新上传");
+        }
+
+        Set<String> replacedOriginalPaths = tasks.stream()
+                .map(OrderSheetPrintTask::getOriginalFilePath)
+                .filter(this::hasText)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> replacedPreviewPdfPaths = tasks.stream()
+                .map(OrderSheetPrintTask::getPreviewPdfPath)
+                .filter(this::hasText)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
         LocalDateTime now = LocalDateTime.now();
         for (OrderSheetPrintTask task : tasks) {
-            task.setStatus(PrintTaskStatus.INVALID.getCode());
+            task.setOriginalFileName(storedFile == null ? null : storedFile.getOriginalName());
+            task.setOriginalFilePath(storedFile == null || storedFile.getPath() == null ? null : storedFile.getPath().toString());
+            task.setStatus(PrintTaskStatus.PENDING.getCode());
+            task.setPreviewPdfPath(null);
+            task.setPdfGeneratedAt(null);
+            task.setPrintCount(0);
+            task.setLastPrintTime(null);
+            task.setLastPrintUser(null);
+            task.setErrorMessage(null);
             task.setUpdatedAt(now);
-            orderSheetPrintTaskMapper.updateById(task);
+            orderSheetPrintTaskMapper.update(null, new LambdaUpdateWrapper<OrderSheetPrintTask>()
+                    .eq(OrderSheetPrintTask::getId, task.getId())
+                    .set(OrderSheetPrintTask::getOriginalFileName, task.getOriginalFileName())
+                    .set(OrderSheetPrintTask::getOriginalFilePath, task.getOriginalFilePath())
+                    .set(OrderSheetPrintTask::getStatus, task.getStatus())
+                    .set(OrderSheetPrintTask::getPreviewPdfPath, null)
+                    .set(OrderSheetPrintTask::getPdfGeneratedAt, null)
+                    .set(OrderSheetPrintTask::getPrintCount, task.getPrintCount())
+                    .set(OrderSheetPrintTask::getLastPrintTime, null)
+                    .set(OrderSheetPrintTask::getLastPrintUser, null)
+                    .set(OrderSheetPrintTask::getErrorMessage, null)
+                    .set(OrderSheetPrintTask::getUpdatedAt, now));
+        }
+        deleteReplacedFiles(replacedPreviewPdfPaths, storedFile);
+        deleteReplacedFiles(replacedOriginalPaths, storedFile);
+        return tasks;
+    }
+
+    private void deleteReplacedFiles(Collection<String> pathValues, StoredFile replacement) {
+        if (pathValues == null || pathValues.isEmpty()) {
+            return;
+        }
+        Path replacementPath = replacement == null || replacement.getPath() == null
+                ? null
+                : replacement.getPath().toAbsolutePath().normalize();
+        for (String pathValue : pathValues) {
+            try {
+                Path path = fileStorageUtil.resolvePath(pathValue);
+                if (replacementPath != null && path.equals(replacementPath)) {
+                    continue;
+                }
+                Files.deleteIfExists(path);
+            } catch (IOException ex) {
+                log.warn("删除被替换的订单文件失败: {}", pathValue, ex);
+            } catch (RuntimeException ex) {
+                log.warn("跳过无法删除的订单历史文件: {}", pathValue, ex);
+            }
         }
     }
 
