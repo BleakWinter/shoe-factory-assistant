@@ -29,4 +29,12 @@ class DevelopmentNoUtilTest {
         assertThat(DevelopmentNoUtil.normalize("JCD－395－3－01")).isEqualTo("JCD-395-3-01");
         assertThat(DevelopmentNoUtil.normalize("JCD - 395 - 3 - 01")).isEqualTo("JCD-395-3-01");
     }
+
+    @Test
+    void normalizesPartialDevelopmentNoSearchTerms() {
+        assertThat(DevelopmentNoUtil.normalizeSearchTerm("JCD")).isEqualTo("JCD");
+        assertThat(DevelopmentNoUtil.normalizeSearchTerm("253-1-62")).isEqualTo("253-1-62");
+        assertThat(DevelopmentNoUtil.normalizeSearchTerm("253 - 1 - 62")).isEqualTo("253-1-62");
+        assertThat(DevelopmentNoUtil.normalizeSearchTerm("开发编号：253-1-62")).isEqualTo("253-1-62");
+    }
 }

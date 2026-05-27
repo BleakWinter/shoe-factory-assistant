@@ -147,18 +147,25 @@ public class OrderServiceImpl implements OrderService {
 
         String fileNo = FileStorageUtil.newBusinessNo("SF");
         StoredFile storedFile = fileStorageUtil.saveOriginal(file, fileNo);
-        OrderRecord parsedOrder = readUploadSummary(storedFile, fileNo);
-        initializeRecognitionFields(parsedOrder);
-        ensureReuploadOrderNoMatches(existingOrder, parsedOrder);
+        boolean replacedTaskFiles = false;
+        try {
+            OrderRecord parsedOrder = readUploadSummary(storedFile, fileNo);
+            initializeRecognitionFields(parsedOrder);
+            ensureReuploadOrderNoMatches(existingOrder, parsedOrder);
 
-        applyReuploadSummary(existingOrder, parsedOrder);
-        deleteOrderDetailRows(orderId);
-        deletePackingDetailRows(orderId);
-        updateReuploadedOrder(existingOrder);
+            applyReuploadSummary(existingOrder, parsedOrder);
+            updateReuploadedOrder(existingOrder);
+            styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(existingOrder.getDevelopmentNos()));
 
-        List<OrderSheetPrintTask> printTasks = replaceSheetPrintTaskFiles(orderId, storedFile);
-        styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(existingOrder.getDevelopmentNos()));
-        return buildUploadResponse(existingOrder, firstTaskId(printTasks), 0);
+            List<OrderSheetPrintTask> printTasks = replaceSheetPrintTaskFiles(orderId, storedFile);
+            replacedTaskFiles = true;
+            return buildUploadResponse(existingOrder, firstTaskId(printTasks), 0);
+        } catch (RuntimeException ex) {
+            if (!replacedTaskFiles) {
+                deleteStoredFileQuietly(storedFile);
+            }
+            throw ex;
+        }
     }
 
     @Override
@@ -799,11 +806,6 @@ public class OrderServiceImpl implements OrderService {
 
     private void applyReuploadSummary(OrderRecord target, OrderRecord parsed) {
         applyOrderSummary(target, parsed);
-        target.setOrderRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
-        target.setPackingRecognitionStatus(OrderRecognitionStatus.PENDING.getCode());
-        target.setOrderErrorMessage(null);
-        target.setPackingErrorMessage(null);
-        syncRecognitionErrorMessage(target);
         target.setUpdatedAt(LocalDateTime.now());
     }
 
@@ -816,12 +818,20 @@ public class OrderServiceImpl implements OrderService {
                 .set(OrderRecord::getTotalQuantity, order.getTotalQuantity())
                 .set(OrderRecord::getTotalCartonCount, order.getTotalCartonCount())
                 .set(OrderRecord::getSourceType, order.getSourceType())
-                .set(OrderRecord::getOrderRecognitionStatus, order.getOrderRecognitionStatus())
-                .set(OrderRecord::getPackingRecognitionStatus, order.getPackingRecognitionStatus())
-                .set(OrderRecord::getErrorMessage, null)
-                .set(OrderRecord::getOrderErrorMessage, null)
-                .set(OrderRecord::getPackingErrorMessage, null)
                 .set(OrderRecord::getUpdatedAt, order.getUpdatedAt()));
+    }
+
+    private void deleteStoredFileQuietly(StoredFile storedFile) {
+        if (storedFile == null || storedFile.getPath() == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(fileStorageUtil.resolvePath(storedFile.getPath().toString()));
+        } catch (IOException ex) {
+            log.warn("删除未完成重新上传的新原稿失败: {}", storedFile.getPath(), ex);
+        } catch (RuntimeException ex) {
+            log.warn("跳过无法删除的未完成重新上传新原稿: {}", storedFile.getPath(), ex);
+        }
     }
 
     private List<OrderSheetPrintTask> replaceSheetPrintTaskFiles(Long orderId, StoredFile storedFile) {
@@ -1025,7 +1035,7 @@ public class OrderServiceImpl implements OrderService {
             return List.of();
         }
         return Arrays.stream(value.split(","))
-                .map(DevelopmentNoUtil::normalize)
+                .map(DevelopmentNoUtil::normalizeSearchTerm)
                 .filter(this::hasText)
                 .toList();
     }

@@ -454,7 +454,7 @@ public class StyleConfigServiceImpl implements StyleConfigService {
             return List.of();
         }
         return Arrays.stream(value.split(","))
-                .map(this::normalizeDevelopmentNo)
+                .map(DevelopmentNoUtil::normalizeSearchTerm)
                 .filter(this::hasText)
                 .toList();
     }

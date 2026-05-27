@@ -565,20 +565,29 @@ a {
 }
 
 .carton-label-a4 {
-  --carton-label-sheet-scale-x: 1.03385;
-  --carton-label-sheet-scale-y: 1.02069;
-  --carton-label-left-column-width: calc(34.90466% - 5.57px);
-  --carton-label-sheet-gap: 8px;
+  --carton-label-sheet-width: 138.536mm;
+  --carton-label-sheet-height: 203.117mm;
+  --carton-label-width-size-column: 14.94mm;
+  --carton-label-number-size-column: 7.974mm;
+  --carton-label-total-size-column: 11.423mm;
+  --carton-label-left-column-width: calc(
+    var(--carton-label-width-size-column) +
+    var(--carton-label-number-size-column) +
+    var(--carton-label-number-size-column) +
+    var(--carton-label-number-size-column) +
+    var(--carton-label-number-size-column)
+  );
+  --carton-label-sheet-gap: 2.82mm;
   display: grid;
-  grid-template-columns: repeat(2, calc((297mm - 62px - var(--carton-label-sheet-gap)) / 2));
-  grid-template-rows: calc(210mm - 26px);
+  grid-template-columns: repeat(2, var(--carton-label-sheet-width));
+  grid-template-rows: var(--carton-label-sheet-height);
   align-content: start;
   align-items: start;
   justify-content: start;
   gap: var(--carton-label-sheet-gap);
   width: 297mm;
   height: 210mm;
-  padding: 11px 17px 15px 45px;
+  padding: 2.91mm 4.5mm 3.97mm 11.906mm;
   color: #000000;
   background: #ffffff;
   page: carton-label-page;
@@ -589,14 +598,12 @@ a {
   flex-direction: column;
   align-self: start;
   min-width: 0;
-  width: 134mm;
-  height: 199mm;
+  width: var(--carton-label-sheet-width);
+  height: var(--carton-label-sheet-height);
   color: #000000;
   font-family: Arial, sans-serif;
   background: #ffffff;
   border: 1px solid #000000;
-  transform: scale(var(--carton-label-sheet-scale-x), var(--carton-label-sheet-scale-y));
-  transform-origin: top left;
 }
 
 .carton-label-sheet * {
@@ -606,7 +613,7 @@ a {
 .carton-label-brand {
   display: grid;
   place-items: center;
-  height: 11mm;
+  height: 11.228mm;
   font-size: 22px;
   font-weight: 800;
   border-bottom: 1px solid #000000;
@@ -615,7 +622,7 @@ a {
 .carton-label-top {
   display: grid;
   grid-template-columns: var(--carton-label-left-column-width) 1fr;
-  height: 46mm;
+  height: 46.952mm;
   border-bottom: 1px solid #000000;
 }
 
@@ -638,7 +645,7 @@ a {
 
 .carton-label-carton-box {
   display: grid;
-  grid-template-rows: 11mm 11mm 6mm 18mm;
+  grid-template-rows: 11.228mm 11.228mm 6.124mm 18.372mm;
   text-align: center;
 }
 
@@ -675,7 +682,7 @@ a {
 .carton-label-info-row {
   display: grid;
   grid-template-columns: var(--carton-label-left-column-width) 1fr;
-  height: 15mm;
+  height: 15.31mm;
   border-bottom: 1px solid #000000;
 }
 
@@ -700,16 +707,13 @@ a {
 }
 
 .carton-label-size-grid {
-  --carton-label-width-size-column: calc(12.164548% - 7px);
-  --carton-label-number-size-column: calc(5.685028% + 0.357143px);
-  --carton-label-total-size-column: 8.245056%;
   display: grid;
   grid-template-columns:
     var(--carton-label-width-size-column)
     repeat(14, var(--carton-label-number-size-column))
     var(--carton-label-total-size-column);
-  grid-template-rows: 8.8mm 8.8mm 7.4mm;
-  height: 25mm;
+  grid-template-rows: 8.982mm 8.982mm 7.553mm;
+  height: 25.517mm;
   border-bottom: 1px solid #000000;
 }
 
@@ -775,7 +779,7 @@ a {
 .carton-label-origin {
   display: grid;
   place-items: center;
-  height: 12mm;
+  height: 12.248mm;
   font-size: 22px;
   font-weight: 900;
 }

@@ -25,6 +25,17 @@ public final class DevelopmentNoUtil {
         return null;
     }
 
+    public static String normalizeSearchTerm(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        Matcher matcher = CANDIDATE_PATTERN.matcher(normalizeHyphens(value));
+        if (matcher.find()) {
+            return matcher.group().trim();
+        }
+        return null;
+    }
+
     public static boolean isValid(String value) {
         if (value == null || value.isBlank()) {
             return false;
