@@ -226,12 +226,12 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         response.setCustomerStyleNo(cleanText(packingDetail.getCustomerStyleNo()));
         response.setEnglishColor(firstText(packingDetail.getCustomerColor(), orderDetail.getEnglishColor()));
         response.setEnglishMaterial(firstText(packingDetail.getMaterial(), orderDetail.getEnglishMaterial()));
-        response.setColorMaterial(firstText(
+        response.setColorMaterial(beforeFirstComma(firstText(
                 orderDetail.getUpperMaterial(),
                 combinedColorMaterial,
                 packingDetail.getMaterial(),
                 packingDetail.getCustomerColor()
-        ));
+        )));
         response.setTrademark(firstText(packingDetail.getTrademark(), orderDetail.getTrademark()));
         response.setSizeQuantities(sizeQuantities);
         response.setPairCount(sizeTotal > 0 ? sizeTotal : totalPairs);
@@ -557,6 +557,27 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
 
     private String cleanText(String value) {
         return hasText(value) ? value.trim() : null;
+    }
+
+    private String beforeFirstComma(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String text = value.trim();
+        int commaIndex = firstCommaIndex(text);
+        return commaIndex >= 0 ? cleanText(text.substring(0, commaIndex)) : text;
+    }
+
+    private int firstCommaIndex(String value) {
+        int englishCommaIndex = value.indexOf(',');
+        int chineseCommaIndex = value.indexOf('，');
+        if (englishCommaIndex < 0) {
+            return chineseCommaIndex;
+        }
+        if (chineseCommaIndex < 0) {
+            return englishCommaIndex;
+        }
+        return Math.min(englishCommaIndex, chineseCommaIndex);
     }
 
     private boolean hasText(String value) {

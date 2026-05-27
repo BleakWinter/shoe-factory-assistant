@@ -965,20 +965,18 @@ a {
 }
 
 .shipping-note-table td {
-  height: 6.8mm;
+  height: 38px;
   box-sizing: border-box;
   overflow: hidden;
-  padding: 0.55mm 0.8mm;
   color: #000000;
   font-size: 11px;
-  line-height: 1.15;
   text-align: center;
-  text-overflow: ellipsis;
   vertical-align: middle;
-  white-space: nowrap;
-  word-break: normal;
+  white-space: normal;
+  word-break: break-all;
   border: 1px solid #000000;
 }
+
 
 .shipping-note-table tr > td:first-child {
   border-left: 0;
@@ -999,7 +997,7 @@ a {
 }
 
 .shipping-note-header-row td {
-  height: 6.6mm;
+  height: 6.2mm;
   font-size: 11px;
   font-weight: 500;
 }
@@ -1013,15 +1011,37 @@ a {
 }
 
 .shipping-note-detail-row {
-  height: 40px;
+  height: 35px;
 }
 
 .shipping-note-detail-row td {
-  height: 40px;
-  max-height: 40px;
+  height: 35px;
+  max-height: 35px;
+  padding: 0;
   font-size: 9.5px;
+  line-height: 1.08;
 }
 
+.shipping-note-cell-content {
+  width: 100%;
+  height: 35px;
+
+  box-sizing: border-box;
+  padding: 0 1px;     /* ❗去掉上下 padding */
+
+  overflow: hidden;
+
+  display: flex;      /* 🔥关键 */
+  align-items: center;
+  justify-content: center;
+
+  font-size: 11px;
+  line-height: 1;
+
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
 .shipping-note-footer-row {
   height: 40px;
 }

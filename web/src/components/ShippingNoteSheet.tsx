@@ -98,6 +98,16 @@ function text(value?: string | number) {
   return value === undefined || value === null || value === "" ? "" : String(value);
 }
 
+function beforeFirstComma(value?: string | number) {
+  const valueText = text(value);
+  const commaIndex = valueText.search(/[,，]/);
+  return commaIndex >= 0 ? valueText.slice(0, commaIndex).trim() : valueText;
+}
+
+function cell(value?: string | number) {
+  return <div className="shipping-note-cell-content">{text(value)}</div>;
+}
+
 function getSizeQuantity(item: ShippingNoteItem, size: string) {
   const entries = Object.entries(item.sizeQuantities || {});
   const exact = entries.find(([key]) => key.trim() === size);
@@ -181,22 +191,22 @@ export default function ShippingNoteSheet({
                 ) : null}
                 {pageItems.map((item, index) => (
                   <tr className="shipping-note-detail-row" key={`${item?.sourceDetailId ?? "empty"}-${pageIndex}-${index}`}>
-                    <td>{text(item?.orderNo)}</td>
-                    <td>{text(item?.developmentNo)}</td>
-                    <td>{text(item?.customerName)}</td>
-                    <td>{text(item?.customerStyleNo)}</td>
-                    <td>{text(item?.englishColor)}</td>
-                    <td>{text(item?.englishMaterial)}</td>
-                    <td>{text(item?.colorMaterial)}</td>
-                    <td>{text(item?.trademark)}</td>
+                    <td>{cell(item?.orderNo)}</td>
+                    <td>{cell(item?.developmentNo)}</td>
+                    <td>{cell(item?.customerName)}</td>
+                    <td>{cell(item?.customerStyleNo)}</td>
+                    <td>{cell(item?.englishColor)}</td>
+                    <td>{cell(item?.englishMaterial)}</td>
+                    <td>{cell(beforeFirstComma(item?.colorMaterial))}</td>
+                    <td>{cell(item?.trademark)}</td>
                     {usSizes.map((size) => (
-                      <td key={size}>{item ? text(getSizeQuantity(item, size)) : ""}</td>
+                      <td key={size}>{cell(item ? getSizeQuantity(item, size) : "")}</td>
                     ))}
-                    <td>{text(item?.pairCount)}</td>
-                    <td>{text(item?.cartonCount)}</td>
-                    <td className="shipping-note-size-header">{text(item?.totalPairs)}</td>
-                    <td>{text(item?.cartonStart)}</td>
-                    <td>{text(item?.cartonEnd)}</td>
+                    <td>{cell(item?.pairCount)}</td>
+                    <td>{cell(item?.cartonCount)}</td>
+                    <td className="shipping-note-size-header">{cell(item?.totalPairs)}</td>
+                    <td>{cell(item?.cartonStart)}</td>
+                    <td>{cell(item?.cartonEnd)}</td>
                   </tr>
                 ))}
                 {isLastPage ? (

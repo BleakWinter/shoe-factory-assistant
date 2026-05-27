@@ -58,6 +58,12 @@ function pickFirstText(...values: unknown[]) {
   return "";
 }
 
+function beforeFirstComma(value?: string) {
+  const text = String(value ?? "").trim();
+  const commaIndex = text.search(/[,，]/);
+  return commaIndex >= 0 ? text.slice(0, commaIndex).trim() : text;
+}
+
 function sumSizeQuantities(value?: Record<string, number>) {
   return Object.values(value || {}).reduce((total, count) => total + (Number(count) > 0 ? Number(count) : 0), 0);
 }
@@ -82,7 +88,7 @@ function buildShippingItemFromPacking(
     customerStyleNo: packingDetail.customerStyleNo,
     englishColor: pickFirstText(packingDetail.customerColor, orderDetail?.englishColor),
     englishMaterial: pickFirstText(packingDetail.material, orderDetail?.englishMaterial),
-    colorMaterial: pickFirstText(orderDetail?.upperMaterial, combinedColorMaterial, packingDetail.material, packingDetail.customerColor),
+    colorMaterial: beforeFirstComma(pickFirstText(orderDetail?.upperMaterial, combinedColorMaterial, packingDetail.material, packingDetail.customerColor)),
     trademark: pickFirstText(packingDetail.trademark, orderDetail?.trademark),
     sizeQuantities: packingDetail.sizeQuantities || {},
     pairCount: perCartonPairs || totalPairs,
