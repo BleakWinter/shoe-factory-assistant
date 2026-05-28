@@ -38,7 +38,7 @@ const colWidths = [
   52, // 结束箱号
 ];
 // A4 横向下，40px 明细行加上第一页表头、最后一页签字行后每页稳定放 15 行。
-const rowsPerPage = 15;
+const rowsPerPage = 18;
 
 export interface ShippingNoteSheetProps {
   recipientName?: string;

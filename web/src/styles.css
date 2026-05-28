@@ -1046,13 +1046,21 @@ a {
   word-break: break-all;
   overflow-wrap: anywhere;
 }
-.shipping-note-footer-row {
-  height: 40px;
+
+.shipping-note-footer-row td:nth-child(-n + 6) {
+  border-left: 0 !important;
+  border-right: 0 !important;
+}
+.shipping-note-footer-row td:nth-child(-n + 1) {
+  padding-left: 10px;
 }
 
-.shipping-note-footer-row td {
-  height: 40px;
-  max-height: 40px;
+.shipping-note-footer-row {
+  height: 35px;
+}
+
+.shipping-note-footer-row td{
+  height: 35px;
 }
 
 .shipping-note-footer-row td:nth-last-child(-n + 5) {
@@ -1661,7 +1669,7 @@ a {
   .shipping-note-sheet {
     width: var(--shipping-note-sheet-width);
     min-width: var(--shipping-note-sheet-width);
-    margin: 10mm 6mm 0;
+    margin: 4.5mm 4.5mm;
     box-shadow: none;
     break-inside: avoid;
     page-break-inside: avoid;
