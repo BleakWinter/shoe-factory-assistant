@@ -1669,7 +1669,7 @@ a {
   .shipping-note-sheet {
     width: var(--shipping-note-sheet-width);
     min-width: var(--shipping-note-sheet-width);
-    margin: 4.5mm 4.5mm;
+    margin: 5mm 0 5mm 4.1mm;
     box-shadow: none;
     break-inside: avoid;
     page-break-inside: avoid;
