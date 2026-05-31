@@ -7,6 +7,7 @@ import com.shoefactory.assistant.dto.PrintTaskStatusUpdateRequest;
 import com.shoefactory.assistant.service.PrintTaskService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -65,6 +66,9 @@ public class PrintTaskController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .contentLength(fileSize(pdfPath))
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header(HttpHeaders.EXPIRES, "0")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(pdfPath.getFileName().toString(), StandardCharsets.UTF_8)
                         .build()

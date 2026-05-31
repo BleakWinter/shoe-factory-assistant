@@ -18,10 +18,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 @Service
 public class PrintPreviewServiceImpl implements PrintPreviewService {
+
+    private static final DateTimeFormatter PDF_VERSION_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
 
     private final OrderRecordMapper orderRecordMapper;
     private final OrderSheetPrintTaskMapper orderSheetPrintTaskMapper;
@@ -196,12 +199,19 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
                 order.getId(),
                 order.getOrderNo(),
                 printType.name(),
-                "/api/print-tasks/" + task.getId() + "/pdf",
+                previewUrl(task, createdAt),
                 pdfSize,
                 PrintPreviewStatus.READY.name(),
                 null,
                 createdAt
         );
+    }
+
+    private String previewUrl(OrderSheetPrintTask task, LocalDateTime createdAt) {
+        String version = createdAt == null
+                ? String.valueOf(System.currentTimeMillis())
+                : PDF_VERSION_FORMATTER.format(createdAt);
+        return "/api/print-tasks/" + task.getId() + "/pdf?v=" + version;
     }
 
     private void deletePdfAndClearPath(OrderSheetPrintTask task) {

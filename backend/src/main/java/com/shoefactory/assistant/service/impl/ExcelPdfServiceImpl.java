@@ -28,6 +28,9 @@ import java.util.stream.Stream;
 @Service
 public class ExcelPdfServiceImpl implements ExcelPdfService {
 
+    private static final double HORIZONTAL_MARGIN_INCHES = 0.05;
+    private static final double VERTICAL_MARGIN_INCHES = 0.08;
+
     // LibreOffice 命令、超时时间等都从 application.yml 的 app.file-storage 读取。
     private final FileStorageProperties properties;
 
@@ -143,10 +146,12 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
 
         sheet.setFitToPage(true);
         sheet.setAutobreaks(true);
-        sheet.setMargin(Sheet.TopMargin, 0.25);
-        sheet.setMargin(Sheet.BottomMargin, 0.25);
-        sheet.setMargin(Sheet.LeftMargin, 0.2);
-        sheet.setMargin(Sheet.RightMargin, 0.2);
+        setup.setHeaderMargin(0);
+        setup.setFooterMargin(0);
+        sheet.setMargin(Sheet.TopMargin, VERTICAL_MARGIN_INCHES);
+        sheet.setMargin(Sheet.BottomMargin, VERTICAL_MARGIN_INCHES);
+        sheet.setMargin(Sheet.LeftMargin, HORIZONTAL_MARGIN_INCHES);
+        sheet.setMargin(Sheet.RightMargin, HORIZONTAL_MARGIN_INCHES);
         sheet.setHorizontallyCenter(true);
 
         // 自动检测有效内容区域，避免把大片空白列/行一起打印进去。
@@ -163,6 +168,9 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         int lastCol = -1;
 
         for (Row row : sheet) {
+            if (row.getZeroHeight()) {
+                continue;
+            }
             boolean rowUsed = false;
             short firstCellNum = row.getFirstCellNum();
             short lastCellNum = row.getLastCellNum();
@@ -170,6 +178,9 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
                 continue;
             }
             for (int colIndex = firstCellNum; colIndex < lastCellNum; colIndex++) {
+                if (isColumnHidden(sheet, colIndex)) {
+                    continue;
+                }
                 Cell cell = row.getCell(colIndex);
                 if (isCellUsed(cell)) {
                     rowUsed = true;
@@ -210,7 +221,7 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
         int lastScanRow = Math.min(sheet.getLastRowNum(), 79);
         for (int rowIndex = 0; rowIndex <= lastScanRow; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
-            if (row == null) {
+            if (row == null || row.getZeroHeight()) {
                 continue;
             }
             short firstCellNum = row.getFirstCellNum();
@@ -219,6 +230,9 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
                 continue;
             }
             for (int colIndex = firstCellNum; colIndex < lastCellNum; colIndex++) {
+                if (isColumnHidden(sheet, colIndex)) {
+                    continue;
+                }
                 String value = normalizeHeaderText(row.getCell(colIndex));
                 if (matcher.test(value)) {
                     return colIndex;
@@ -243,13 +257,32 @@ public class ExcelPdfServiceImpl implements ExcelPdfService {
     }
 
     private boolean isCellUsed(Cell cell) {
-        if (cell == null || cell.getCellType() == CellType.BLANK) {
+        if (cell == null) {
             return false;
         }
-        if (cell.getCellType() == CellType.STRING) {
+        return isCellValueUsed(cell, cell.getCellType());
+    }
+
+    private boolean isCellValueUsed(Cell cell, CellType cellType) {
+        if (cellType == null || cellType == CellType.BLANK || cellType == CellType._NONE) {
+            return false;
+        }
+        if (cellType == CellType.STRING) {
             return cell.getStringCellValue() != null && !cell.getStringCellValue().trim().isEmpty();
         }
+        if (cellType == CellType.FORMULA) {
+            try {
+                return isCellValueUsed(cell, cell.getCachedFormulaResultType());
+            } catch (Exception ex) {
+                String formula = cell.getCellFormula();
+                return formula != null && !formula.isBlank();
+            }
+        }
         return true;
+    }
+
+    private boolean isColumnHidden(Sheet sheet, int colIndex) {
+        return sheet.isColumnHidden(colIndex) || sheet.getColumnWidth(colIndex) <= 0;
     }
 
     private Path runConverter(Path input, Path outputDir) {
