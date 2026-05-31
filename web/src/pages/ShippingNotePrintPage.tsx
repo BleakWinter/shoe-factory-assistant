@@ -7,7 +7,7 @@ import {
   ReloadOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Cascader, Form, Input, Modal, Pagination, Select, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
@@ -19,6 +19,7 @@ import {
 } from "../api/shippingNoteApi";
 import ShippingNoteSheet, {
   countShippingNoteRows,
+  getShippingNotePageCount,
   sumShippingNoteCartons,
   sumShippingNotePairs,
 } from "../components/ShippingNoteSheet";
@@ -263,6 +264,7 @@ export default function ShippingNotePrintPage() {
 
   const [detailTask, setDetailTask] = useState<ShippingNoteTask | null>(null);
   const [previewTask, setPreviewTask] = useState<ShippingNoteTask | null>(null);
+  const [previewPage, setPreviewPage] = useState(1);
   const [packingPreview, setPackingPreview] = useState<{
     title: string;
     recipientName?: string;
@@ -278,6 +280,7 @@ export default function ShippingNotePrintPage() {
   const previewItems = useMemo(() => getTaskPackingItems(previewTask), [previewTask]);
   const previewTotalPairs = useMemo(() => sumShippingNotePairs(previewItems), [previewItems]);
   const previewTotalCartonCount = useMemo(() => sumShippingNoteCartons(previewItems), [previewItems]);
+  const previewPageCount = useMemo(() => getShippingNotePageCount(previewItems), [previewItems]);
 
   const loadTasks = useCallback(
     async (nextPage = page, nextSize = size) => {
@@ -499,9 +502,14 @@ export default function ShippingNotePrintPage() {
       if (!ensureShippingItemsCanPrint(detail.items || [])) {
         return;
       }
+      setPreviewPage(1);
       setPreviewTask(detail);
     }
   };
+
+  useEffect(() => {
+    setPreviewPage((current) => Math.min(Math.max(current, 1), previewPageCount));
+  }, [previewPageCount]);
 
   const printPreviewTask = () => {
     if (!previewTask) {
@@ -905,6 +913,18 @@ export default function ShippingNotePrintPage() {
               items={previewItems}
               totalPairs={previewTotalPairs}
               totalCartonCount={previewTotalCartonCount}
+              pageIndex={previewPage - 1}
+            />
+          </div>
+        ) : null}
+        {previewTask && previewPageCount > 1 ? (
+          <div className="label-preview-pagination">
+            <Pagination
+              current={previewPage}
+              pageSize={1}
+              total={previewPageCount}
+              showSizeChanger={false}
+              onChange={setPreviewPage}
             />
           </div>
         ) : null}

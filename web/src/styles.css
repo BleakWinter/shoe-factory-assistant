@@ -888,17 +888,33 @@ a {
 
 .shipping-note-preview {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   overflow: auto;
   padding: 12px;
   background: #eef2f6;
 }
 
 .shipping-note-pages {
+  --shipping-note-page-width: 297mm;
+  --shipping-note-page-height: 210mm;
+  --shipping-note-sheet-width: 285mm;
+  --shipping-note-sheet-offset-top: 5mm;
+  --shipping-note-sheet-offset-left: 4.1mm;
+
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  margin: 0 auto;
+}
+
+.shipping-note-page {
+  width: var(--shipping-note-page-width);
+  min-height: var(--shipping-note-page-height);
+  box-sizing: border-box;
+  padding: var(--shipping-note-sheet-offset-top) 0 var(--shipping-note-sheet-offset-top) var(--shipping-note-sheet-offset-left);
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
 }
 
 .shipping-note-inline-preview {
@@ -911,13 +927,12 @@ a {
 }
 
 .shipping-note-sheet {
-  --shipping-note-sheet-width: 285mm;
   width: var(--shipping-note-sheet-width);
+  box-sizing: border-box;
   padding: 0;
   color: #000000;
   background: #ffffff;
   border: 1px solid #000000;
-  box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
   page: shipping-note-page;
 }
 
@@ -1666,10 +1681,22 @@ a {
     page-break-after: always;
   }
 
+  .shipping-note-page {
+    display: block;
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .shipping-note-sheet {
     width: var(--shipping-note-sheet-width);
     min-width: var(--shipping-note-sheet-width);
-    margin: 5mm 0 5mm 4.1mm;
+    margin: var(--shipping-note-sheet-offset-top) 0 var(--shipping-note-sheet-offset-top) var(--shipping-note-sheet-offset-left);
     box-shadow: none;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -1678,9 +1705,10 @@ a {
   .shipping-note-pages {
     display: block;
     gap: 0;
+    margin: 0;
   }
 
-  .shipping-note-sheet:not(:last-child) {
+  .shipping-note-page:not(:last-child) {
     break-after: page;
     page-break-after: always;
   }
