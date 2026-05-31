@@ -81,6 +81,8 @@ export interface DevelopmentNoOrderReference {
   invoiceNo?: string;
   orderNo?: string;
   pairCount?: number;
+  shippedPairCount?: number;
+  unshippedPairCount?: number;
   detailCount?: number;
 }
 
@@ -90,10 +92,17 @@ export interface DevelopmentNoStatisticNode {
   fullDevelopmentNo?: string;
   level: number;
   pairCount: number;
+  shippedPairCount?: number;
+  unshippedPairCount?: number;
   detailCount: number;
   styleCount: number;
   orderReferences?: DevelopmentNoOrderReference[];
   children?: DevelopmentNoStatisticNode[];
+}
+
+export interface StatisticsTimePoint {
+  date: string;
+  value: number;
 }
 
 export interface OrderStatistics {
@@ -102,6 +111,8 @@ export interface OrderStatistics {
   unshippedPairs: number;
   styleCount: number;
   detailCount: number;
+  orderCreatedTrend?: StatisticsTimePoint[];
+  shippedPairsTrend?: StatisticsTimePoint[];
   developmentNoTree: DevelopmentNoStatisticNode[];
   topDevelopmentNos: DevelopmentNoStatisticNode[];
 }

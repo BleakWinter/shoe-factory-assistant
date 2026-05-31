@@ -13,6 +13,7 @@ import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoOrderReference;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsTimePoint;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
@@ -21,6 +22,8 @@ import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.entity.OrderSheetPrintTask;
 import com.shoefactory.assistant.entity.ShoeStyleConfig;
+import com.shoefactory.assistant.entity.ShippingNoteTask;
+import com.shoefactory.assistant.entity.ShippingNoteTaskItem;
 import com.shoefactory.assistant.enums.FileType;
 import com.shoefactory.assistant.enums.OrderRecognitionStatus;
 import com.shoefactory.assistant.enums.OrderSourceType;
@@ -33,6 +36,7 @@ import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskMapper;
+import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.service.OrderService;
@@ -50,6 +54,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -91,6 +96,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderDetailProcessMapper orderDetailProcessMapper;
     private final ShoeStyleConfigMapper shoeStyleConfigMapper;
     private final ShippingNoteTaskMapper shippingNoteTaskMapper;
+    private final ShippingNoteTaskItemMapper shippingNoteTaskItemMapper;
     private final FileStorageUtil fileStorageUtil;
     private final OrderExcelImportService orderExcelImportService;
     private final StyleConfigService styleConfigService;
@@ -103,6 +109,7 @@ public class OrderServiceImpl implements OrderService {
             OrderDetailProcessMapper orderDetailProcessMapper,
             ShoeStyleConfigMapper shoeStyleConfigMapper,
             ShippingNoteTaskMapper shippingNoteTaskMapper,
+            ShippingNoteTaskItemMapper shippingNoteTaskItemMapper,
             FileStorageUtil fileStorageUtil,
             OrderExcelImportService orderExcelImportService,
             StyleConfigService styleConfigService
@@ -114,6 +121,7 @@ public class OrderServiceImpl implements OrderService {
         this.orderDetailProcessMapper = orderDetailProcessMapper;
         this.shoeStyleConfigMapper = shoeStyleConfigMapper;
         this.shippingNoteTaskMapper = shippingNoteTaskMapper;
+        this.shippingNoteTaskItemMapper = shippingNoteTaskItemMapper;
         this.fileStorageUtil = fileStorageUtil;
         this.orderExcelImportService = orderExcelImportService;
         this.styleConfigService = styleConfigService;
@@ -340,6 +348,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderStatisticsResponse getOrderStatistics() {
         List<OrderRecordDetail> details = orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
                 .select(
+                        OrderRecordDetail::getId,
                         OrderRecordDetail::getDevelopmentNo,
                         OrderRecordDetail::getOrderId,
                         OrderRecordDetail::getCustomerOrderNo,
@@ -347,30 +356,117 @@ public class OrderServiceImpl implements OrderService {
                         OrderRecordDetail::getSizeQuantitiesJson
                 ));
         Map<Long, OrderRecord> ordersById = loadStatisticsOrdersById(details);
+        Map<Long, Integer> detailPairsById = details.stream()
+                .filter(detail -> detail.getId() != null)
+                .collect(Collectors.toMap(
+                        OrderRecordDetail::getId,
+                        this::detailPairCount,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        Map<Long, Integer> shippedPairsByDetailId = loadShippedPairsByDetailId(detailPairsById);
         Map<String, DevelopmentNoBucket> buckets = new LinkedHashMap<>();
         int totalPairs = 0;
+        int shippedPairs = 0;
         for (OrderRecordDetail detail : details) {
             int pairCount = detailPairCount(detail);
+            int detailShippedPairs = detail.getId() == null ? 0 : nullToZero(shippedPairsByDetailId.get(detail.getId()));
+            int unshippedPairs = Math.max(0, pairCount - detailShippedPairs);
             totalPairs += pairCount;
+            shippedPairs += detailShippedPairs;
             String developmentNo = normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo());
             DevelopmentNoOrderReference orderReference = buildDevelopmentNoOrderReference(
                     detail,
                     ordersById.get(detail.getOrderId()),
-                    pairCount
+                    pairCount,
+                    detailShippedPairs,
+                    unshippedPairs
             );
-            buckets.computeIfAbsent(developmentNo, DevelopmentNoBucket::new).add(pairCount, orderReference);
+            buckets.computeIfAbsent(developmentNo, DevelopmentNoBucket::new)
+                    .add(pairCount, detailShippedPairs, unshippedPairs, orderReference);
         }
 
         OrderStatisticsResponse response = new OrderStatisticsResponse();
-        int shippedPairs = nullToZero(shippingNoteTaskMapper.sumTotalPairs());
         response.setTotalPairs(totalPairs);
         response.setShippedPairs(shippedPairs);
         response.setUnshippedPairs(Math.max(0, totalPairs - shippedPairs));
         response.setStyleCount(buckets.size());
         response.setDetailCount(details.size());
+        response.setOrderCreatedTrend(buildOrderCreatedTrend());
+        response.setShippedPairsTrend(buildShippedPairsTrend());
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));
         response.setTopDevelopmentNos(buildTopDevelopmentNoStatistics(buckets.values()));
         return response;
+    }
+
+    private List<StatisticsTimePoint> buildOrderCreatedTrend() {
+        List<OrderRecord> orders = orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
+                .select(OrderRecord::getCreatedAt, OrderRecord::getTotalQuantity));
+        Map<LocalDate, Integer> valuesByDate = new LinkedHashMap<>();
+        for (OrderRecord order : orders) {
+            if (order.getCreatedAt() == null) {
+                continue;
+            }
+            valuesByDate.merge(order.getCreatedAt().toLocalDate(), nullToZero(order.getTotalQuantity()), Integer::sum);
+        }
+        return buildTimePoints(valuesByDate);
+    }
+
+    private List<StatisticsTimePoint> buildShippedPairsTrend() {
+        List<ShippingNoteTask> tasks = shippingNoteTaskMapper.selectList(new LambdaQueryWrapper<ShippingNoteTask>()
+                .select(
+                        ShippingNoteTask::getShippingDate,
+                        ShippingNoteTask::getTotalPairs,
+                        ShippingNoteTask::getCreatedAt
+                ));
+        Map<LocalDate, Integer> valuesByDate = new LinkedHashMap<>();
+        for (ShippingNoteTask task : tasks) {
+            LocalDate date = task.getShippingDate();
+            if (date == null && task.getCreatedAt() != null) {
+                date = task.getCreatedAt().toLocalDate();
+            }
+            if (date == null) {
+                continue;
+            }
+            valuesByDate.merge(date, nullToZero(task.getTotalPairs()), Integer::sum);
+        }
+        return buildTimePoints(valuesByDate);
+    }
+
+    private List<StatisticsTimePoint> buildTimePoints(Map<LocalDate, Integer> valuesByDate) {
+        return valuesByDate.entrySet()
+                .stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> {
+                    StatisticsTimePoint point = new StatisticsTimePoint();
+                    point.setDate(entry.getKey());
+                    point.setValue(entry.getValue());
+                    return point;
+                })
+                .toList();
+    }
+
+    private Map<Long, Integer> loadShippedPairsByDetailId(Map<Long, Integer> detailPairsById) {
+        if (detailPairsById.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
+                new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                        .select(ShippingNoteTaskItem::getSourceDetailId)
+                        .in(ShippingNoteTaskItem::getSourceDetailId, detailPairsById.keySet())
+        );
+        if (taskItems.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Integer> shippedPairsByDetailId = new LinkedHashMap<>();
+        for (ShippingNoteTaskItem taskItem : taskItems) {
+            Long detailId = taskItem.getSourceDetailId();
+            int pairCount = nullToZero(detailPairsById.get(detailId));
+            if (detailId != null && pairCount > 0) {
+                shippedPairsByDetailId.merge(detailId, pairCount, Integer::sum);
+            }
+        }
+        return shippedPairsByDetailId;
     }
 
     private List<DevelopmentNoStatisticNode> buildDevelopmentNoStatisticsTree(
@@ -404,6 +500,8 @@ public class OrderServiceImpl implements OrderService {
                 siblings.add(node);
             }
             node.setPairCount(nullToZero(node.getPairCount()) + bucket.getPairCount());
+            node.setShippedPairCount(nullToZero(node.getShippedPairCount()) + bucket.getShippedPairCount());
+            node.setUnshippedPairCount(nullToZero(node.getUnshippedPairCount()) + bucket.getUnshippedPairCount());
             node.setDetailCount(nullToZero(node.getDetailCount()) + bucket.getDetailCount());
             node.setStyleCount(nullToZero(node.getStyleCount()) + 1);
             if (index == parts.size() - 1) {
@@ -420,6 +518,8 @@ public class OrderServiceImpl implements OrderService {
         node.setLabel(label);
         node.setLevel(level);
         node.setPairCount(0);
+        node.setShippedPairCount(0);
+        node.setUnshippedPairCount(0);
         node.setDetailCount(0);
         node.setStyleCount(0);
         node.setChildren(new ArrayList<>());
@@ -460,6 +560,8 @@ public class OrderServiceImpl implements OrderService {
         node.setFullDevelopmentNo(bucket.getDevelopmentNo());
         node.setLevel(parseDevelopmentNoParts(bucket.getDevelopmentNo()).size());
         node.setPairCount(bucket.getPairCount());
+        node.setShippedPairCount(bucket.getShippedPairCount());
+        node.setUnshippedPairCount(bucket.getUnshippedPairCount());
         node.setDetailCount(bucket.getDetailCount());
         node.setStyleCount(1);
         node.setOrderReferences(bucket.getOrderReferences());
@@ -491,13 +593,17 @@ public class OrderServiceImpl implements OrderService {
     private DevelopmentNoOrderReference buildDevelopmentNoOrderReference(
             OrderRecordDetail detail,
             OrderRecord order,
-            int pairCount
+            int pairCount,
+            int shippedPairCount,
+            int unshippedPairCount
     ) {
         DevelopmentNoOrderReference reference = new DevelopmentNoOrderReference();
         reference.setOrderId(detail.getOrderId());
         reference.setInvoiceNo(cleanStatisticText(order == null ? null : order.getOrderNo()));
         reference.setOrderNo(cleanStatisticText(detail.getCustomerOrderNo()));
         reference.setPairCount(pairCount);
+        reference.setShippedPairCount(shippedPairCount);
+        reference.setUnshippedPairCount(unshippedPairCount);
         reference.setDetailCount(1);
         return reference;
     }
@@ -1251,14 +1357,23 @@ public class OrderServiceImpl implements OrderService {
         private final String developmentNo;
         private final Map<String, DevelopmentNoOrderReference> orderReferences = new LinkedHashMap<>();
         private int pairCount;
+        private int shippedPairCount;
+        private int unshippedPairCount;
         private int detailCount;
 
         private DevelopmentNoBucket(String developmentNo) {
             this.developmentNo = developmentNo;
         }
 
-        private void add(int pairs, DevelopmentNoOrderReference orderReference) {
+        private void add(
+                int pairs,
+                int shippedPairs,
+                int unshippedPairs,
+                DevelopmentNoOrderReference orderReference
+        ) {
             pairCount += pairs;
+            shippedPairCount += shippedPairs;
+            unshippedPairCount += unshippedPairs;
             detailCount += 1;
             addOrderReference(orderReference);
         }
@@ -1277,10 +1392,14 @@ public class OrderServiceImpl implements OrderService {
                 reference.setInvoiceNo(source.getInvoiceNo());
                 reference.setOrderNo(source.getOrderNo());
                 reference.setPairCount(0);
+                reference.setShippedPairCount(0);
+                reference.setUnshippedPairCount(0);
                 reference.setDetailCount(0);
                 return reference;
             });
             target.setPairCount(nullToZero(target.getPairCount()) + nullToZero(source.getPairCount()));
+            target.setShippedPairCount(nullToZero(target.getShippedPairCount()) + nullToZero(source.getShippedPairCount()));
+            target.setUnshippedPairCount(nullToZero(target.getUnshippedPairCount()) + nullToZero(source.getUnshippedPairCount()));
             target.setDetailCount(nullToZero(target.getDetailCount()) + nullToZero(source.getDetailCount()));
         }
 
@@ -1290,6 +1409,14 @@ public class OrderServiceImpl implements OrderService {
 
         private int getPairCount() {
             return pairCount;
+        }
+
+        private int getShippedPairCount() {
+            return shippedPairCount;
+        }
+
+        private int getUnshippedPairCount() {
+            return unshippedPairCount;
         }
 
         private int getDetailCount() {
