@@ -7,6 +7,7 @@ public class OrderStatisticsResponse {
 
     private Integer totalPairs;
     private Integer shippedPairs;
+    private Integer unshippedPairs;
     private Integer styleCount;
     private Integer detailCount;
     private List<DevelopmentNoStatisticNode> developmentNoTree = new ArrayList<>();
@@ -16,6 +17,8 @@ public class OrderStatisticsResponse {
     public void setTotalPairs(Integer totalPairs) { this.totalPairs = totalPairs; }
     public Integer getShippedPairs() { return shippedPairs; }
     public void setShippedPairs(Integer shippedPairs) { this.shippedPairs = shippedPairs; }
+    public Integer getUnshippedPairs() { return unshippedPairs; }
+    public void setUnshippedPairs(Integer unshippedPairs) { this.unshippedPairs = unshippedPairs; }
     public Integer getStyleCount() { return styleCount; }
     public void setStyleCount(Integer styleCount) { this.styleCount = styleCount; }
     public Integer getDetailCount() { return detailCount; }

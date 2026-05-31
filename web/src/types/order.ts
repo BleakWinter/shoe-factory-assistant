@@ -99,6 +99,7 @@ export interface DevelopmentNoStatisticNode {
 export interface OrderStatistics {
   totalPairs: number;
   shippedPairs: number;
+  unshippedPairs: number;
   styleCount: number;
   detailCount: number;
   developmentNoTree: DevelopmentNoStatisticNode[];

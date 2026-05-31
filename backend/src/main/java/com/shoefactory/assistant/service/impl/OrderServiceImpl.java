@@ -362,8 +362,10 @@ public class OrderServiceImpl implements OrderService {
         }
 
         OrderStatisticsResponse response = new OrderStatisticsResponse();
+        int shippedPairs = nullToZero(shippingNoteTaskMapper.sumTotalPairs());
         response.setTotalPairs(totalPairs);
-        response.setShippedPairs(nullToZero(shippingNoteTaskMapper.sumTotalPairs()));
+        response.setShippedPairs(shippedPairs);
+        response.setUnshippedPairs(Math.max(0, totalPairs - shippedPairs));
         response.setStyleCount(buckets.size());
         response.setDetailCount(details.size());
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));

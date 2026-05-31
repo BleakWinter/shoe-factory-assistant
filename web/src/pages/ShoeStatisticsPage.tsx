@@ -222,6 +222,9 @@ export default function ShoeStatisticsPage() {
               <Statistic title="出货对数" value={statistics?.shippedPairs || 0} suffix="双" />
             </div>
             <div className="statistics-metric">
+              <Statistic title="未出货对数" value={statistics?.unshippedPairs || 0} suffix="双" />
+            </div>
+            <div className="statistics-metric">
               <Statistic title="款号数量" value={statistics?.styleCount || 0} />
             </div>
           </div>
