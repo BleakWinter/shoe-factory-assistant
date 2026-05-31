@@ -4,7 +4,13 @@ import { App, Button, Empty, Modal, Segmented, Skeleton, Statistic, Table, Typog
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOrderStatistics } from "../api/statisticsApi";
-import type { DevelopmentNoOrderReference, DevelopmentNoStatisticNode, OrderStatistics, StatisticsTimePoint } from "../types/order";
+import type {
+  DevelopmentNoOrderReference,
+  DevelopmentNoStatisticNode,
+  OrderStatistics,
+  StatisticsTimePoint,
+  UnshippedInvoiceStatistic,
+} from "../types/order";
 
 function formatCount(value?: number) {
   return new Intl.NumberFormat("zh-CN").format(value || 0);
@@ -14,6 +20,44 @@ function formatText(value?: string) {
   return value?.trim() || "-";
 }
 
+function parseDate(value?: string) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDate(value?: string) {
+  const date = parseDate(value);
+  if (!date) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function getPendingDays(value?: string) {
+  const date = parseDate(value);
+  if (!date) {
+    return undefined;
+  }
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.max(0, Math.floor((today - start) / 86_400_000));
+}
+
+function formatPendingDays(value?: number) {
+  if (value === undefined) {
+    return "-";
+  }
+  return value === 0 ? "今天" : `${formatCount(value)} 天`;
+}
+
 type StatisticModalType = "total" | "shipped" | "unshipped" | "styles";
 type TimeGranularity = "year" | "month" | "day";
 
@@ -21,7 +65,6 @@ interface BarChartDatum {
   key: string;
   label: string;
   value: number;
-  node: DevelopmentNoStatisticNode;
 }
 
 interface TrendChartDatum {
@@ -39,6 +82,12 @@ interface StyleRankingRow {
   unshippedPairCount: number;
   invoiceCount: number;
   node: DevelopmentNoStatisticNode;
+}
+
+interface UnshippedInvoiceRow extends UnshippedInvoiceStatistic {
+  rank: number;
+  key: string;
+  pendingDays?: number;
 }
 
 function getNodeChildren(node?: DevelopmentNoStatisticNode) {
@@ -68,6 +117,22 @@ function buildStyleRankingRows(nodes: DevelopmentNoStatisticNode[]): StyleRankin
       node,
     }))
     .sort((left, right) => right.pairCount - left.pairCount || left.label.localeCompare(right.label, "zh-CN", { numeric: true }))
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+}
+
+function buildUnshippedInvoiceRows(items: UnshippedInvoiceStatistic[]): UnshippedInvoiceRow[] {
+  return items
+    .filter((item) => (item.unshippedPairCount || 0) > 0)
+    .map((item, index) => ({
+      ...item,
+      key: [item.orderId || "order", item.invoiceNo || "invoice", index].join("-"),
+      pendingDays: getPendingDays(item.createdAt),
+    }))
+    .sort((left, right) => {
+      const leftTime = parseDate(left.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
+      const rightTime = parseDate(right.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
+      return leftTime - rightTime || formatText(left.invoiceNo).localeCompare(formatText(right.invoiceNo), "zh-CN", { numeric: true });
+    })
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
@@ -114,16 +179,6 @@ function buildTrendChartData(points: StatisticsTimePoint[], granularity: TimeGra
     }));
 }
 
-function getChartEventDatum(event: unknown) {
-  const source = event as {
-    data?: unknown;
-    target?: { __data__?: unknown };
-  };
-  const eventData = source?.data as { data?: unknown } | undefined;
-  const targetData = source?.target?.__data__ as { data?: unknown } | undefined;
-  return (eventData?.data || eventData || targetData?.data || targetData) as Partial<BarChartDatum> | undefined;
-}
-
 export default function ShoeStatisticsPage() {
   const { message } = App.useApp();
   const [statistics, setStatistics] = useState<OrderStatistics | null>(null);
@@ -163,42 +218,36 @@ export default function ShoeStatisticsPage() {
     () => buildStyleRankingRows(statistics?.developmentNoTree || []),
     [statistics?.developmentNoTree],
   );
+  const unshippedInvoiceRows = useMemo(
+    () => buildUnshippedInvoiceRows(statistics?.unshippedInvoiceStatistics || []),
+    [statistics?.unshippedInvoiceStatistics],
+  );
   const orderReferences = orderReferenceNode?.orderReferences || [];
-  const getMetricValue = useCallback((row: StyleRankingRow, type: StatisticModalType | null) => {
-    if (type === "shipped") {
-      return row.shippedPairCount;
-    }
-    if (type === "unshipped") {
-      return row.unshippedPairCount;
-    }
-    return row.pairCount;
-  }, []);
   const activeRows = useMemo(() => {
-    if (!activeStatistic) {
+    if (activeStatistic !== "styles") {
       return [];
     }
     return styleRows
       .map((row) => ({
         ...row,
-        value: getMetricValue(row, activeStatistic),
+        value: row.pairCount,
       }))
       .filter((row) => row.value > 0)
       .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label, "zh-CN", { numeric: true }))
       .map((row, index) => ({ ...row, rank: index + 1 }));
-  }, [activeStatistic, getMetricValue, styleRows]);
-  const chartData = useMemo<BarChartDatum[]>(
-    () => activeRows.slice(0, 20).map((row) => ({
+  }, [activeStatistic, styleRows]);
+  const unshippedChartData = useMemo<BarChartDatum[]>(
+    () => unshippedInvoiceRows.slice(0, 20).map((row) => ({
       key: row.key,
-      label: row.label,
-      value: row.value,
-      node: row.node,
+      label: formatText(row.invoiceNo),
+      value: row.unshippedPairCount || 0,
     })),
-    [activeRows],
+    [unshippedInvoiceRows],
   );
   const modalTitleMap: Record<StatisticModalType, string> = {
     total: "创建订单双数趋势",
     shipped: "出货对数趋势",
-    unshipped: "未出货对数",
+    unshipped: "未出货发票排序",
     styles: "款号数量排名",
   };
   const trendSource = activeStatistic === "total"
@@ -246,10 +295,10 @@ export default function ShoeStatisticsPage() {
   );
 
   const barChartConfig = useMemo<BarConfig>(() => ({
-    data: chartData,
+    data: unshippedChartData,
     xField: "label",
     yField: "value",
-    height: Math.max(300, chartData.length * 32),
+    height: Math.max(300, unshippedChartData.length * 34),
     autoFit: true,
     scale: {
       y: { nice: true },
@@ -274,24 +323,14 @@ export default function ShoeStatisticsPage() {
     },
     tooltip: {
       title: "label",
-      items: [{ field: "value", name: "双数" }],
+      items: [{ field: "value", name: "未出货双数" }],
     },
     style: {
-      fill: "#2f6df6",
+      fill: "#f97316",
       radiusTopRight: 4,
       radiusBottomRight: 4,
     },
-    onEvent: (_chart, event) => {
-      if (!String(event?.type || "").includes("click")) {
-        return;
-      }
-      const datum = getChartEventDatum(event);
-      const match = chartData.find((item) => item.key === datum?.key || item.label === datum?.label);
-      if (match?.node) {
-        setOrderReferenceNode(match.node);
-      }
-    },
-  }), [chartData]);
+  }), [unshippedChartData]);
 
   const trendColumnConfig = useMemo<ColumnConfig>(() => ({
     data: trendChartData,
@@ -387,6 +426,56 @@ export default function ShoeStatisticsPage() {
     [],
   );
 
+  const unshippedInvoiceColumns = useMemo<ColumnsType<UnshippedInvoiceRow>>(
+    () => [
+      { title: "排名", dataIndex: "rank", key: "rank", width: 72 },
+      {
+        title: "发票流水号",
+        dataIndex: "invoiceNo",
+        key: "invoiceNo",
+        ellipsis: true,
+        render: (value?: string) => formatText(value),
+      },
+      {
+        title: "创建订单时间",
+        dataIndex: "createdAt",
+        key: "createdAt",
+        width: 128,
+        render: (value?: string) => formatDate(value),
+      },
+      {
+        title: "距今",
+        dataIndex: "pendingDays",
+        key: "pendingDays",
+        width: 96,
+        align: "right" as const,
+        render: (value?: number) => formatPendingDays(value),
+      },
+      {
+        title: "未出货",
+        dataIndex: "unshippedPairCount",
+        key: "unshippedPairCount",
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+      {
+        title: "已出货",
+        dataIndex: "shippedPairCount",
+        key: "shippedPairCount",
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+      {
+        title: "总双数",
+        dataIndex: "pairCount",
+        key: "pairCount",
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+    ],
+    [],
+  );
+
   return (
     <div className="workspace statistics-page">
       <div className="toolbar-band">
@@ -452,15 +541,25 @@ export default function ShoeStatisticsPage() {
           </>
         ) : null}
         {activeStatistic === "unshipped" ? (
-          chartData.length === 0 ? (
+          unshippedInvoiceRows.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
           ) : (
-            <div className="statistics-modal-chart">
-              <Bar {...barChartConfig} />
-            </div>
+            <>
+              <div className="statistics-modal-chart">
+                <Bar {...barChartConfig} />
+              </div>
+              <Table<UnshippedInvoiceRow>
+                rowKey="key"
+                columns={unshippedInvoiceColumns}
+                dataSource={unshippedInvoiceRows}
+                pagination={unshippedInvoiceRows.length > 10 ? { pageSize: 10, showSizeChanger: false } : false}
+                size="small"
+                className="statistics-order-reference-table"
+              />
+            </>
           )
         ) : null}
-        {activeStatistic === "unshipped" || activeStatistic === "styles" ? (
+        {activeStatistic === "styles" ? (
           <Table<StyleRankingRow>
             rowKey="key"
             columns={rankingColumns}

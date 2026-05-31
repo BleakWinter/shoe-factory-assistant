@@ -14,6 +14,7 @@ import com.shoefactory.assistant.dto.OrderStatisticsResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoOrderReference;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsTimePoint;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnshippedInvoiceStatistic;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
@@ -394,6 +395,7 @@ public class OrderServiceImpl implements OrderService {
         response.setDetailCount(details.size());
         response.setOrderCreatedTrend(buildOrderCreatedTrend());
         response.setShippedPairsTrend(buildShippedPairsTrend());
+        response.setUnshippedInvoiceStatistics(buildUnshippedInvoiceStatistics(details, ordersById, shippedPairsByDetailId));
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));
         response.setTopDevelopmentNos(buildTopDevelopmentNoStatistics(buckets.values()));
         return response;
@@ -444,6 +446,48 @@ public class OrderServiceImpl implements OrderService {
                     return point;
                 })
                 .toList();
+    }
+
+    private List<UnshippedInvoiceStatistic> buildUnshippedInvoiceStatistics(
+            List<OrderRecordDetail> details,
+            Map<Long, OrderRecord> ordersById,
+            Map<Long, Integer> shippedPairsByDetailId
+    ) {
+        Map<String, UnshippedInvoiceStatistic> statisticsByOrder = new LinkedHashMap<>();
+        for (OrderRecordDetail detail : details) {
+            int pairCount = detailPairCount(detail);
+            int shippedPairCount = detail.getId() == null ? 0 : nullToZero(shippedPairsByDetailId.get(detail.getId()));
+            int unshippedPairCount = Math.max(0, pairCount - shippedPairCount);
+            OrderRecord order = ordersById.get(detail.getOrderId());
+            String key = detail.getOrderId() != null
+                    ? "order-" + detail.getOrderId()
+                    : "detail-" + (detail.getId() == null ? "unknown" : detail.getId());
+            UnshippedInvoiceStatistic statistic = statisticsByOrder.computeIfAbsent(key, ignored ->
+                    buildUnshippedInvoiceStatistic(detail, order));
+            statistic.setPairCount(nullToZero(statistic.getPairCount()) + pairCount);
+            statistic.setShippedPairCount(nullToZero(statistic.getShippedPairCount()) + shippedPairCount);
+            statistic.setUnshippedPairCount(nullToZero(statistic.getUnshippedPairCount()) + unshippedPairCount);
+            statistic.setDetailCount(nullToZero(statistic.getDetailCount()) + 1);
+        }
+        return statisticsByOrder.values()
+                .stream()
+                .filter(statistic -> nullToZero(statistic.getUnshippedPairCount()) > 0)
+                .sorted(Comparator
+                        .comparing(UnshippedInvoiceStatistic::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(statistic -> statistic.getInvoiceNo() == null ? "" : statistic.getInvoiceNo()))
+                .toList();
+    }
+
+    private UnshippedInvoiceStatistic buildUnshippedInvoiceStatistic(OrderRecordDetail detail, OrderRecord order) {
+        UnshippedInvoiceStatistic statistic = new UnshippedInvoiceStatistic();
+        statistic.setOrderId(detail.getOrderId());
+        statistic.setInvoiceNo(cleanStatisticText(order == null ? null : order.getOrderNo()));
+        statistic.setCreatedAt(order == null ? null : order.getCreatedAt());
+        statistic.setPairCount(0);
+        statistic.setShippedPairCount(0);
+        statistic.setUnshippedPairCount(0);
+        statistic.setDetailCount(0);
+        return statistic;
     }
 
     private Map<Long, Integer> loadShippedPairsByDetailId(Map<Long, Integer> detailPairsById) {
@@ -579,7 +623,7 @@ public class OrderServiceImpl implements OrderService {
             return Collections.emptyMap();
         }
         return orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
-                        .select(OrderRecord::getId, OrderRecord::getOrderNo)
+                        .select(OrderRecord::getId, OrderRecord::getOrderNo, OrderRecord::getCreatedAt)
                         .in(OrderRecord::getId, orderIds))
                 .stream()
                 .collect(Collectors.toMap(

@@ -105,6 +105,16 @@ export interface StatisticsTimePoint {
   value: number;
 }
 
+export interface UnshippedInvoiceStatistic {
+  orderId?: number;
+  invoiceNo?: string;
+  createdAt?: string;
+  pairCount?: number;
+  shippedPairCount?: number;
+  unshippedPairCount?: number;
+  detailCount?: number;
+}
+
 export interface OrderStatistics {
   totalPairs: number;
   shippedPairs: number;
@@ -113,6 +123,7 @@ export interface OrderStatistics {
   detailCount: number;
   orderCreatedTrend?: StatisticsTimePoint[];
   shippedPairsTrend?: StatisticsTimePoint[];
+  unshippedInvoiceStatistics?: UnshippedInvoiceStatistic[];
   developmentNoTree: DevelopmentNoStatisticNode[];
   topDevelopmentNos: DevelopmentNoStatisticNode[];
 }
