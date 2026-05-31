@@ -219,6 +219,9 @@ export default function ShoeStatisticsPage() {
               <Statistic title="鞋子总双数" value={statistics?.totalPairs || 0} suffix="双" />
             </div>
             <div className="statistics-metric">
+              <Statistic title="出货对数" value={statistics?.shippedPairs || 0} suffix="双" />
+            </div>
+            <div className="statistics-metric">
               <Statistic title="款号数量" value={statistics?.styleCount || 0} />
             </div>
           </div>

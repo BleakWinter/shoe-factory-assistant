@@ -32,6 +32,7 @@ import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
+import com.shoefactory.assistant.mapper.ShippingNoteTaskMapper;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.service.OrderService;
@@ -89,6 +90,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderDetailProcessMapper orderDetailProcessMapper;
     private final ShoeStyleConfigMapper shoeStyleConfigMapper;
+    private final ShippingNoteTaskMapper shippingNoteTaskMapper;
     private final FileStorageUtil fileStorageUtil;
     private final OrderExcelImportService orderExcelImportService;
     private final StyleConfigService styleConfigService;
@@ -100,6 +102,7 @@ public class OrderServiceImpl implements OrderService {
             OrderPackingDetailMapper orderPackingDetailMapper,
             OrderDetailProcessMapper orderDetailProcessMapper,
             ShoeStyleConfigMapper shoeStyleConfigMapper,
+            ShippingNoteTaskMapper shippingNoteTaskMapper,
             FileStorageUtil fileStorageUtil,
             OrderExcelImportService orderExcelImportService,
             StyleConfigService styleConfigService
@@ -110,6 +113,7 @@ public class OrderServiceImpl implements OrderService {
         this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderDetailProcessMapper = orderDetailProcessMapper;
         this.shoeStyleConfigMapper = shoeStyleConfigMapper;
+        this.shippingNoteTaskMapper = shippingNoteTaskMapper;
         this.fileStorageUtil = fileStorageUtil;
         this.orderExcelImportService = orderExcelImportService;
         this.styleConfigService = styleConfigService;
@@ -359,6 +363,7 @@ public class OrderServiceImpl implements OrderService {
 
         OrderStatisticsResponse response = new OrderStatisticsResponse();
         response.setTotalPairs(totalPairs);
+        response.setShippedPairs(nullToZero(shippingNoteTaskMapper.sumTotalPairs()));
         response.setStyleCount(buckets.size());
         response.setDetailCount(details.size());
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));

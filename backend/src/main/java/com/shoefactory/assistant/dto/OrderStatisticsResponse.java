@@ -6,6 +6,7 @@ import java.util.List;
 public class OrderStatisticsResponse {
 
     private Integer totalPairs;
+    private Integer shippedPairs;
     private Integer styleCount;
     private Integer detailCount;
     private List<DevelopmentNoStatisticNode> developmentNoTree = new ArrayList<>();
@@ -13,6 +14,8 @@ public class OrderStatisticsResponse {
 
     public Integer getTotalPairs() { return totalPairs; }
     public void setTotalPairs(Integer totalPairs) { this.totalPairs = totalPairs; }
+    public Integer getShippedPairs() { return shippedPairs; }
+    public void setShippedPairs(Integer shippedPairs) { this.shippedPairs = shippedPairs; }
     public Integer getStyleCount() { return styleCount; }
     public void setStyleCount(Integer styleCount) { this.styleCount = styleCount; }
     public Integer getDetailCount() { return detailCount; }
