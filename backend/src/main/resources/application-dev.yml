@@ -7,6 +7,6 @@ spring:
 
 app:
   file-storage:
-    root-path: ${APP_FILE_STORAGE_ROOT_PATH:${user.home}/shoe-factory-assistant/files}
+    root-path: ${APP_FILE_STORAGE_ROOT_PATH:${user.dir}/src/main/resources/files}
     libre-office-command: soffice
     libre-office-timeout-seconds: 120

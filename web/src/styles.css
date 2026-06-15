@@ -701,9 +701,18 @@ a {
 
 .carton-label-info-value {
   font-family: "宋体";
-  font-size: 24px;
+  font-size: var(--carton-label-info-value-font-size, 24px);
   font-weight: 900;
   letter-spacing: 0;
+}
+
+.carton-label-info-value-adaptive {
+  overflow: hidden;
+  line-height: 1.05;
+  text-align: center;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .carton-label-size-grid {
@@ -1491,6 +1500,7 @@ a {
 
   body {
     background: #ffffff;
+    overflow: visible;
   }
 
   body * {
@@ -1529,9 +1539,10 @@ a {
   .shipping-note-print-root {
     display: block;
     position: static;
-    width: 100%;
+    width: auto;
     margin: 0;
     padding: 0;
+    overflow: visible;
     visibility: visible;
   }
 
@@ -1570,9 +1581,13 @@ a {
   }
 
   .carton-label-a4 {
+    height: auto;
+    min-height: 0;
+    padding-bottom: 3.4mm;
     box-shadow: none;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    overflow: hidden;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   .carton-label-a4:not(:last-child) {
@@ -1583,12 +1598,12 @@ a {
   .inner-box-label-a4 {
     width: 210mm;
     min-width: 0;
-    height: 296mm;
+    height: auto;
     min-height: 0;
     box-shadow: none;
     overflow: hidden;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   .inner-box-label-grid {
@@ -1602,23 +1617,24 @@ a {
 
   .shipping-note-page {
     display: block;
-    width: auto;
+    width: 297mm;
+    height: auto;
     min-height: 0;
     margin: 0;
-    padding: 0;
+    padding: var(--shipping-note-sheet-offset-top) 0 0 var(--shipping-note-sheet-offset-left);
     background: transparent;
     box-shadow: none;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   .shipping-note-sheet {
     width: var(--shipping-note-sheet-width);
     min-width: var(--shipping-note-sheet-width);
-    margin: var(--shipping-note-sheet-offset-top) 0 var(--shipping-note-sheet-offset-top) var(--shipping-note-sheet-offset-left);
+    margin: 0;
     box-shadow: none;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   .shipping-note-pages {
@@ -1630,5 +1646,12 @@ a {
   .shipping-note-page:not(:last-child) {
     break-after: page;
     page-break-after: always;
+  }
+
+  .carton-label-a4:last-child,
+  .inner-box-label-a4:last-child,
+  .shipping-note-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }

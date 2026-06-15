@@ -7,7 +7,7 @@ import {
 } from "@ant-design/icons";
 import { App, Button, Cascader, Modal, Pagination, Radio, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Key, MouseEvent } from "react";
 import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import { fetchStyleConfigs } from "../api/styleConfigApi";
@@ -116,6 +116,13 @@ const defaultInnerBoxLabels: InnerBoxLabelData[] = [defaultInnerBoxLabel];
 
 const CARTON_LABEL_COPIES_PER_CARTON = 2;
 const INNER_BOX_LABELS_PER_PAGE = 18;
+const CSS_PX_PER_MM = 96 / 25.4;
+const CARTON_LABEL_VALUE_WIDTH_PX = (138.536 - (14.94 + 7.974 * 4)) * CSS_PX_PER_MM;
+const CARTON_LABEL_INFO_ROW_HEIGHT_PX = 15.31 * CSS_PX_PER_MM;
+const CARTON_LABEL_DEFAULT_VALUE_FONT_SIZE = 24;
+const CARTON_LABEL_WRAPPED_VALUE_MAX_FONT_SIZE = 20;
+const CARTON_LABEL_WRAPPED_VALUE_MIN_FONT_SIZE = 12;
+const CARTON_LABEL_WRAPPED_VALUE_LINE_HEIGHT = 1.05;
 
 function renderSizeQuantities(value?: Record<string, number>) {
   const entries = Object.entries(value || {})
@@ -131,6 +138,106 @@ function renderSizeQuantities(value?: Record<string, number>) {
           {size}: {count}
         </span>
       ))}
+    </div>
+  );
+}
+
+function getCartonLabelAdaptiveFontSize(element: HTMLElement, value: string) {
+  const text = value.trim();
+  if (!text) {
+    return undefined;
+  }
+
+  const computedStyle = window.getComputedStyle(element);
+  const width = element.clientWidth || CARTON_LABEL_VALUE_WIDTH_PX;
+  const height = element.clientHeight || CARTON_LABEL_INFO_ROW_HEIGHT_PX;
+  if (width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  const measuringElement = document.createElement("div");
+  measuringElement.textContent = text;
+  measuringElement.style.position = "fixed";
+  measuringElement.style.left = "-9999px";
+  measuringElement.style.top = "0";
+  measuringElement.style.visibility = "hidden";
+  measuringElement.style.pointerEvents = "none";
+  measuringElement.style.boxSizing = "border-box";
+  measuringElement.style.width = `${width}px`;
+  measuringElement.style.fontFamily = computedStyle.fontFamily || '"宋体", SimSun, Arial, sans-serif';
+  measuringElement.style.fontWeight = computedStyle.fontWeight || "900";
+  measuringElement.style.fontStyle = computedStyle.fontStyle;
+  measuringElement.style.letterSpacing = computedStyle.letterSpacing;
+  measuringElement.style.textAlign = "center";
+  measuringElement.style.whiteSpace = "nowrap";
+  measuringElement.style.fontSize = `${CARTON_LABEL_DEFAULT_VALUE_FONT_SIZE}px`;
+  measuringElement.style.lineHeight = String(CARTON_LABEL_WRAPPED_VALUE_LINE_HEIGHT);
+  document.body.appendChild(measuringElement);
+
+  const oneLineFits = measuringElement.scrollWidth <= width + 0.5;
+  if (oneLineFits) {
+    measuringElement.remove();
+    return undefined;
+  }
+
+  measuringElement.style.whiteSpace = "normal";
+  measuringElement.style.wordBreak = "normal";
+  measuringElement.style.overflowWrap = "anywhere";
+
+  for (
+    let fontSize = CARTON_LABEL_WRAPPED_VALUE_MAX_FONT_SIZE;
+    fontSize >= CARTON_LABEL_WRAPPED_VALUE_MIN_FONT_SIZE;
+    fontSize -= 0.5
+  ) {
+    measuringElement.style.fontSize = `${fontSize}px`;
+    if (measuringElement.scrollHeight <= height + 0.5 && measuringElement.scrollWidth <= width + 0.5) {
+      measuringElement.remove();
+      return Number(fontSize.toFixed(1));
+    }
+  }
+
+  measuringElement.remove();
+  return CARTON_LABEL_WRAPPED_VALUE_MIN_FONT_SIZE;
+}
+
+function CartonAdaptiveInfoValue({ value }: { value: string }) {
+  const valueRef = useRef<HTMLDivElement>(null);
+
+  const updateFontSize = useCallback(() => {
+    const element = valueRef.current;
+    if (!element) {
+      return;
+    }
+
+    const fontSize = getCartonLabelAdaptiveFontSize(element, value);
+    if (fontSize === undefined) {
+      element.style.removeProperty("--carton-label-info-value-font-size");
+    } else {
+      element.style.setProperty("--carton-label-info-value-font-size", `${fontSize}px`);
+    }
+  }, [value]);
+
+  useLayoutEffect(() => {
+    updateFontSize();
+    const animationFrame = window.requestAnimationFrame(updateFontSize);
+    const element = valueRef.current;
+    const resizeObserver = element && "ResizeObserver" in window ? new ResizeObserver(updateFontSize) : null;
+    if (element && resizeObserver) {
+      resizeObserver.observe(element);
+    }
+    window.addEventListener("resize", updateFontSize);
+    window.addEventListener("beforeprint", updateFontSize);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateFontSize);
+      window.removeEventListener("beforeprint", updateFontSize);
+    };
+  }, [updateFontSize]);
+
+  return (
+    <div ref={valueRef} className="carton-label-info-value carton-label-info-value-adaptive">
+      {value}
     </div>
   );
 }
@@ -1182,7 +1289,7 @@ function CartonLabelTemplate({ data }: { data: CartonLabelTemplateData }) {
       <CartonInfoRow label="Factory order NO:" value={data.factoryOrderNo} />
       <CartonInfoRow label="STYLE:" value={data.style} />
       <CartonInfoRow label="MATERIAL:" value={data.material} />
-      <CartonInfoRow label="COLOR:" value={data.color} />
+      <CartonInfoRow adaptiveValue label="COLOR:" value={data.color} />
       <CartonInfoRow label="Number:" value={data.number} />
       <CartonInfoRow label="PO#:" value={data.po} />
       <CartonInfoRow label="ORDER NUMBER:" value={data.orderNumber} />
@@ -1258,11 +1365,11 @@ function InnerBoxLabel({ data }: { data: InnerBoxLabelData }) {
   );
 }
 
-function CartonInfoRow({ label, value }: { label: string; value: string }) {
+function CartonInfoRow({ label, value, adaptiveValue = false }: { label: string; value: string; adaptiveValue?: boolean }) {
   return (
     <div className="carton-label-info-row">
       <div className="carton-label-info-label">{label}</div>
-      <div className="carton-label-info-value">{value}</div>
+      {adaptiveValue ? <CartonAdaptiveInfoValue value={value} /> : <div className="carton-label-info-value">{value}</div>}
     </div>
   );
 }
