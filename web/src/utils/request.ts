@@ -2,7 +2,7 @@ import axios, { AxiosError } from "axios";
 import type { ApiResponse } from "../types/order";
 
 const request = axios.create({
-  // Vite 会把 /api 代理到后端 http://localhost:8080。
+  // Vite 会把 /api 代理到本地 dev 后端 http://localhost:8081。
   baseURL: "/api",
   // Excel 转 PDF 可能比较慢，超时时间故意放宽。
   timeout: 180_000,

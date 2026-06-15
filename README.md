@@ -161,10 +161,10 @@ sql/add_shipping_note_task.sql
 
 ## 主要接口
 
-后端默认地址：
+开发环境后端默认地址：
 
 ```text
-http://localhost:8080
+http://localhost:8081
 ```
 
 上传订单 Excel：
@@ -288,7 +288,7 @@ mvn spring-boot:run
 
 ```powershell
 cd D:\work\shoe-factory-assistant\backend
-mvn spring-boot:run -Pprod
+mvn spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
 ### 4. 启动后端
@@ -303,7 +303,7 @@ mvn spring-boot:run
 后端地址：
 
 ```text
-http://localhost:8080
+http://localhost:8081
 ```
 
 ### 5. 在 IDEA 里启动
@@ -341,7 +341,7 @@ http://localhost:8080
 - scripts：`dev`
 - 启动后访问：`http://localhost:5173`
 
-前端的 Vite 代理会把 `/api` 转发到 `http://localhost:8080`，所以本地联调时先启动后端，再启动前端。
+前端的 Vite 代理会把 `/api` 转发到 `http://localhost:8081`，所以本地联调时先启动后端，再启动前端。
 
 ### 6. 启动前端
 

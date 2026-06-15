@@ -9,7 +9,7 @@ spring:
       max-file-size: 100MB
       max-request-size: 120MB
   profiles:
-    active: @spring.profiles.active@
+    default: dev
 
 mybatis-plus:
   configuration:

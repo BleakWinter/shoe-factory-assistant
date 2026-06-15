@@ -16,7 +16,7 @@
 1. 安装 JDK 17、Maven、MySQL 8、LibreOffice。
 2. 执行 `sql/init.sql` 和 `sql/print_table.sql`。
 3. 按环境修改 `src/main/resources/application-dev.yml` 或 `src/main/resources/application-prod.yml` 中的数据库账号和 LibreOffice 命令。
-4. 启动后端，默认使用 `dev` 环境：
+4. 启动后端，默认使用 `dev` 环境，端口为 `8081`：
 
 ```powershell
 cd D:\work\shoe-factory-assistant\backend
@@ -29,7 +29,7 @@ mvn spring-boot:run
 
 ```powershell
 cd D:\work\shoe-factory-assistant\backend
-mvn spring-boot:run -Pprod
+mvn spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
 IDEA 里直接启动 `ShoeFactoryAssistantApplication` 时，请在 Spring Boot Run Configuration 的 Active profiles 填 `dev` 或 `prod`。如果没有 Active profiles 输入框，就在 Program arguments 填 `--spring.profiles.active=dev` 或 `--spring.profiles.active=prod`。

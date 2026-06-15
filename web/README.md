@@ -12,7 +12,7 @@ npm run dev
 默认地址：
 
 - 本机访问：`http://localhost:5173/`
-- API 代理：`http://localhost:5173/api` -> `http://localhost:8080/api`
+- API 代理：`http://localhost:5173/api` -> `http://localhost:8081/api`
 
 ## 构建
 
