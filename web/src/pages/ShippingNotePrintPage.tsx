@@ -1,6 +1,7 @@
 import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
+  EditOutlined,
   EyeOutlined,
   FileAddOutlined,
   PrinterOutlined,
@@ -16,6 +17,7 @@ import {
   createShippingNoteTask,
   fetchShippingNoteTask,
   fetchShippingNoteTasks,
+  updateShippingNoteTask,
 } from "../api/shippingNoteApi";
 import ShippingNoteSheet, {
   countShippingNoteRows,
@@ -273,6 +275,11 @@ export default function ShippingNotePrintPage() {
   } | null>(null);
   const [taskActionLoadingId, setTaskActionLoadingId] = useState<number>();
 
+  const [editTask, setEditTask] = useState<ShippingNoteTask | null>(null);
+  const [editRecipientName, setEditRecipientName] = useState("");
+  const [editShippingDate, setEditShippingDate] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
   const selectedOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId),
     [orders, selectedOrderId],
@@ -481,6 +488,39 @@ export default function ShippingNotePrintPage() {
     }
   };
 
+  const openEditModal = (task: ShippingNoteTask) => {
+    setEditTask(task);
+    setEditRecipientName(task.recipientName || "");
+    setEditShippingDate(task.shippingDate || "");
+  };
+
+  const closeEditModal = () => {
+    setEditTask(null);
+    setEditRecipientName("");
+    setEditShippingDate("");
+    setEditSaving(false);
+  };
+
+  const saveEditTask = async () => {
+    if (!editTask) {
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await updateShippingNoteTask(editTask.id, {
+        recipientName: editRecipientName,
+        shippingDate: editShippingDate || undefined,
+      });
+      message.success("出货单已更新");
+      closeEditModal();
+      await loadTasks(page, size);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "出货单更新失败");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const ensureShippingItemsCanPrint = (items: ShippingNoteItem[]) => {
     if (hasMissingPackingItems(items)) {
       message.warning("出货单明细必须有对应的装箱单明细，不能预览打印");
@@ -606,10 +646,16 @@ export default function ShippingNotePrintPage() {
       {
         title: "操作",
         key: "actions",
-        width: 210,
+        width: 280,
         fixed: "right",
         render: (_, record) => (
           <Space size={8}>
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => openEditModal(record)}
+            >
+              编辑
+            </Button>
             <Button
               icon={<EyeOutlined />}
               loading={taskActionLoadingId === record.id}
@@ -721,7 +767,7 @@ export default function ShippingNotePrintPage() {
             showSizeChanger: true,
             onChange: (nextPage, nextSize) => void loadTasks(nextPage, nextSize),
           }}
-          scroll={{ x: 1450 }}
+          scroll={{ x: 1520 }}
           className="data-table"
         />
       </div>
@@ -888,6 +934,38 @@ export default function ShippingNotePrintPage() {
           size="small"
           className="data-table"
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(editTask)}
+        title={editTask ? `编辑出货单：${editTask.taskNo || editTask.printNo}` : "编辑出货单"}
+        onCancel={closeEditModal}
+        width={520}
+        footer={[
+          <Button key="cancel" onClick={closeEditModal}>
+            取消
+          </Button>,
+          <Button key="save" type="primary" loading={editSaving} onClick={() => void saveEditTask()}>
+            保存
+          </Button>,
+        ]}
+        destroyOnClose
+      >
+        <Form layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item label="收货单位">
+            <Input
+              value={editRecipientName}
+              onChange={(event) => setEditRecipientName(event.target.value)}
+            />
+          </Form.Item>
+          <Form.Item label="出货日期">
+            <Input
+              type="date"
+              value={editShippingDate}
+              onChange={(event) => setEditShippingDate(event.target.value)}
+            />
+          </Form.Item>
+        </Form>
       </Modal>
 
       <Modal

@@ -3,6 +3,7 @@ package com.shoefactory.assistant.service;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.ShippingNoteCreateRequest;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
+import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 
 public interface ShippingNoteTaskService {
 
@@ -16,4 +17,6 @@ public interface ShippingNoteTaskService {
     );
 
     ShippingNoteTaskResponse getShippingNoteTask(Long id);
+
+    ShippingNoteTaskResponse updateShippingNoteTask(Long id, ShippingNoteUpdateRequest request);
 }
