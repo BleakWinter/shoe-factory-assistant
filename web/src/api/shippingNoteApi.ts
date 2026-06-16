@@ -41,5 +41,10 @@ export async function fetchShippingNoteTask(id: number) {
   return data;
 }
 
+export async function updateShippingNoteTask(id: number, payload: { recipientName?: string; shippingDate?: string }) {
+  const { data } = await request.put<ShippingNoteTask>(`/shipping-note-tasks/${id}`, payload);
+  return data;
+}
+
 export const createShippingNote = createShippingNoteTask;
 export const fetchShippingNotes = fetchShippingNoteTasks as (params: ShippingNoteQueryParams) => Promise<PageResponse<ShippingNoteTask>>;

@@ -5,7 +5,7 @@ import {
   ReloadOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
-import { App, Button, Modal, Space, Table, Tag, Typography, Upload } from "antd";
+import { App, Button, Modal, Select, Space, Table, Tag, Typography, Upload } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -139,6 +139,7 @@ export default function PrintTaskListPage() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [reuploadingOrderId, setReuploadingOrderId] = useState<number | null>(null);
+  const [orderNoFilter, setOrderNoFilter] = useState<string>();
   const [activeRow, setActiveRow] = useState<PrintTaskRow | null>(null);
   const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
   const [activePrintType, setActivePrintType] = useState<PrintType | "">("");
@@ -236,6 +237,22 @@ export default function PrintTaskListPage() {
   );
 
   const rows = useMemo(() => buildPrintTaskRows(tasks), [tasks]);
+
+  const orderNoOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(rows.map((row) => row.orderNo).filter(Boolean) as string[]),
+      ).sort(),
+    [rows],
+  );
+
+  const filteredRows = useMemo(
+    () =>
+      orderNoFilter
+        ? rows.filter((row) => row.orderNo === orderNoFilter)
+        : rows,
+    [rows, orderNoFilter],
+  );
 
   const updateTaskCache = (nextTask: PrintTask) => {
     setTasks((prev) => prev.map((task) => (task.id === nextTask.id ? nextTask : task)));
@@ -416,6 +433,18 @@ export default function PrintTaskListPage() {
           </Typography.Text>
         </div>
         <Space wrap>
+          <Select
+            allowClear
+            showSearch
+            placeholder="过滤订单流水号"
+            value={orderNoFilter}
+            onChange={(value) => setOrderNoFilter(value)}
+            options={orderNoOptions.map((no) => ({ value: no, label: no }))}
+            style={{ minWidth: 200 }}
+            filterOption={(input, option) =>
+              (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+            }
+          />
           <Upload {...uploadProps}>
             <Button
               type="primary"
@@ -436,7 +465,7 @@ export default function PrintTaskListPage() {
           rowKey="key"
           loading={loading}
           columns={columns}
-          dataSource={rows}
+          dataSource={filteredRows}
           pagination={{ pageSize: 20, showSizeChanger: false }}
           scroll={{ x: 1220 }}
           className="data-table"

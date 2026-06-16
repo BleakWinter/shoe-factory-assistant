@@ -4,11 +4,13 @@ import com.shoefactory.assistant.common.ApiResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.ShippingNoteCreateRequest;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
+import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,5 +46,13 @@ public class ShippingNoteTaskController {
     @GetMapping("/{id}")
     public ApiResponse<ShippingNoteTaskResponse> getShippingNoteTask(@PathVariable Long id) {
         return ApiResponse.ok(shippingNoteTaskService.getShippingNoteTask(id));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<ShippingNoteTaskResponse> updateShippingNoteTask(
+            @PathVariable Long id,
+            @Valid @RequestBody ShippingNoteUpdateRequest request
+    ) {
+        return ApiResponse.ok(shippingNoteTaskService.updateShippingNoteTask(id, request));
     }
 }

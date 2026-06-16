@@ -9,6 +9,7 @@ import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.ShippingNoteCreateRequest;
 import com.shoefactory.assistant.dto.ShippingNoteItemRequest;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
+import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
@@ -131,9 +132,37 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         if (task == null) {
             throw new BusinessException("出货单任务不存在: " + id);
         }
+        return buildFullResponse(task);
+    }
+
+    @Override
+    @Transactional
+    public ShippingNoteTaskResponse updateShippingNoteTask(Long id, ShippingNoteUpdateRequest request) {
+        ShippingNoteTask task = shippingNoteTaskMapper.selectById(id);
+        if (task == null) {
+            throw new BusinessException("出货单任务不存在: " + id);
+        }
+        boolean changed = false;
+        if (hasText(request.getRecipientName()) && !request.getRecipientName().equals(task.getRecipientName())) {
+            task.setRecipientName(request.getRecipientName().trim());
+            changed = true;
+        }
+        if (request.getShippingDate() != null && !request.getShippingDate().equals(task.getShippingDate())) {
+            task.setShippingDate(request.getShippingDate());
+            changed = true;
+        }
+        if (changed) {
+            task.setUpdatedAt(LocalDateTime.now());
+            shippingNoteTaskMapper.updateById(task);
+        }
+        return buildFullResponse(task);
+    }
+
+    private ShippingNoteTaskResponse buildFullResponse(ShippingNoteTask task) {
+        Long taskId = task.getId();
         List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
                 new LambdaQueryWrapper<ShippingNoteTaskItem>()
-                        .eq(ShippingNoteTaskItem::getTaskId, id)
+                        .eq(ShippingNoteTaskItem::getTaskId, taskId)
                         .orderByAsc(ShippingNoteTaskItem::getLineNo)
                         .orderByAsc(ShippingNoteTaskItem::getId)
         );
