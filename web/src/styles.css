@@ -590,7 +590,6 @@ a {
   padding: 2.91mm 4.5mm 3.97mm 11.906mm;
   color: #000000;
   background: #ffffff;
-  page: carton-label-page;
 }
 
 .carton-label-sheet {
@@ -908,7 +907,7 @@ a {
   --shipping-note-page-height: 210mm;
   --shipping-note-sheet-width: 285mm;
   --shipping-note-sheet-offset-top: 5mm;
-  --shipping-note-sheet-offset-left: 4.1mm;
+  --shipping-note-sheet-offset-left: 6mm;
 
   display: flex;
   flex-direction: column;
@@ -942,7 +941,6 @@ a {
   color: #000000;
   background: #ffffff;
   border: 1px solid #000000;
-  page: shipping-note-page;
 }
 
 .shipping-note-heading {
@@ -1572,6 +1570,7 @@ a {
     gap: 0;
     margin: 0;
     padding: 0;
+    page: inner-box-label-page;
   }
 
   .carton-label-pages {

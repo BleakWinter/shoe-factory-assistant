@@ -169,3 +169,19 @@ export function toAssetUrl(url?: string) {
   // 后端返回 /api/orders/details/{id}/image 这类相对地址时，保持由 Vite 代理转发。
   return url.startsWith("/") ? url : `/${url}`;
 }
+
+/**
+ * 批量记录打印状态（外箱贴标/内盒贴标）
+ */
+export async function batchRecordPrintProcess(
+  orderId: number,
+  detailIds: number[],
+  processType: number,
+) {
+  const { data } = await request.post("/order-detail-process/batch-print", {
+    orderId,
+    detailIds,
+    processType,
+  });
+  return data;
+}

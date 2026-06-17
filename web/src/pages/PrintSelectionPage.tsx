@@ -1,15 +1,9 @@
-import {
-  ArrowLeftOutlined,
-  ArrowRightOutlined,
-  EyeOutlined,
-  PrinterOutlined,
-  ReloadOutlined,
-} from "@ant-design/icons";
-import { App, Button, Cascader, Modal, Pagination, Radio, Select, Space, Table, Typography } from "antd";
+import { EyeOutlined, PrinterOutlined } from "@ant-design/icons";
+import { App, Button, Modal, Pagination, Radio, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Key, MouseEvent } from "react";
-import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
+import { batchRecordPrintProcess, fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import { fetchStyleConfigs } from "../api/styleConfigApi";
 import type { DevelopmentNoOption, OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
 import type { StyleConfig } from "../types/styleConfig";
@@ -244,73 +238,6 @@ function CartonAdaptiveInfoValue({ value }: { value: string }) {
 
 function buildOrderLabel(order: OrderRecord) {
   return order.orderNo || `订单 ${order.id}`;
-}
-
-function includesKeyword(value: unknown, keyword: string) {
-  return String(value || "")
-    .toLocaleLowerCase()
-    .includes(keyword.toLocaleLowerCase());
-}
-
-function renderCountText(filteredCount: number, totalCount: number, suffix: string, isFiltered: boolean) {
-  if (!isFiltered) {
-    return `${totalCount} 条${suffix}`;
-  }
-  return `${filteredCount} / ${totalCount} 条${suffix}`;
-}
-
-function parseDevelopmentNoParts(value: string) {
-  const parts = value
-    .trim()
-    .split("-")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length >= 3) {
-    return parts.slice(-3);
-  }
-  return parts;
-}
-
-function sortDevelopmentNoOptions(left: DevelopmentNoOption, right: DevelopmentNoOption) {
-  return left.label.localeCompare(right.label, "zh-CN", { numeric: true });
-}
-
-function appendDevelopmentNoOption(nodes: DevelopmentNoOption[], parts: string[], path: string[] = []) {
-  if (parts.length === 0) {
-    return;
-  }
-  const [part, ...rest] = parts;
-  const nextPath = [...path, part];
-  let node = nodes.find((item) => item.label === part);
-  if (!node) {
-    node = {
-      value: nextPath.join("-"),
-      label: part,
-      children: rest.length > 0 ? [] : undefined,
-    };
-    nodes.push(node);
-    nodes.sort(sortDevelopmentNoOptions);
-  }
-  if (rest.length > 0) {
-    if (!node.children) {
-      node.children = [];
-    }
-    appendDevelopmentNoOption(node.children, rest, nextPath);
-  }
-}
-
-function buildDevelopmentNoOptions(details: OrderRecordDetail[]) {
-  const options: DevelopmentNoOption[] = [];
-  const seen = new Set<string>();
-  details.forEach((item) => {
-    const developmentNo = item.developmentNo?.trim();
-    if (!developmentNo || seen.has(developmentNo)) {
-      return;
-    }
-    seen.add(developmentNo);
-    appendDevelopmentNoOption(options, parseDevelopmentNoParts(developmentNo));
-  });
-  return options;
 }
 
 function getPrintFormatTarget(title: string): PrintFormatTarget {
@@ -633,42 +560,40 @@ function fillRightSideIfNeeded(labels: InnerBoxLabelData[]) {
 function applyPrintPageSize(format: PrintFormatKey) {
   const styleId = "label-print-page-size";
   const pageSize = format === "inner-box-a4" ? "A4 portrait" : "A4 landscape";
+  const isInnerBox = format === "inner-box-a4";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement("style");
     style.id = styleId;
     document.head.appendChild(style);
   }
-  style.textContent = `@media print { @page { size: ${pageSize}; margin: 0; } }`;
+  style.textContent = `@media print { @page { size: ${pageSize}; margin: 0; }${isInnerBox ? ".label-print-root{page:inner-box-label-page;}" : ""} }`;
 }
 
 export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const { message } = App.useApp();
   const printTargetTitle = title.replace(/^打印/, "");
   const printFormatTarget = getPrintFormatTarget(title);
+  const processType = printFormatTarget === "inner-box" ? 5 : 6;
+
   const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [selectedOrderId, setSelectedOrderId] = useState<number>();
-  const [details, setDetails] = useState<OrderRecordDetail[]>([]);
-  const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
-  const [styleConfigsByDevelopmentNo, setStyleConfigsByDevelopmentNo] = useState<Map<string, StyleConfig>>(new Map());
-  const [selectedDetailIds, setSelectedDetailIds] = useState<Key[]>([]);
-  const [selectedPrintIds, setSelectedPrintIds] = useState<Key[]>([]);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [detailsMap, setDetailsMap] = useState<Map<number, OrderRecordDetail[]>>(new Map());
+  const [packingDetailsMap, setPackingDetailsMap] = useState<Map<number, OrderPackingDetail[]>>(new Map());
+  const [styleConfigsMap, setStyleConfigsMap] = useState<Map<string, StyleConfig>>(new Map());
+  const [selectedDetailIds, setSelectedDetailIds] = useState<Set<number>>(new Set());
   const [printItems, setPrintItems] = useState<PrintSelectionItem[]>([]);
-  const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
   const [formatModalOpen, setFormatModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("print");
   const [previewPage, setPreviewPage] = useState(1);
   const [selectedPrintFormat, setSelectedPrintFormat] = useState<PrintFormatKey>(() => getDefaultPrintFormat(title));
-  const [orderLoading, setOrderLoading] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   const loadOrders = useCallback(async () => {
     setOrderLoading(true);
     try {
       const page = await fetchOrders({ page: 1, size: 100 });
       setOrders(page.records);
-      setSelectedOrderId((current) => current || page.records[0]?.id);
     } catch (error) {
       setOrders([]);
       message.error(error instanceof Error ? error.message : "订单加载失败");
@@ -677,184 +602,155 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     }
   }, [message]);
 
-  const loadDetails = useCallback(async () => {
-    if (!selectedOrderId) {
-      setDetails([]);
-      setPackingDetails([]);
-      setStyleConfigsByDevelopmentNo(new Map());
-      return;
-    }
-    setDetailLoading(true);
+  useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => { setSelectedPrintFormat(getDefaultPrintFormat(title)); }, [title]);
+
+  const loadOrderDetails = useCallback(async (orderId: number) => {
+    if (detailsMap.has(orderId)) return;
     try {
-      const [data, nextPackingDetails] = await Promise.all([
-        fetchOrderDetails(selectedOrderId),
-        fetchOrderPackingDetails(selectedOrderId),
-      ]);
-      setDetails(data);
-      setPackingDetails(nextPackingDetails);
-      const developmentNos = Array.from(new Set([
-        ...data.map((item) => item.developmentNo),
-        ...nextPackingDetails.map((item) => item.companyStyleNo),
-      ].map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
-      if (developmentNos.length > 0) {
-        const configPage = await fetchStyleConfigs({ developmentNos: developmentNos.join(","), page: 1, size: 100 });
-        setStyleConfigsByDevelopmentNo(buildStyleConfigMap(configPage.records));
-      } else {
-        setStyleConfigsByDevelopmentNo(new Map());
-      }
-      setSelectedDetailIds([]);
-      setDevelopmentNoPaths([]);
+      const details = await fetchOrderDetails(orderId);
+      setDetailsMap(prev => new Map(prev).set(orderId, details));
     } catch (error) {
-      setDetails([]);
-      setPackingDetails([]);
-      setStyleConfigsByDevelopmentNo(new Map());
-      message.error(error instanceof Error ? error.message : "订单明细加载失败");
-    } finally {
-      setDetailLoading(false);
+      message.error(error instanceof Error ? error.message : "明细加载失败");
     }
-  }, [message, selectedOrderId]);
+  }, [detailsMap, message]);
 
-  useEffect(() => {
-    void loadOrders();
-  }, [loadOrders]);
+  const getStyleGroups = useCallback((orderId: number) => {
+    const details = detailsMap.get(orderId) || [];
+    const groups = new Map<string, {
+      details: OrderRecordDetail[];
+      hasOuterCarton: boolean;
+      hasInnerBox: boolean;
+      detailIds: number[];
+    }>();
 
-  useEffect(() => {
-    void loadDetails();
-  }, [loadDetails]);
-
-  useEffect(() => {
-    setSelectedPrintFormat(getDefaultPrintFormat(title));
-  }, [title]);
-
-  useEffect(() => {
-    if (previewOpen) {
-      setPreviewPage(1);
-    }
-  }, [previewOpen, selectedPrintFormat]);
-
-  const printItemKeys = useMemo<Key[]>(() => printItems.map((item) => item.id), [printItems]);
-
-  const printItemKeySet = useMemo(() => new Set<Key>(printItemKeys), [printItemKeys]);
-
-  const selectedOrder = useMemo(
-    () => orders.find((order) => order.id === selectedOrderId),
-    [orders, selectedOrderId],
-  );
-  const selectedOrderNo = selectedOrder ? buildOrderLabel(selectedOrder) : selectedOrderId ? `订单 ${selectedOrderId}` : "-";
-
-  const leftSelectedRowKeys = useMemo(
-    () => Array.from(new Set<Key>([...printItemKeys, ...selectedDetailIds])),
-    [printItemKeys, selectedDetailIds],
-  );
-
-  const developmentNoOptions = useMemo(() => buildDevelopmentNoOptions(details), [details]);
-
-  const selectedDevelopmentNos = useMemo(() => {
-    return new Set(
-      developmentNoPaths
-        .map((path) => path[path.length - 1])
-        .filter((value): value is string => Boolean(value)),
-    );
-  }, [developmentNoPaths]);
-
-  const filteredDetails = useMemo(() => {
-    if (selectedDevelopmentNos.size === 0) {
-      return details;
-    }
-    return details.filter((item) =>
-      Array.from(selectedDevelopmentNos).some((developmentNo) =>
-        includesKeyword(item.developmentNo, developmentNo),
-      ),
-    );
-  }, [details, selectedDevelopmentNos]);
-
-  const hasMatchedPacking = useCallback(
-    (detail: OrderRecordDetail) => hasMatchingPackingDetails(detail, packingDetails),
-    [packingDetails],
-  );
-
-  const hasRequiredWeightConfig = useCallback(
-    (detail: OrderRecordDetail) => {
-      if (printFormatTarget !== "outer-carton") {
-        return true;
+    for (const detail of details) {
+      const devNo = detail.developmentNo || "未知";
+      if (!groups.has(devNo)) {
+        groups.set(devNo, { details: [], hasOuterCarton: false, hasInnerBox: false, detailIds: [] });
       }
-      const matchedPackingDetails = getMatchingPackingDetails(detail, packingDetails);
-      if (matchedPackingDetails.length === 0) {
-        return false;
+      const group = groups.get(devNo)!;
+      group.details.push(detail);
+      group.detailIds.push(detail.id);
+      if (detail.processes) {
+        for (const p of detail.processes) {
+          if (p.processType === 6) group.hasOuterCarton = true;
+          if (p.processType === 5) group.hasInnerBox = true;
+        }
       }
-      return hasWeightConfig(findStyleConfig(styleConfigsByDevelopmentNo, detail, matchedPackingDetails[0]));
-    },
-    [packingDetails, printFormatTarget, styleConfigsByDevelopmentNo],
-  );
+    }
 
-  const ensurePrintItemsReady = () => {
-    if (printItems.length === 0) {
-      message.warning(`请先添加待打印${printTargetTitle}`);
-      return false;
-    }
-    if (printFormatTarget === "outer-carton" && printItems.some((item) => !hasWeightConfig(item.styleConfig))) {
-      message.warning("外箱贴标必须先维护净重/毛重，不能打印");
-      return false;
-    }
-    return true;
-  };
+    return Array.from(groups.entries()).map(([developmentNo, group]) => ({
+      developmentNo,
+      detailIds: group.detailIds,
+      hasOuterCarton: group.hasOuterCarton,
+      hasInnerBox: group.hasInnerBox,
+      totalQuantity: group.details.reduce((sum, d) => sum + (d.quantity || 0), 0),
+      totalCartonCount: group.details.reduce((sum, d) => sum + (d.cartonCount || 0), 0),
+    }));
+  }, [detailsMap]);
 
-  const addPrintItems = (items: OrderRecordDetail[]) => {
-    const printOrderNo = selectedOrder ? buildOrderLabel(selectedOrder) : selectedOrderId ? `订单 ${selectedOrderId}` : "-";
-    const missingPackingCount = items.filter((item) => !hasMatchedPacking(item)).length;
-    const missingWeightCount = items.filter((item) => hasMatchedPacking(item) && !hasRequiredWeightConfig(item)).length;
-    const eligibleItems = items.filter((item) => hasMatchedPacking(item) && hasRequiredWeightConfig(item));
-    const blockedMessages = [
-      missingPackingCount > 0 ? `${missingPackingCount} 条没有对应的装箱单明细` : "",
-      missingWeightCount > 0 ? `${missingWeightCount} 条缺少净重/毛重` : "",
-    ].filter(Boolean);
-    if (blockedMessages.length > 0) {
-      message.warning(`${blockedMessages.join("，")}，不能移动到右侧`);
-    }
-    if (eligibleItems.length === 0) {
-      setSelectedPrintIds([]);
-      return;
-    }
-    setPrintItems((current) => {
-      const currentIdSet = new Set(current.map((item) => item.id));
-      const nextItems = eligibleItems
-        .filter((item) => !currentIdSet.has(item.id))
-        .map((item) => {
-          const matchedPackingDetails = getMatchingPackingDetails(item, packingDetails);
-          return {
-            ...item,
-            printOrderNo,
-            packingDetails: matchedPackingDetails,
-            styleConfig: findStyleConfig(styleConfigsByDevelopmentNo, item, matchedPackingDetails[0]),
-          };
-        });
-      if (nextItems.length === 0) {
-        return current;
+  const isGroupSelected = useCallback((detailIds: number[]) => {
+    return detailIds.every(id => selectedDetailIds.has(id));
+  }, [selectedDetailIds]);
+
+  const toggleGroup = useCallback((detailIds: number[]) => {
+    setSelectedDetailIds(prev => {
+      const next = new Set(prev);
+      const allSelected = detailIds.every(id => next.has(id));
+      if (allSelected) {
+        detailIds.forEach(id => next.delete(id));
+      } else {
+        detailIds.forEach(id => next.add(id));
       }
-      return [...current, ...nextItems];
+      return next;
     });
-    setSelectedPrintIds([]);
-  };
+  }, []);
 
-  const addSelectedPrintItems = () => {
-    const selectedSet = new Set(selectedDetailIds);
-    const orderRecordDetails = details.filter((item) => selectedSet.has(item.id));
-    addPrintItems(orderRecordDetails);
-    setSelectedDetailIds([]);
-  };
+  const selectedCount = selectedDetailIds.size;
 
-  const removePrintItems = () => {
-    const selectedSet = new Set(selectedPrintIds);
-    setPrintItems((current) => current.filter((item) => !selectedSet.has(item.id)));
-    setSelectedPrintIds([]);
-  };
-
-  const openPrintFormatModal = () => {
-    if (!ensurePrintItemsReady()) {
+  const openPrintFormatModal = async () => {
+    if (selectedDetailIds.size === 0) {
+      message.warning(`请先选择要打印${printTargetTitle}的款号`);
       return;
     }
-    setPreviewMode("print");
-    setFormatModalOpen(true);
+
+    const selectedDetails: OrderRecordDetail[] = [];
+    const affectedOrderIds = new Set<number>();
+    detailsMap.forEach((details) => {
+      details.forEach(d => {
+        if (selectedDetailIds.has(d.id)) {
+          selectedDetails.push(d);
+          affectedOrderIds.add(d.orderId);
+        }
+      });
+    });
+
+    if (selectedDetails.length === 0) {
+      message.warning("请先展开订单并选择要打印的款号");
+      return;
+    }
+
+    try {
+      let allPackingDetails: OrderPackingDetail[] = [];
+      if (printFormatTarget === "outer-carton") {
+        for (const oid of affectedOrderIds) {
+          if (!packingDetailsMap.has(oid)) {
+            const pd = await fetchOrderPackingDetails(oid);
+            setPackingDetailsMap(prev => new Map(prev).set(oid, pd));
+            allPackingDetails = [...allPackingDetails, ...pd];
+          } else {
+            allPackingDetails = [...allPackingDetails, ...(packingDetailsMap.get(oid) || [])];
+          }
+        }
+
+        const allDevNos = Array.from(new Set(
+          selectedDetails.map(d => d.developmentNo).filter((v): v is string => Boolean(v)),
+        ));
+        if (allDevNos.length > 0) {
+          const configPage = await fetchStyleConfigs({ developmentNos: allDevNos.join(","), page: 1, size: 100 });
+          setStyleConfigsMap(buildStyleConfigMap(configPage.records));
+        }
+      }
+
+      const currentPackingDetails = allPackingDetails.length > 0 ? allPackingDetails
+        : Array.from(packingDetailsMap.values()).flat();
+
+      const items: PrintSelectionItem[] = [];
+      for (const detail of selectedDetails) {
+        if (printFormatTarget === "outer-carton") {
+          const matchedPacking = getMatchingPackingDetails(detail, currentPackingDetails);
+          if (matchedPacking.length === 0) {
+            message.warning(`款号 ${detail.developmentNo} 没有对应的装箱单明细，已跳过`);
+            continue;
+          }
+          const styleConfig = findStyleConfig(styleConfigsMap, detail, matchedPacking[0]);
+          if (!hasWeightConfig(styleConfig)) {
+            message.warning(`款号 ${detail.developmentNo} 缺少净重/毛重配置，已跳过`);
+            continue;
+          }
+          items.push({
+            ...detail,
+            printOrderNo: detail.developmentNo,
+            packingDetails: matchedPacking,
+            styleConfig,
+          });
+        } else {
+          items.push({ ...detail, printOrderNo: detail.developmentNo });
+        }
+      }
+
+      if (items.length === 0) {
+        message.warning("没有符合打印条件的款号");
+        return;
+      }
+
+      setPrintItems(items);
+      setPreviewMode("print");
+      setFormatModalOpen(true);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "数据加载失败");
+    }
   };
 
   const openTemplateFormatModal = () => {
@@ -863,18 +759,28 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   };
 
   const printSelectedFormat = () => {
-    if (!ensurePrintItemsReady()) {
+    if (printItems.length === 0) {
+      message.warning(`请先选择要打印${printTargetTitle}的款号`);
       return;
     }
     setFormatModalOpen(false);
     applyPrintPageSize(selectedPrintFormat);
+
+    // 记录打印状态（按订单分组）
+    const orderGroups = new Map<number, number[]>();
+    printItems.forEach(item => {
+      const oid = item.orderId;
+      if (!orderGroups.has(oid)) orderGroups.set(oid, []);
+      orderGroups.get(oid)!.push(item.id);
+    });
+    orderGroups.forEach((ids, oid) => {
+      batchRecordPrintProcess(oid, ids, processType).catch(() => {});
+    });
+
     window.setTimeout(() => window.print(), 0);
   };
 
   const previewSelectedFormat = (format: PrintFormatKey = selectedPrintFormat) => {
-    if (previewMode === "print" && !ensurePrintItemsReady()) {
-      return;
-    }
     setSelectedPrintFormat(format);
     setFormatModalOpen(false);
     setPreviewOpen(true);
@@ -885,111 +791,99 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     setFormatModalOpen(true);
   };
 
-  const leftRowSelection = {
-    selectedRowKeys: leftSelectedRowKeys,
-    getCheckboxProps: (record: OrderRecordDetail) => ({
-      disabled: printItemKeySet.has(record.id) || !hasMatchedPacking(record) || !hasRequiredWeightConfig(record),
-    }),
-    onChange: (nextKeys: Key[]) => {
-      setSelectedDetailIds(nextKeys.filter((key) => {
-        const detail = details.find((item) => item.id === key);
-        return detail && !printItemKeySet.has(key) && hasMatchedPacking(detail) && hasRequiredWeightConfig(detail);
-      }));
-    },
-    onSelectAll: (selected: boolean, _selectedRows: OrderRecordDetail[], changedRows: OrderRecordDetail[]) => {
-      const changedIds = new Set(changedRows.map((item) => item.id));
-      setSelectedDetailIds((current) => {
-        if (selected) {
-          return Array.from(
-            new Set<Key>([
-              ...current,
-              ...changedRows.filter((item) => hasMatchedPacking(item) && hasRequiredWeightConfig(item)).map((item) => item.id),
-            ]),
-          );
-        }
-        return current.filter((key) => !changedIds.has(key as number));
-      });
-    },
-  };
+  useEffect(() => {
+    if (previewOpen) setPreviewPage(1);
+  }, [previewOpen, selectedPrintFormat]);
 
-  const leftRowClassName = (record: OrderRecordDetail) => {
-    return printItemKeySet.has(record.id) || !hasMatchedPacking(record) || !hasRequiredWeightConfig(record)
-      ? "print-transfer-row-disabled"
-      : "print-transfer-row-clickable";
-  };
-
-  const getLeftRowProps = (record: OrderRecordDetail) => ({
-    onClick: (event: MouseEvent<HTMLElement>) => {
-      const target = event.target as HTMLElement;
-      if (target.closest(".ant-checkbox-wrapper, .ant-table-selection-column, button, a")) {
-        return;
-      }
-      if (printItemKeySet.has(record.id)) {
-        return;
-      }
-      if (!hasMatchedPacking(record)) {
-        message.warning("这条订单明细没有对应的装箱单明细，不能移动到右侧");
-        return;
-      }
-      if (!hasRequiredWeightConfig(record)) {
-        message.warning("这条订单明细缺少净重/毛重，不能移动到右侧");
-        return;
-      }
-      setSelectedDetailIds((current) =>
-        current.includes(record.id) ? current.filter((key) => key !== record.id) : [...current, record.id],
-      );
-    },
-  });
-
-  const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
-    () => [
-      { title: "开发编号", dataIndex: "developmentNo", width: 140, render: formatEmpty },
-      { title: "尺码数量", dataIndex: "sizeQuantities", width: 220, render: renderSizeQuantities },
-      { title: "双数", dataIndex: "quantity", width: 80, align: "right", render: formatEmpty },
-      { title: "箱数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
-      { title: "开始箱号", dataIndex: "cartonStart", width: 110, render: formatEmpty },
-      { title: "结束箱号", dataIndex: "cartonEnd", width: 110, render: formatEmpty },
-    ],
-    [],
-  );
-
-  const leftColumns = useMemo<ColumnsType<OrderRecordDetail>>(
-    () => [
-      { title: "订单流水号", key: "orderNo", width: 130, render: () => formatEmpty(selectedOrderNo) },
-      ...detailColumns,
-    ],
-    [detailColumns, selectedOrderNo],
-  );
-
-  const printColumns = useMemo<ColumnsType<PrintSelectionItem>>(
-    () => [
-      { title: "订单流水号", dataIndex: "printOrderNo", width: 130, render: formatEmpty },
-      ...detailColumns,
-    ],
-    [detailColumns],
-  );
-  const availablePrintFormatOptions = useMemo(
-    () => printFormatOptions.filter((option) => option.target === printFormatTarget),
-    [printFormatTarget],
-  );
   const selectedPrintFormatLabel = printFormatTemplates[selectedPrintFormat].label;
   const selectedPrintFormatIsInnerBox = selectedPrintFormat === "inner-box-a4";
   const previewPrintItems = previewMode === "template" ? templatePrintItems : printItems;
-  const hasPrintItems = printItems.length > 0;
   const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && previewPrintItems.length === 0;
+
   const previewPageCount = useMemo(() => {
-    if (selectedPrintFormatIsInnerBox) {
-      return getInnerBoxPageCount(previewPrintItems);
-    }
-    if (isCartonPrintFormat(selectedPrintFormat)) {
-      return getCartonPageCount(selectedPrintFormat, previewPrintItems);
-    }
+    if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(previewPrintItems);
+    if (isCartonPrintFormat(selectedPrintFormat)) return getCartonPageCount(selectedPrintFormat, previewPrintItems);
     return 1;
   }, [previewPrintItems, selectedPrintFormat, selectedPrintFormatIsInnerBox]);
 
   useEffect(() => {
-    setPreviewPage((current) => Math.min(Math.max(current, 1), previewPageCount));
+    setPreviewPage(p => Math.min(Math.max(p, 1), previewPageCount));
   }, [previewPageCount]);
+
+  const styleColumns: ColumnsType<{
+    developmentNo: string;
+    detailIds: number[];
+    hasOuterCarton: boolean;
+    hasInnerBox: boolean;
+    totalQuantity: number;
+    totalCartonCount: number;
+  }> = [
+    {
+      title: "开发编号",
+      dataIndex: "developmentNo",
+      width: 180,
+      render: (value: string) => <Typography.Text strong>{value}</Typography.Text>,
+    },
+    { title: "双数", dataIndex: "totalQuantity", width: 80, align: "right" },
+    { title: "箱数", dataIndex: "totalCartonCount", width: 80, align: "right" },
+    {
+      title: "外箱贴标",
+      width: 100,
+      align: "center",
+      render: (_: unknown, record) => (
+        record.hasOuterCarton
+          ? <Typography.Text type="success">✓ 已打</Typography.Text>
+          : <Typography.Text type="secondary">-</Typography.Text>
+      ),
+    },
+    {
+      title: "内盒贴标",
+      width: 100,
+      align: "center",
+      render: (_: unknown, record) => (
+        record.hasInnerBox
+          ? <Typography.Text type="success">✓ 已打</Typography.Text>
+          : <Typography.Text type="secondary">-</Typography.Text>
+      ),
+    },
+  ];
+
+  const expandedRowRender = (record: OrderRecord) => {
+    if (!detailsMap.has(record.id)) {
+      return <div style={{ padding: 24, textAlign: "center", color: "#999" }}>展开以加载明细数据…</div>;
+    }
+    const groups = getStyleGroups(record.id);
+    if (groups.length === 0) {
+      return <div style={{ padding: 24, textAlign: "center", color: "#999" }}>该订单没有明细数据</div>;
+    }
+    return (
+      <div style={{ padding: "8px 0" }}>
+        <Table
+          rowKey="developmentNo"
+          dataSource={groups}
+          columns={styleColumns}
+          pagination={false}
+          size="small"
+          rowSelection={{
+            selectedRowKeys: groups.filter(g => isGroupSelected(g.detailIds)).map(g => g.developmentNo),
+            onSelect: (record) => toggleGroup(record.detailIds),
+            onSelectAll: (selected, _selectedRows, changeRows) => {
+              const allIds = changeRows.flatMap(g => g.detailIds);
+              setSelectedDetailIds(prev => {
+                const next = new Set(prev);
+                if (selected) {
+                  allIds.forEach(id => next.add(id));
+                } else {
+                  allIds.forEach(id => next.delete(id));
+                }
+                return next;
+              });
+            },
+          }}
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="workspace">
@@ -997,12 +891,15 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
         <div>
           <Typography.Title level={3}>{title}</Typography.Title>
           <Typography.Text type="secondary">
-            从左侧订单明细中选择要打印的数据，移动到右侧待打印列表。
+            展开订单，勾选需要打印的款号，点击"打印选中"按钮。
           </Typography.Text>
         </div>
         <Space wrap>
-          <Button type="primary" icon={<PrinterOutlined />} disabled={!hasPrintItems} onClick={openPrintFormatModal}>
-            打印预览
+          <Typography.Text>
+            已选 {selectedCount} 项
+          </Typography.Text>
+          <Button type="primary" icon={<PrinterOutlined />} disabled={selectedCount === 0} onClick={openPrintFormatModal}>
+            打印选中
           </Button>
           <Button icon={<EyeOutlined />} onClick={openTemplateFormatModal}>
             查看模板
@@ -1010,119 +907,39 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
         </Space>
       </div>
 
-      <div className="print-transfer-layout">
-        <div className="page-panel print-transfer-panel">
-          <div className="print-transfer-heading">
-            <div className="print-transfer-heading-main">
-              <Typography.Title level={4}>订单明细表数据</Typography.Title>
-              <Space className="print-transfer-filters" wrap>
-                <Select
-                  className="print-order-select"
-                  placeholder="订单号"
-                  loading={orderLoading}
-                  showSearch
-                  optionFilterProp="label"
-                  value={selectedOrderId}
-                  options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
-                  onChange={(value) => setSelectedOrderId(value)}
-                />
-                <Cascader
-                  allowClear
-                  className="print-development-cascader"
-                  displayRender={(labels) => labels.join("-")}
-                  maxTagCount="responsive"
-                  multiple
-                  options={developmentNoOptions}
-                  placeholder="开发编号"
-                  showCheckedStrategy={Cascader.SHOW_CHILD}
-                  showSearch
-                  value={developmentNoPaths}
-                  onChange={(value) => setDevelopmentNoPaths(value as string[][])}
-                />
-                <Button icon={<ReloadOutlined />} onClick={() => void loadDetails()}>
-                  刷新明细
-                </Button>
-              </Space>
-            </div>
-            <Typography.Text type="secondary">
-              {renderCountText(
-                filteredDetails.length,
-                details.length,
-                "明细",
-                selectedDevelopmentNos.size > 0,
-              )}
-            </Typography.Text>
-          </div>
-          <Table
-            rowKey="id"
-            loading={detailLoading}
-            columns={leftColumns}
-            dataSource={filteredDetails}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 870 }}
-            className="data-table"
-            rowClassName={leftRowClassName}
-            rowSelection={leftRowSelection}
-            onRow={getLeftRowProps}
-          />
-        </div>
-
-        <div className="print-transfer-actions">
-          <Button
-            type="primary"
-            icon={<ArrowRightOutlined />}
-            disabled={!selectedDetailIds.length}
-            onClick={addSelectedPrintItems}
-          />
-          <Button
-            icon={<ArrowLeftOutlined />}
-            disabled={!selectedPrintIds.length}
-            onClick={removePrintItems}
-          />
-        </div>
-
-        <div className="page-panel print-transfer-panel">
-          <div className="print-transfer-heading">
-            <div className="print-transfer-heading-main">
-              <Typography.Title level={4}>待打印{printTargetTitle}</Typography.Title>
-            </div>
-            <Typography.Text type="secondary">{printItems.length} 条待打印</Typography.Text>
-          </div>
-          <Table
-            rowKey="id"
-            columns={printColumns}
-            dataSource={printItems}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 870 }}
-            className="data-table"
-            rowSelection={{
-              selectedRowKeys: selectedPrintIds,
-              onChange: setSelectedPrintIds,
-            }}
-          />
-        </div>
-      </div>
+      <Table
+        dataSource={orders}
+        rowKey="id"
+        loading={orderLoading}
+        className="data-table"
+        columns={[
+          { title: "订单流水号", dataIndex: "orderNo", width: 160 },
+          { title: "客户", dataIndex: "customerName", width: 120 },
+          { title: "总对数", dataIndex: "totalQuantity", width: 80, align: "right" },
+          { title: "总箱数", dataIndex: "totalCartonCount", width: 80, align: "right" },
+          { title: "创建时间", dataIndex: "createdAt", width: 160 },
+        ]}
+        expandable={{
+          expandedRowRender,
+          onExpand: (expanded, record) => {
+            if (expanded) loadOrderDetails(record.id);
+          },
+          rowExpandable: () => true,
+        }}
+      />
 
       <Modal
         open={formatModalOpen}
         title={previewMode === "template" ? "选择模板格式" : "选择打印格式"}
         onCancel={() => setFormatModalOpen(false)}
         footer={[
-          <Button key="close" onClick={() => setFormatModalOpen(false)}>
-            取消
-          </Button>,
+          <Button key="close" onClick={() => setFormatModalOpen(false)}>取消</Button>,
           previewMode === "template" ? (
             <Button key="template" type="primary" icon={<EyeOutlined />} onClick={() => previewSelectedFormat()}>
               查看模板
             </Button>
           ) : (
-            <Button
-              key="print"
-              type="primary"
-              icon={<PrinterOutlined />}
-              disabled={!hasPrintItems}
-              onClick={printSelectedFormat}
-            >
+            <Button key="print" type="primary" icon={<PrinterOutlined />} disabled={printItems.length === 0} onClick={printSelectedFormat}>
               打印
             </Button>
           ),
@@ -1134,20 +951,17 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
           value={selectedPrintFormat}
           onChange={(event) => setSelectedPrintFormat(event.target.value)}
         >
-          {availablePrintFormatOptions.map((option) => (
+          {printFormatOptions.filter(o => o.target === printFormatTarget).map((option) => (
             <div
               className={`print-format-option${selectedPrintFormat === option.value ? " print-format-option-selected" : ""}`}
               key={option.value}
               onClick={() => setSelectedPrintFormat(option.value)}
             >
               <Radio value={option.value}>{option.label}</Radio>
-              <Button
-                size="small"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  previewSelectedFormat(option.value);
-                }}
-              >
+              <Button size="small" onClick={(event) => {
+                event.stopPropagation();
+                previewSelectedFormat(option.value);
+              }}>
                 {previewMode === "template" ? "查看模板" : "预览"}
               </Button>
             </div>
@@ -1163,24 +977,16 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
         footer={null}
         destroyOnClose
       >
-        <div
-          className={`label-preview label-preview-modal ${
-            selectedPrintFormatIsInnerBoxTemplate
-              ? "inner-box-label-template-preview"
-              : selectedPrintFormatIsInnerBox
-                ? "inner-box-label-preview"
-                : "carton-label-preview"
-          }`}
-        >
-          <div
-            className={
-              selectedPrintFormatIsInnerBoxTemplate
-                ? "inner-box-label-template-preview-scale"
-                : selectedPrintFormatIsInnerBox
-                  ? "inner-box-label-preview-scale"
-                  : "carton-label-preview-scale"
-            }
-          >
+        <div className={`label-preview label-preview-modal ${
+          selectedPrintFormatIsInnerBoxTemplate ? "inner-box-label-template-preview"
+            : selectedPrintFormatIsInnerBox ? "inner-box-label-preview"
+              : "carton-label-preview"
+        }`}>
+          <div className={
+            selectedPrintFormatIsInnerBoxTemplate ? "inner-box-label-template-preview-scale"
+              : selectedPrintFormatIsInnerBox ? "inner-box-label-preview-scale"
+                : "carton-label-preview-scale"
+          }>
             <PrintFormatSheet
               format={selectedPrintFormat}
               printItems={previewPrintItems}
@@ -1191,13 +997,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
         </div>
         {previewPageCount > 1 ? (
           <div className="label-preview-pagination">
-            <Pagination
-              current={previewPage}
-              pageSize={1}
-              total={previewPageCount}
-              showSizeChanger={false}
-              onChange={setPreviewPage}
-            />
+            <Pagination current={previewPage} pageSize={1} total={previewPageCount} showSizeChanger={false} onChange={setPreviewPage} />
           </div>
         ) : null}
       </Modal>
