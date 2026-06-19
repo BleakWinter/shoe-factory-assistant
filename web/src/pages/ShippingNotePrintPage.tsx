@@ -39,7 +39,7 @@ import { getMatchingPackingDetails, hasMatchingPackingDetails } from "../utils/o
 import { getPackingTotalPairs, sumSizeQuantities as sumPackingSizeQuantities } from "../utils/packingTotals";
 
 const defaultRecipient = "达为鞋业";
-const SHIPPING_NOTE_PRINT_PROCESS_TYPE = 7;
+const SHIPPING_NOTE_RELATED_PROCESS_TYPES = [5, 6, 7];
 
 function todayText() {
   const now = new Date();
@@ -571,8 +571,10 @@ export default function ShippingNotePrintPage() {
     }
 
     await Promise.all(
-      Array.from(orderGroups.entries()).map(([orderId, detailIds]) =>
-        batchRecordPrintProcess(orderId, Array.from(detailIds), SHIPPING_NOTE_PRINT_PROCESS_TYPE),
+      SHIPPING_NOTE_RELATED_PROCESS_TYPES.flatMap((processType) =>
+        Array.from(orderGroups.entries()).map(([orderId, detailIds]) =>
+          batchRecordPrintProcess(orderId, Array.from(detailIds), processType),
+        ),
       ),
     );
   };
