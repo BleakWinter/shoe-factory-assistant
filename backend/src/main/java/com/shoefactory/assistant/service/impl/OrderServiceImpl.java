@@ -186,6 +186,7 @@ public class OrderServiceImpl implements OrderService {
             String orderNo,
             String developmentNos,
             String recognitionStatus,
+            Integer unfinishedProcessType,
             long page,
             long size
     ) {
@@ -198,6 +199,7 @@ public class OrderServiceImpl implements OrderService {
                 .orderByDesc(OrderRecord::getCreatedAt);
         applyDevelopmentNoFilter(wrapper, parsedDevelopmentNos, developmentOrderIds);
         applyRecognitionFilters(wrapper, parsedRecognitionFilters);
+        applyUnfinishedProcessFilter(wrapper, unfinishedProcessType);
         Page<OrderRecord> resultPage = orderRecordMapper.selectPage(pageRequest, wrapper);
         Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(resultPage.getRecords());
         Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderId(resultPage.getRecords());
@@ -209,6 +211,29 @@ public class OrderServiceImpl implements OrderService {
                 ))
                 .toList();
         return PageResponse.from(resultPage, records);
+    }
+
+    private void applyUnfinishedProcessFilter(
+            LambdaQueryWrapper<OrderRecord> wrapper,
+            Integer unfinishedProcessType
+    ) {
+        if (unfinishedProcessType == null) {
+            return;
+        }
+        wrapper.apply("""
+                EXISTS (
+                    SELECT 1
+                    FROM order_record_detail detail
+                    WHERE detail.order_id = order_record.id
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM order_detail_process proc
+                          WHERE proc.order_detail_id = detail.id
+                            AND proc.process_type = {0}
+                            AND proc.process_status = 1
+                      )
+                )
+                """, unfinishedProcessType);
     }
 
     private List<Long> findOrderIdsByDevelopmentNos(List<String> developmentNos) {
@@ -805,7 +830,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public List<OrderRecordDetailResponse> listOrderDetails(Long orderId) {
-        getRequiredOrder(orderId);
+        OrderRecord order = getRequiredOrder(orderId);
         List<OrderRecordDetail> details = loadDetails(orderId);
         if (details.isEmpty()) {
             return Collections.emptyList();
@@ -820,7 +845,8 @@ public class OrderServiceImpl implements OrderService {
                 .map(detail -> OrderRecordDetailResponse.from(
                         detail,
                         processMap.getOrDefault(detail.getId(), List.of()),
-                        boxSpecByDevelopmentNo.get(normalizeDevelopmentNo(detail.getDevelopmentNo()))
+                        boxSpecByDevelopmentNo.get(normalizeDevelopmentNo(detail.getDevelopmentNo())),
+                        order.getOrderNo()
                 ))
                 .toList();
     }

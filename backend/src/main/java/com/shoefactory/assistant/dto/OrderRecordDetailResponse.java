@@ -20,6 +20,7 @@ public class OrderRecordDetailResponse {
 
     private Long id;
     private Long orderId;
+    private String orderNo;
     private Integer lineNo;
     private String lastNo;
     private String developmentNo;
@@ -51,7 +52,7 @@ public class OrderRecordDetailResponse {
     private LocalDateTime createdAt;
 
     public static OrderRecordDetailResponse from(OrderRecordDetail detail, List<OrderDetailProcess> processes) {
-        return from(detail, processes, null);
+        return from(detail, processes, null, null);
     }
 
     public static OrderRecordDetailResponse from(
@@ -59,9 +60,19 @@ public class OrderRecordDetailResponse {
             List<OrderDetailProcess> processes,
             String boxSpec
     ) {
+        return from(detail, processes, boxSpec, null);
+    }
+
+    public static OrderRecordDetailResponse from(
+            OrderRecordDetail detail,
+            List<OrderDetailProcess> processes,
+            String boxSpec,
+            String orderNo
+    ) {
         OrderRecordDetailResponse response = new OrderRecordDetailResponse();
         response.setId(detail.getId());
         response.setOrderId(detail.getOrderId());
+        response.setOrderNo(orderNo);
         response.setLineNo(detail.getLineNo());
         response.setLastNo(detail.getLastNo());
         response.setDevelopmentNo(detail.getDevelopmentNo());
@@ -112,6 +123,8 @@ public class OrderRecordDetailResponse {
     public void setId(Long id) { this.id = id; }
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
+    public String getOrderNo() { return orderNo; }
+    public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
     public Integer getLineNo() { return lineNo; }
     public void setLineNo(Integer lineNo) { this.lineNo = lineNo; }
     public String getLastNo() { return lastNo; }

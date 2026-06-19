@@ -460,34 +460,252 @@ a {
   width: 100%;
 }
 
-.print-format-options {
+.print-workbench {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+}
+
+.print-workbench-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #e4e8ef;
+  border-radius: 6px;
+}
+
+.print-workbench-header h3 {
+  margin-bottom: 6px;
+}
+
+.print-workbench-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #64748b;
+}
+
+.print-workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 14px;
+  align-items: start;
+}
+
+.print-order-panel,
+.print-side-panel {
+  min-width: 0;
+  background: #ffffff;
+  border: 1px solid #e4e8ef;
+  border-radius: 6px;
+}
+
+.print-order-panel {
+  overflow: hidden;
+}
+
+.print-order-picker,
+.print-detail-picker {
+  padding: 12px;
+}
+
+.print-order-picker {
+  border-bottom: 1px solid #edf1f6;
+}
+
+.print-order-select {
   width: 100%;
 }
 
-.print-format-option {
+.print-order-option {
+  display: grid;
+  grid-template-columns: 110px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.print-order-option span:nth-child(3),
+.print-order-option span:nth-child(4) {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.print-order-section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d9dee7;
-  border-radius: 4px;
-  cursor: pointer;
+  margin-bottom: 10px;
 }
 
-.print-format-option-selected {
-  border-color: #1677ff;
-  background: #f0f6ff;
+.print-side-panel {
+  position: sticky;
+  top: 14px;
+  display: flex;
+  flex-direction: column;
 }
 
-.print-format-option .ant-radio-wrapper {
-  flex: 1;
+.print-side-section {
+  padding: 14px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.print-side-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.print-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.print-summary-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   min-width: 0;
-  margin-inline-end: 0;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e9eef5;
+  border-radius: 4px;
+}
+
+.print-summary-grid span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.print-summary-grid strong {
+  color: #172033;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.print-side-format {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.print-side-format .ant-radio-button-wrapper {
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.3;
+  text-align: left;
+  border-inline-start-width: 1px;
+  border-radius: 4px;
+}
+
+.print-side-format .ant-radio-button-wrapper::before {
+  display: none;
+}
+
+.print-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.print-queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: #fbfcfe;
+  border: 1px solid #edf1f6;
+  border-radius: 4px;
+}
+
+.print-queue-item > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.print-queue-item span {
+  color: #475569;
+  white-space: nowrap;
+}
+
+.print-queue-empty {
+  display: grid;
+  place-items: center;
+  min-height: 78px;
+  color: #94a3b8;
+  background: #fbfcfe;
+  border: 1px dashed #d9e1ec;
+  border-radius: 4px;
+}
+
+.print-side-preview-section {
+  padding-bottom: 10px;
+}
+
+.print-side-preview-canvas {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 236px;
+  overflow: hidden;
+  padding: 10px;
+  background: #eef2f6;
+  border: 1px solid #e1e7ef;
+  border-radius: 4px;
+}
+
+.print-side-preview-inner {
+  height: 300px;
+}
+
+.print-side-preview-carton-scale {
+  --print-side-carton-preview-scale: 0.3;
+  width: calc(297mm * var(--print-side-carton-preview-scale));
+  height: calc(210mm * var(--print-side-carton-preview-scale));
+}
+
+.print-side-preview-carton-scale .carton-label-a4 {
+  transform: scale(var(--print-side-carton-preview-scale));
+  transform-origin: top left;
+}
+
+.print-side-preview-inner-scale {
+  --print-side-inner-preview-scale: 0.26;
+  width: calc(210mm * var(--print-side-inner-preview-scale));
+  height: calc(297mm * var(--print-side-inner-preview-scale));
+}
+
+.print-side-preview-inner-scale .inner-box-label-pages {
+  align-items: flex-start;
+  gap: 0;
+}
+
+.print-side-preview-inner-scale .inner-box-label-a4,
+.print-side-preview-inner-scale .inner-box-label-template-only {
+  transform: scale(var(--print-side-inner-preview-scale));
+  transform-origin: top left;
+}
+
+.print-side-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+  padding: 14px;
 }
 
 .label-print-root,
@@ -884,6 +1102,16 @@ a {
 
 .inner-box-label-size {
   font-size: 15px;
+}
+
+@media (max-width: 1180px) {
+  .print-workbench-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .print-side-panel {
+    position: static;
+  }
 }
 
 .shipping-note-date-input {

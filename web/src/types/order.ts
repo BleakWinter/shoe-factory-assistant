@@ -66,6 +66,7 @@ export interface OrderRecordQueryParams {
   orderNo?: string;
   developmentNos?: string;
   recognitionStatus?: string;
+  unfinishedProcessType?: number;
   page?: number;
   size?: number;
 }
@@ -147,6 +148,7 @@ export interface OrderRecordDetail {
   // 对应 order_record_detail。
   id: number;
   orderId: number;
+  orderNo?: string;
   lineNo?: number;
   lastNo?: string;
   developmentNo?: string;

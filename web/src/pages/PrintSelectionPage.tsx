@@ -1,24 +1,53 @@
-import { EyeOutlined, PrinterOutlined } from "@ant-design/icons";
-import { App, Button, Modal, Pagination, Radio, Space, Table, Typography } from "antd";
+import {
+  CheckCircleOutlined,
+  ClearOutlined,
+  ClockCircleOutlined,
+  EyeOutlined,
+  PrinterOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
+import { App, Button, Checkbox, Modal, Pagination, Radio, Select, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Key, MouseEvent } from "react";
 import { batchRecordPrintProcess, fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import { fetchStyleConfigs } from "../api/styleConfigApi";
-import type { DevelopmentNoOption, OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
+import type { OrderPackingDetail, OrderRecord, OrderRecordDetail } from "../types/order";
 import type { StyleConfig } from "../types/styleConfig";
-import { formatEmpty } from "../utils/format";
-import { getMatchingPackingDetails, hasMatchingPackingDetails } from "../utils/orderMatching";
+import { getMatchingPackingDetails } from "../utils/orderMatching";
 
 interface PrintSelectionPageProps {
   title: string;
 }
 
 type PrintSelectionItem = OrderRecordDetail & {
-  printOrderNo?: string;
   packingDetails?: OrderPackingDetail[];
   styleConfig?: StyleConfig;
 };
+
+interface PrintStyleGroup {
+  id: number;
+  developmentNo: string;
+  detail: OrderRecordDetail;
+  details: OrderRecordDetail[];
+  detailIds: number[];
+  hasOuterCarton: boolean;
+  hasInnerBox: boolean;
+  outerPrintedAt?: string;
+  innerPrintedAt?: string;
+  totalQuantity: number;
+  totalCartonCount: number;
+  cartonRange: string;
+}
+
+type PrintEligibilityStatus = "checking" | "ready" | "missing-packing" | "missing-weight" | "error";
+
+interface PrintEligibility {
+  detailId: number;
+  status: PrintEligibilityStatus;
+  reason: string;
+  packingDetails?: OrderPackingDetail[];
+  styleConfig?: StyleConfig;
+}
 
 const templatePrintItems: PrintSelectionItem[] = [];
 
@@ -117,24 +146,6 @@ const CARTON_LABEL_DEFAULT_VALUE_FONT_SIZE = 24;
 const CARTON_LABEL_WRAPPED_VALUE_MAX_FONT_SIZE = 20;
 const CARTON_LABEL_WRAPPED_VALUE_MIN_FONT_SIZE = 12;
 const CARTON_LABEL_WRAPPED_VALUE_LINE_HEIGHT = 1.05;
-
-function renderSizeQuantities(value?: Record<string, number>) {
-  const entries = Object.entries(value || {})
-    .filter(([, count]) => Number(count) > 0)
-    .sort(([left], [right]) => left.localeCompare(right, "zh-CN", { numeric: true }));
-  if (entries.length === 0) {
-    return "-";
-  }
-  return (
-    <div className="size-grid">
-      {entries.map(([size, count]) => (
-        <span key={size}>
-          {size}: {count}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function getCartonLabelAdaptiveFontSize(element: HTMLElement, value: string) {
   const text = value.trim();
@@ -236,8 +247,16 @@ function CartonAdaptiveInfoValue({ value }: { value: string }) {
   );
 }
 
-function buildOrderLabel(order: OrderRecord) {
-  return order.orderNo || `订单 ${order.id}`;
+function formatDateTimeText(value?: string) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.replace("T", " ").slice(0, 16);
+}
+
+function getDetailProcess(detail: OrderRecordDetail, processType: number) {
+  return detail.processes?.find(process => process.processType === processType);
 }
 
 function getPrintFormatTarget(title: string): PrintFormatTarget {
@@ -296,6 +315,12 @@ function getSortedSizeEntries(value?: Record<string, number>) {
 
 function buildStyleConfigMap(configs: StyleConfig[]) {
   return new Map(configs.map((config) => [normalizeKey(config.developmentNo), config]));
+}
+
+function mergeStyleConfigsMap(base: Map<string, StyleConfig>, configs: StyleConfig[]) {
+  const next = new Map(base);
+  configs.forEach((config) => next.set(normalizeKey(config.developmentNo), config));
+  return next;
 }
 
 function findStyleConfig(
@@ -469,7 +494,7 @@ function buildCartonLabelData(format: CartonPrintFormatKey, items: PrintSelectio
       const baseLabel = {
         customerName: pickFirstText(packingDetail?.customerName, item.customerName),
         storeLine: pickFirstText(packingDetail?.warehouseStoreNo, item.warehouseStoreNo),
-        factoryOrderNo: pickFirstText(item.printOrderNo),
+        factoryOrderNo: pickFirstText(item.orderNo),
         style: pickFirstText(packingDetail?.customerStyleNo, item.customerStyleNo, packingDetail?.companyStyleNo, item.developmentNo),
         material: pickFirstText(packingDetail?.material, packingDetail?.itemNumber, item.englishMaterial, item.upperMaterial),
         color: pickFirstText(packingDetail?.customerColor, item.englishColor),
@@ -581,9 +606,10 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const [detailsMap, setDetailsMap] = useState<Map<number, OrderRecordDetail[]>>(new Map());
   const [packingDetailsMap, setPackingDetailsMap] = useState<Map<number, OrderPackingDetail[]>>(new Map());
   const [styleConfigsMap, setStyleConfigsMap] = useState<Map<string, StyleConfig>>(new Map());
+  const [outerEligibilityMap, setOuterEligibilityMap] = useState<Map<number, PrintEligibility>>(new Map());
+  const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [selectedDetailIds, setSelectedDetailIds] = useState<Set<number>>(new Set());
-  const [printItems, setPrintItems] = useState<PrintSelectionItem[]>([]);
-  const [formatModalOpen, setFormatModalOpen] = useState(false);
+  const [hideFinishedOrders, setHideFinishedOrders] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("print");
   const [previewPage, setPreviewPage] = useState(1);
@@ -592,7 +618,11 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const loadOrders = useCallback(async () => {
     setOrderLoading(true);
     try {
-      const page = await fetchOrders({ page: 1, size: 100 });
+      const page = await fetchOrders({
+        page: 1,
+        size: 100,
+        unfinishedProcessType: hideFinishedOrders ? processType : undefined,
+      });
       setOrders(page.records);
     } catch (error) {
       setOrders([]);
@@ -600,195 +630,321 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     } finally {
       setOrderLoading(false);
     }
-  }, [message]);
+  }, [hideFinishedOrders, message, processType]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => { setSelectedPrintFormat(getDefaultPrintFormat(title)); }, [title]);
+
+  const refreshOuterEligibility = useCallback(async (orderId: number, details: OrderRecordDetail[]) => {
+    if (printFormatTarget !== "outer-carton" || details.length === 0) {
+      return;
+    }
+
+    setOuterEligibilityMap(prev => {
+      const next = new Map(prev);
+      details.forEach(detail => next.set(detail.id, {
+        detailId: detail.id,
+        status: "checking",
+        reason: "检查中",
+      }));
+      return next;
+    });
+
+    try {
+      const currentPackingDetailsMap = new Map(packingDetailsMap);
+      let orderPackingDetails = currentPackingDetailsMap.get(orderId);
+      if (!orderPackingDetails) {
+        orderPackingDetails = await fetchOrderPackingDetails(orderId);
+        currentPackingDetailsMap.set(orderId, orderPackingDetails);
+        setPackingDetailsMap(currentPackingDetailsMap);
+      }
+
+      const matchedPackingByDetailId = new Map<number, OrderPackingDetail[]>();
+      const styleLookupKeys = new Set<string>();
+
+      details.forEach((detail) => {
+        const matchedPacking = getMatchingPackingDetails(detail, orderPackingDetails || []);
+        matchedPackingByDetailId.set(detail.id, matchedPacking);
+        if (matchedPacking.length === 0) {
+          return;
+        }
+        if (detail.developmentNo) {
+          styleLookupKeys.add(detail.developmentNo);
+        }
+        matchedPacking.forEach((packingDetail) => {
+          if (packingDetail.companyStyleNo) {
+            styleLookupKeys.add(packingDetail.companyStyleNo);
+          }
+        });
+      });
+
+      let currentStyleConfigsMap = styleConfigsMap;
+      if (styleLookupKeys.size > 0) {
+        const configPage = await fetchStyleConfigs({
+          developmentNos: Array.from(styleLookupKeys).join(","),
+          page: 1,
+          size: Math.max(100, styleLookupKeys.size),
+        });
+        currentStyleConfigsMap = mergeStyleConfigsMap(currentStyleConfigsMap, configPage.records);
+        setStyleConfigsMap(currentStyleConfigsMap);
+      }
+
+      setOuterEligibilityMap(prev => {
+        const next = new Map(prev);
+        details.forEach((detail) => {
+          const matchedPacking = matchedPackingByDetailId.get(detail.id) || [];
+          if (matchedPacking.length === 0) {
+            next.set(detail.id, {
+              detailId: detail.id,
+              status: "missing-packing",
+              reason: "缺装箱单",
+            });
+            return;
+          }
+
+          const styleConfig = findStyleConfig(currentStyleConfigsMap, detail, matchedPacking[0]);
+          if (!hasWeightConfig(styleConfig)) {
+            next.set(detail.id, {
+              detailId: detail.id,
+              status: "missing-weight",
+              reason: "缺净重/毛重",
+              packingDetails: matchedPacking,
+            });
+            return;
+          }
+
+          next.set(detail.id, {
+            detailId: detail.id,
+            status: "ready",
+            reason: "可打印",
+            packingDetails: matchedPacking,
+            styleConfig,
+          });
+        });
+        return next;
+      });
+    } catch (error) {
+      setOuterEligibilityMap(prev => {
+        const next = new Map(prev);
+        details.forEach(detail => next.set(detail.id, {
+          detailId: detail.id,
+          status: "error",
+          reason: "检查失败",
+        }));
+        return next;
+      });
+      message.error(error instanceof Error ? error.message : "外箱打印条件检查失败");
+    }
+  }, [message, packingDetailsMap, printFormatTarget, styleConfigsMap]);
 
   const loadOrderDetails = useCallback(async (orderId: number) => {
     if (detailsMap.has(orderId)) return;
     try {
       const details = await fetchOrderDetails(orderId);
       setDetailsMap(prev => new Map(prev).set(orderId, details));
+      void refreshOuterEligibility(orderId, details);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "明细加载失败");
     }
-  }, [detailsMap, message]);
+  }, [detailsMap, message, refreshOuterEligibility]);
+
+  const selectOrder = useCallback((orderId: number, options?: { keepSelection?: boolean }) => {
+    setSelectedOrderId(orderId);
+    if (!options?.keepSelection) {
+      setSelectedDetailIds(new Set());
+    }
+    void loadOrderDetails(orderId);
+  }, [loadOrderDetails]);
+
+  useEffect(() => {
+    if (orders.length === 0) {
+      if (selectedOrderId !== undefined) {
+        setSelectedOrderId(undefined);
+      }
+      setSelectedDetailIds(prev => prev.size === 0 ? prev : new Set());
+      return;
+    }
+    const selectedOrderExists = selectedOrderId !== undefined && orders.some(order => order.id === selectedOrderId);
+    if (!selectedOrderExists) {
+      selectOrder(orders[0].id);
+    }
+  }, [orders, selectOrder, selectedOrderId]);
 
   const getStyleGroups = useCallback((orderId: number) => {
     const details = detailsMap.get(orderId) || [];
-    const groups = new Map<string, {
-      details: OrderRecordDetail[];
-      hasOuterCarton: boolean;
-      hasInnerBox: boolean;
-      detailIds: number[];
-    }>();
+    return details.map((detail): PrintStyleGroup => {
+      const outerProcess = getDetailProcess(detail, 6);
+      const innerProcess = getDetailProcess(detail, 5);
+      return {
+        id: detail.id,
+        developmentNo: detail.developmentNo || "未知",
+        detail,
+        details: [detail],
+        detailIds: [detail.id],
+        hasOuterCarton: Boolean(outerProcess),
+        hasInnerBox: Boolean(innerProcess),
+        outerPrintedAt: formatDateTimeText(outerProcess?.lastProcessAt),
+        innerPrintedAt: formatDateTimeText(innerProcess?.lastProcessAt),
+        totalQuantity: Number(detail.quantity || 0),
+        totalCartonCount: Number(detail.cartonCount || 0),
+        cartonRange: formatCartonNumber(detail.cartonStart, detail.cartonEnd),
+      };
+    });
+  }, [detailsMap]);
 
-    for (const detail of details) {
-      const devNo = detail.developmentNo || "未知";
-      if (!groups.has(devNo)) {
-        groups.set(devNo, { details: [], hasOuterCarton: false, hasInnerBox: false, detailIds: [] });
-      }
-      const group = groups.get(devNo)!;
-      group.details.push(detail);
-      group.detailIds.push(detail.id);
-      if (detail.processes) {
-        for (const p of detail.processes) {
-          if (p.processType === 6) group.hasOuterCarton = true;
-          if (p.processType === 5) group.hasInnerBox = true;
+  const selectedDetails = useMemo(() => {
+    const details: OrderRecordDetail[] = [];
+    detailsMap.forEach((orderDetails) => {
+      orderDetails.forEach((detail) => {
+        if (selectedDetailIds.has(detail.id)) {
+          details.push(detail);
         }
-      }
+      });
+    });
+    return details;
+  }, [detailsMap, selectedDetailIds]);
+
+  const selectedOrder = useMemo(
+    () => orders.find(order => order.id === selectedOrderId),
+    [orders, selectedOrderId],
+  );
+  const selectedOrderNo = selectedOrder?.orderNo;
+
+  const activePrintItems = useMemo<PrintSelectionItem[]>(() => {
+    if (printFormatTarget === "inner-box") {
+      return selectedDetails.map(detail => ({
+        ...detail,
+        orderNo: detail.orderNo || selectedOrderNo,
+      }));
     }
 
-    return Array.from(groups.entries()).map(([developmentNo, group]) => ({
-      developmentNo,
-      detailIds: group.detailIds,
-      hasOuterCarton: group.hasOuterCarton,
-      hasInnerBox: group.hasInnerBox,
-      totalQuantity: group.details.reduce((sum, d) => sum + (d.quantity || 0), 0),
-      totalCartonCount: group.details.reduce((sum, d) => sum + (d.cartonCount || 0), 0),
-    }));
-  }, [detailsMap]);
+    return selectedDetails.flatMap((detail) => {
+      const eligibility = outerEligibilityMap.get(detail.id);
+      if (eligibility?.status !== "ready" || !eligibility.styleConfig) {
+        return [];
+      }
+      return [{
+        ...detail,
+        orderNo: detail.orderNo || selectedOrderNo,
+        packingDetails: eligibility.packingDetails,
+        styleConfig: eligibility.styleConfig,
+      }];
+    });
+  }, [outerEligibilityMap, printFormatTarget, selectedDetails, selectedOrderNo]);
+
+  const getGroupPrintEligibility = useCallback((group: PrintStyleGroup) => {
+    if (printFormatTarget === "inner-box") {
+      return { status: "ready" as const, reason: "可打印", disabled: false };
+    }
+
+    const eligibilities = group.detailIds.map(id => outerEligibilityMap.get(id));
+    if (eligibilities.some(eligibility => !eligibility || eligibility.status === "checking")) {
+      return { status: "checking" as const, reason: "检查中", disabled: true };
+    }
+    const firstMissingPacking = eligibilities.find(eligibility => eligibility?.status === "missing-packing");
+    if (firstMissingPacking) {
+      return { status: "missing-packing" as const, reason: firstMissingPacking.reason, disabled: true };
+    }
+    const firstMissingWeight = eligibilities.find(eligibility => eligibility?.status === "missing-weight");
+    if (firstMissingWeight) {
+      return { status: "missing-weight" as const, reason: firstMissingWeight.reason, disabled: true };
+    }
+    const firstError = eligibilities.find(eligibility => eligibility?.status === "error");
+    if (firstError) {
+      return { status: "error" as const, reason: firstError.reason, disabled: true };
+    }
+    return { status: "ready" as const, reason: "可打印", disabled: false };
+  }, [outerEligibilityMap, printFormatTarget]);
+
+  const currentStyleGroups = useMemo(
+    () => selectedOrderId === undefined ? [] : getStyleGroups(selectedOrderId),
+    [getStyleGroups, selectedOrderId],
+  );
+
+  const selectedGroups = useMemo(() => (
+    currentStyleGroups.filter(group =>
+      group.detailIds.length > 0 && group.detailIds.every(id => selectedDetailIds.has(id)),
+    )
+  ), [currentStyleGroups, selectedDetailIds]);
+
+  const printableSelectedGroups = useMemo(() => (
+    selectedGroups.filter(group => !getGroupPrintEligibility(group).disabled)
+  ), [getGroupPrintEligibility, selectedGroups]);
 
   const isGroupSelected = useCallback((detailIds: number[]) => {
     return detailIds.every(id => selectedDetailIds.has(id));
   }, [selectedDetailIds]);
 
-  const toggleGroup = useCallback((detailIds: number[]) => {
+  const toggleGroup = useCallback((group: PrintStyleGroup) => {
+    const allSelected = group.detailIds.every(id => selectedDetailIds.has(id));
+    const eligibility = getGroupPrintEligibility(group);
+    if (!allSelected && eligibility.disabled) {
+      message.warning(`款号 ${group.developmentNo} ${eligibility.reason}，不能选择`);
+      return;
+    }
+
     setSelectedDetailIds(prev => {
       const next = new Set(prev);
-      const allSelected = detailIds.every(id => next.has(id));
       if (allSelected) {
-        detailIds.forEach(id => next.delete(id));
+        group.detailIds.forEach(id => next.delete(id));
       } else {
-        detailIds.forEach(id => next.add(id));
+        group.detailIds.forEach(id => next.add(id));
       }
       return next;
     });
-  }, []);
+  }, [getGroupPrintEligibility, message, selectedDetailIds]);
 
-  const selectedCount = selectedDetailIds.size;
-
-  const openPrintFormatModal = async () => {
-    if (selectedDetailIds.size === 0) {
-      message.warning(`请先选择要打印${printTargetTitle}的款号`);
-      return;
-    }
-
-    const selectedDetails: OrderRecordDetail[] = [];
-    const affectedOrderIds = new Set<number>();
-    detailsMap.forEach((details) => {
-      details.forEach(d => {
-        if (selectedDetailIds.has(d.id)) {
-          selectedDetails.push(d);
-          affectedOrderIds.add(d.orderId);
-        }
-      });
-    });
-
-    if (selectedDetails.length === 0) {
-      message.warning("请先展开订单并选择要打印的款号");
-      return;
-    }
-
-    try {
-      let allPackingDetails: OrderPackingDetail[] = [];
-      if (printFormatTarget === "outer-carton") {
-        for (const oid of affectedOrderIds) {
-          if (!packingDetailsMap.has(oid)) {
-            const pd = await fetchOrderPackingDetails(oid);
-            setPackingDetailsMap(prev => new Map(prev).set(oid, pd));
-            allPackingDetails = [...allPackingDetails, ...pd];
-          } else {
-            allPackingDetails = [...allPackingDetails, ...(packingDetailsMap.get(oid) || [])];
-          }
-        }
-
-        const allDevNos = Array.from(new Set(
-          selectedDetails.map(d => d.developmentNo).filter((v): v is string => Boolean(v)),
-        ));
-        if (allDevNos.length > 0) {
-          const configPage = await fetchStyleConfigs({ developmentNos: allDevNos.join(","), page: 1, size: 100 });
-          setStyleConfigsMap(buildStyleConfigMap(configPage.records));
-        }
-      }
-
-      const currentPackingDetails = allPackingDetails.length > 0 ? allPackingDetails
-        : Array.from(packingDetailsMap.values()).flat();
-
-      const items: PrintSelectionItem[] = [];
-      for (const detail of selectedDetails) {
-        if (printFormatTarget === "outer-carton") {
-          const matchedPacking = getMatchingPackingDetails(detail, currentPackingDetails);
-          if (matchedPacking.length === 0) {
-            message.warning(`款号 ${detail.developmentNo} 没有对应的装箱单明细，已跳过`);
-            continue;
-          }
-          const styleConfig = findStyleConfig(styleConfigsMap, detail, matchedPacking[0]);
-          if (!hasWeightConfig(styleConfig)) {
-            message.warning(`款号 ${detail.developmentNo} 缺少净重/毛重配置，已跳过`);
-            continue;
-          }
-          items.push({
-            ...detail,
-            printOrderNo: detail.developmentNo,
-            packingDetails: matchedPacking,
-            styleConfig,
-          });
-        } else {
-          items.push({ ...detail, printOrderNo: detail.developmentNo });
-        }
-      }
-
-      if (items.length === 0) {
-        message.warning("没有符合打印条件的款号");
-        return;
-      }
-
-      setPrintItems(items);
-      setPreviewMode("print");
-      setFormatModalOpen(true);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "数据加载失败");
-    }
-  };
+  const selectedCount = selectedGroups.length;
 
   const openTemplateFormatModal = () => {
     setPreviewMode("template");
-    setFormatModalOpen(true);
+    setPreviewOpen(true);
   };
 
-  const printSelectedFormat = () => {
-    if (printItems.length === 0) {
+  const printSelectedFormat = async () => {
+    if (activePrintItems.length === 0) {
       message.warning(`请先选择要打印${printTargetTitle}的款号`);
       return;
     }
-    setFormatModalOpen(false);
     applyPrintPageSize(selectedPrintFormat);
 
     // 记录打印状态（按订单分组）
     const orderGroups = new Map<number, number[]>();
-    printItems.forEach(item => {
+    activePrintItems.forEach(item => {
       const oid = item.orderId;
       if (!orderGroups.has(oid)) orderGroups.set(oid, []);
       orderGroups.get(oid)!.push(item.id);
     });
-    orderGroups.forEach((ids, oid) => {
-      batchRecordPrintProcess(oid, ids, processType).catch(() => {});
-    });
 
-    window.setTimeout(() => window.print(), 0);
+    try {
+      await Promise.all(
+        Array.from(orderGroups.entries()).map(([oid, ids]) => batchRecordPrintProcess(oid, ids, processType)),
+      );
+      await Promise.all(
+        Array.from(orderGroups.keys()).map(async (oid) => {
+          const details = await fetchOrderDetails(oid);
+          setDetailsMap(prev => new Map(prev).set(oid, details));
+        }),
+      );
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "打印状态记录失败");
+      return;
+    }
+
+    window.setTimeout(() => {
+      window.print();
+      void loadOrders();
+    }, 0);
   };
 
   const previewSelectedFormat = (format: PrintFormatKey = selectedPrintFormat) => {
     setSelectedPrintFormat(format);
-    setFormatModalOpen(false);
+    setPreviewMode("print");
     setPreviewOpen(true);
   };
 
-  const backToPrintFormatModal = () => {
+  const closePreviewModal = () => {
     setPreviewOpen(false);
-    setFormatModalOpen(true);
   };
 
   useEffect(() => {
@@ -797,27 +953,48 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 
   const selectedPrintFormatLabel = printFormatTemplates[selectedPrintFormat].label;
   const selectedPrintFormatIsInnerBox = selectedPrintFormat === "inner-box-a4";
-  const previewPrintItems = previewMode === "template" ? templatePrintItems : printItems;
+  const previewPrintItems = previewMode === "template" ? templatePrintItems : activePrintItems;
   const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && previewPrintItems.length === 0;
+  const selectedPairCount = printableSelectedGroups.reduce((total, group) => total + Number(group.totalQuantity || 0), 0);
+  const selectedCartonCount = printableSelectedGroups.reduce((total, group) => total + Number(group.totalCartonCount || 0), 0);
+  const printableLabelCount = activePrintItems.length === 0
+    ? 0
+    : selectedPrintFormatIsInnerBox
+      ? buildInnerBoxLabels(activePrintItems).length
+      : isCartonPrintFormat(selectedPrintFormat)
+        ? buildCartonLabelData(selectedPrintFormat, activePrintItems).length
+        : 0;
 
   const previewPageCount = useMemo(() => {
     if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(previewPrintItems);
     if (isCartonPrintFormat(selectedPrintFormat)) return getCartonPageCount(selectedPrintFormat, previewPrintItems);
     return 1;
   }, [previewPrintItems, selectedPrintFormat, selectedPrintFormatIsInnerBox]);
+  const activePageCount = useMemo(() => {
+    if (activePrintItems.length === 0) {
+      return 0;
+    }
+    if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(activePrintItems);
+    if (isCartonPrintFormat(selectedPrintFormat)) return getCartonPageCount(selectedPrintFormat, activePrintItems);
+    return 0;
+  }, [activePrintItems, selectedPrintFormat, selectedPrintFormatIsInnerBox]);
 
   useEffect(() => {
     setPreviewPage(p => Math.min(Math.max(p, 1), previewPageCount));
   }, [previewPageCount]);
 
-  const styleColumns: ColumnsType<{
-    developmentNo: string;
-    detailIds: number[];
-    hasOuterCarton: boolean;
-    hasInnerBox: boolean;
-    totalQuantity: number;
-    totalCartonCount: number;
-  }> = [
+  const renderEligibilityTag = useCallback((record: PrintStyleGroup) => {
+    const eligibility = getGroupPrintEligibility(record);
+    if (eligibility.status === "ready") {
+      return <Tag color="success" icon={<CheckCircleOutlined />}>可打印</Tag>;
+    }
+    if (eligibility.status === "checking") {
+      return <Tag color="processing" icon={<ClockCircleOutlined />}>检查中</Tag>;
+    }
+    return <Tag color="warning" icon={<WarningOutlined />}>{eligibility.reason}</Tag>;
+  }, [getGroupPrintEligibility]);
+
+  const styleColumns: ColumnsType<PrintStyleGroup> = [
     {
       title: "开发编号",
       dataIndex: "developmentNo",
@@ -827,155 +1004,272 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     { title: "双数", dataIndex: "totalQuantity", width: 80, align: "right" },
     { title: "箱数", dataIndex: "totalCartonCount", width: 80, align: "right" },
     {
+      title: "箱号范围",
+      dataIndex: "cartonRange",
+      width: 130,
+      render: (value: string) => value || "-",
+    },
+    {
+      title: "打印条件",
+      width: 120,
+      render: (_: unknown, record) => renderEligibilityTag(record),
+    },
+    {
       title: "外箱贴标",
-      width: 100,
+      width: 150,
       align: "center",
       render: (_: unknown, record) => (
         record.hasOuterCarton
-          ? <Typography.Text type="success">✓ 已打</Typography.Text>
+          ? <Typography.Text type="success">{record.outerPrintedAt || "已打"}</Typography.Text>
           : <Typography.Text type="secondary">-</Typography.Text>
       ),
     },
     {
       title: "内盒贴标",
-      width: 100,
+      width: 150,
       align: "center",
       render: (_: unknown, record) => (
         record.hasInnerBox
-          ? <Typography.Text type="success">✓ 已打</Typography.Text>
+          ? <Typography.Text type="success">{record.innerPrintedAt || "已打"}</Typography.Text>
           : <Typography.Text type="secondary">-</Typography.Text>
       ),
     },
   ];
 
-  const expandedRowRender = (record: OrderRecord) => {
-    if (!detailsMap.has(record.id)) {
-      return <div style={{ padding: 24, textAlign: "center", color: "#999" }}>展开以加载明细数据…</div>;
-    }
-    const groups = getStyleGroups(record.id);
-    if (groups.length === 0) {
-      return <div style={{ padding: 24, textAlign: "center", color: "#999" }}>该订单没有明细数据</div>;
-    }
-    return (
-      <div style={{ padding: "8px 0" }}>
-        <Table
-          rowKey="developmentNo"
-          dataSource={groups}
-          columns={styleColumns}
-          pagination={false}
-          size="small"
-          rowSelection={{
-            selectedRowKeys: groups.filter(g => isGroupSelected(g.detailIds)).map(g => g.developmentNo),
-            onSelect: (record) => toggleGroup(record.detailIds),
-            onSelectAll: (selected, _selectedRows, changeRows) => {
-              const allIds = changeRows.flatMap(g => g.detailIds);
-              setSelectedDetailIds(prev => {
-                const next = new Set(prev);
-                if (selected) {
-                  allIds.forEach(id => next.add(id));
-                } else {
-                  allIds.forEach(id => next.delete(id));
-                }
-                return next;
-              });
-            },
-          }}
-        />
-      </div>
-    );
+  const detailsLoading = selectedOrderId !== undefined && !detailsMap.has(selectedOrderId);
+
+  const detailRowSelection = {
+    selectedRowKeys: currentStyleGroups.filter(g => isGroupSelected(g.detailIds)).map(g => g.id),
+    onSelect: (record: PrintStyleGroup) => { void toggleGroup(record); },
+    onSelectAll: (selected: boolean, _selectedRows: PrintStyleGroup[], changeRows: PrintStyleGroup[]) => {
+      const selectableRows = selected
+        ? changeRows.filter(group => !getGroupPrintEligibility(group).disabled)
+        : changeRows;
+      if (selected && selectableRows.length < changeRows.length) {
+        message.warning(`${changeRows.length - selectableRows.length} 个款缺资料，已跳过`);
+      }
+      const allIds = selectableRows.flatMap(g => g.detailIds);
+      if (selected && allIds.length === 0) {
+        return;
+      }
+
+      setSelectedDetailIds(prev => {
+        const next = new Set(prev);
+        if (selected) {
+          allIds.forEach(id => next.add(id));
+        } else {
+          allIds.forEach(id => next.delete(id));
+        }
+        return next;
+      });
+    },
+    getCheckboxProps: (record: PrintStyleGroup) => ({
+      disabled: getGroupPrintEligibility(record).disabled,
+      title: getGroupPrintEligibility(record).reason,
+    }),
+  };
+
+  const clearSelection = () => {
+    setSelectedDetailIds(new Set());
   };
 
   return (
-    <div className="workspace">
-      <div className="toolbar-band">
+    <div className="workspace print-workbench">
+      <div className="print-workbench-header">
         <div>
           <Typography.Title level={3}>{title}</Typography.Title>
-          <Typography.Text type="secondary">
-            展开订单，勾选需要打印的款号，点击"打印选中"按钮。
-          </Typography.Text>
+          <div className="print-workbench-meta">
+            <Tag color={printFormatTarget === "outer-carton" ? "blue" : "green"}>
+              {printTargetTitle}
+            </Tag>
+            <span>{orders.length} 个订单</span>
+          </div>
         </div>
         <Space wrap>
-          <Typography.Text>
-            已选 {selectedCount} 项
-          </Typography.Text>
-          <Button type="primary" icon={<PrinterOutlined />} disabled={selectedCount === 0} onClick={openPrintFormatModal}>
-            打印选中
-          </Button>
           <Button icon={<EyeOutlined />} onClick={openTemplateFormatModal}>
             查看模板
           </Button>
         </Space>
       </div>
 
-      <Table
-        dataSource={orders}
-        rowKey="id"
-        loading={orderLoading}
-        className="data-table"
-        columns={[
-          { title: "订单流水号", dataIndex: "orderNo", width: 160 },
-          { title: "客户", dataIndex: "customerName", width: 120 },
-          { title: "总对数", dataIndex: "totalQuantity", width: 80, align: "right" },
-          { title: "总箱数", dataIndex: "totalCartonCount", width: 80, align: "right" },
-          { title: "创建时间", dataIndex: "createdAt", width: 160 },
-        ]}
-        expandable={{
-          expandedRowRender,
-          onExpand: (expanded, record) => {
-            if (expanded) loadOrderDetails(record.id);
-          },
-          rowExpandable: () => true,
-        }}
-      />
+      <div className="print-workbench-layout">
+        <section className="print-order-panel">
+          <div className="print-order-picker">
+            <div className="print-order-section-heading">
+              <Typography.Text strong>订单流水号</Typography.Text>
+              <Space size={12} wrap>
+                <Checkbox
+                  checked={hideFinishedOrders}
+                  onChange={(event) => setHideFinishedOrders(event.target.checked)}
+                >
+                  只显示未全部打印
+                </Checkbox>
+                {selectedOrder ? (
+                  <Typography.Text type="secondary">{selectedOrder.orderNo || selectedOrder.id}</Typography.Text>
+                ) : null}
+              </Space>
+            </div>
+            <Select
+              showSearch
+              loading={orderLoading}
+              className="print-order-select"
+              placeholder="选择订单流水号"
+              value={selectedOrderId}
+              optionFilterProp="label"
+              onChange={(orderId) => selectOrder(Number(orderId))}
+              options={orders.map((order) => ({
+                value: order.id,
+                label: `${order.orderNo || order.id} ${order.customerName || ""}`.trim(),
+                order,
+              }))}
+              optionRender={(option) => {
+                const order = option.data.order as OrderRecord;
+                return (
+                  <div className="print-order-option">
+                    <span>{order.orderNo || order.id}</span>
+                    <span>{order.customerName || "-"}</span>
+                    <span>{order.totalQuantity || 0} 双 / {order.totalCartonCount || 0} 箱</span>
+                    <span>{formatDateTimeText(order.createdAt)}</span>
+                  </div>
+                );
+              }}
+            />
+          </div>
 
-      <Modal
-        open={formatModalOpen}
-        title={previewMode === "template" ? "选择模板格式" : "选择打印格式"}
-        onCancel={() => setFormatModalOpen(false)}
-        footer={[
-          <Button key="close" onClick={() => setFormatModalOpen(false)}>取消</Button>,
-          previewMode === "template" ? (
-            <Button key="template" type="primary" icon={<EyeOutlined />} onClick={() => previewSelectedFormat()}>
-              查看模板
-            </Button>
-          ) : (
-            <Button key="print" type="primary" icon={<PrinterOutlined />} disabled={printItems.length === 0} onClick={printSelectedFormat}>
-              打印
-            </Button>
-          ),
-        ]}
-        destroyOnClose
-      >
-        <Radio.Group
-          className="print-format-options"
-          value={selectedPrintFormat}
-          onChange={(event) => setSelectedPrintFormat(event.target.value)}
-        >
-          {printFormatOptions.filter(o => o.target === printFormatTarget).map((option) => (
-            <div
-              className={`print-format-option${selectedPrintFormat === option.value ? " print-format-option-selected" : ""}`}
-              key={option.value}
-              onClick={() => setSelectedPrintFormat(option.value)}
+          <div className="print-detail-picker">
+            <div className="print-order-section-heading">
+              <Typography.Text strong>订单明细</Typography.Text>
+              <Typography.Text type="secondary">{currentStyleGroups.length} 行</Typography.Text>
+            </div>
+            <Table
+              rowKey="id"
+              dataSource={currentStyleGroups}
+              columns={styleColumns}
+              pagination={false}
+              size="small"
+              loading={detailsLoading}
+              rowSelection={detailRowSelection}
+              locale={{ emptyText: selectedOrderId === undefined ? "先选择订单流水号" : "该订单没有明细数据" }}
+            />
+          </div>
+        </section>
+
+        <aside className="print-side-panel">
+          <section className="print-side-section">
+            <div className="print-side-heading">
+              <Typography.Text strong>待打印</Typography.Text>
+              <Typography.Text type="secondary">{printableSelectedGroups.length} 款</Typography.Text>
+            </div>
+            <div className="print-summary-grid">
+              <div>
+                <span>已选</span>
+                <strong>{selectedCount}</strong>
+              </div>
+              <div>
+                <span>双数</span>
+                <strong>{selectedPairCount}</strong>
+              </div>
+              <div>
+                <span>{printFormatTarget === "outer-carton" ? "箱数" : "标签"}</span>
+                <strong>{printFormatTarget === "outer-carton" ? selectedCartonCount : printableLabelCount}</strong>
+              </div>
+              <div>
+                <span>页数</span>
+                <strong>{activePageCount}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="print-side-section">
+            <div className="print-side-heading">
+              <Typography.Text strong>格式</Typography.Text>
+            </div>
+            <Radio.Group
+              className="print-side-format"
+              value={selectedPrintFormat}
+              onChange={(event) => setSelectedPrintFormat(event.target.value)}
             >
-              <Radio value={option.value}>{option.label}</Radio>
-              <Button size="small" onClick={(event) => {
-                event.stopPropagation();
-                previewSelectedFormat(option.value);
-              }}>
-                {previewMode === "template" ? "查看模板" : "预览"}
+              {printFormatOptions.filter(o => o.target === printFormatTarget).map((option) => (
+                <Radio.Button value={option.value} key={option.value}>
+                  {option.label.replace(`${printTargetTitle}-`, "")}
+                </Radio.Button>
+              ))}
+            </Radio.Group>
+          </section>
+
+          <section className="print-side-section">
+            <div className="print-side-heading">
+              <Typography.Text strong>清单</Typography.Text>
+              {selectedCount > 0 ? (
+                <Button size="small" icon={<ClearOutlined />} onClick={clearSelection}>
+                  清空
+                </Button>
+              ) : null}
+            </div>
+            <div className="print-queue-list">
+              {printableSelectedGroups.length === 0 ? (
+                <div className="print-queue-empty">暂无待打印</div>
+              ) : (
+                printableSelectedGroups.slice(0, 8).map((group) => {
+                  const firstDetail = group.details[0];
+                  return (
+                  <div className="print-queue-item" key={group.id}>
+                    <div>
+                      <Typography.Text strong>{group.developmentNo || firstDetail.customerStyleNo || firstDetail.id}</Typography.Text>
+                      <Typography.Text type="secondary">{firstDetail.englishColor || firstDetail.customerStyleNo || "-"}</Typography.Text>
+                    </div>
+                    <span>{printFormatTarget === "outer-carton" ? `${group.totalCartonCount || 0} 箱` : `${group.totalQuantity || 0} 双`}</span>
+                  </div>
+                  );
+                })
+              )}
+              {printableSelectedGroups.length > 8 ? (
+                <Typography.Text type="secondary">还有 {printableSelectedGroups.length - 8} 款</Typography.Text>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="print-side-section print-side-preview-section">
+            <div className="print-side-heading">
+              <Typography.Text strong>预览</Typography.Text>
+              <Button size="small" icon={<EyeOutlined />} onClick={() => previewSelectedFormat()}>
+                放大
               </Button>
             </div>
-          ))}
-        </Radio.Group>
-      </Modal>
+            <div className={`print-side-preview-canvas ${
+              selectedPrintFormatIsInnerBox ? "print-side-preview-inner" : "print-side-preview-carton"
+            }`}>
+              <div className={
+                selectedPrintFormatIsInnerBox ? "print-side-preview-inner-scale" : "print-side-preview-carton-scale"
+              }>
+                <PrintFormatSheet
+                  format={selectedPrintFormat}
+                  printItems={activePrintItems}
+                  cartonPageIndex={isCartonPrintFormat(selectedPrintFormat) ? 0 : undefined}
+                  innerBoxPageIndex={selectedPrintFormatIsInnerBox ? 0 : undefined}
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="print-side-actions">
+            <Button icon={<EyeOutlined />} onClick={() => previewSelectedFormat()}>
+              预览
+            </Button>
+            <Button type="primary" icon={<PrinterOutlined />} disabled={activePrintItems.length === 0} onClick={printSelectedFormat}>
+              打印
+            </Button>
+          </div>
+        </aside>
+      </div>
 
       <Modal
         open={previewOpen}
         title={`${selectedPrintFormatLabel}${previewMode === "template" ? "模板预览" : "预览"}`}
-        onCancel={backToPrintFormatModal}
+        onCancel={closePreviewModal}
         width={selectedPrintFormatIsInnerBoxTemplate ? 560 : selectedPrintFormatIsInnerBox ? 860 : 1120}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className={`label-preview label-preview-modal ${
           selectedPrintFormatIsInnerBoxTemplate ? "inner-box-label-template-preview"
@@ -1004,7 +1298,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
 
       <div className="label-print-root" aria-hidden>
         <div className="label-preview">
-          <PrintFormatSheet format={selectedPrintFormat} printItems={printItems} />
+          <PrintFormatSheet format={selectedPrintFormat} printItems={activePrintItems} />
         </div>
       </div>
     </div>
@@ -1153,7 +1447,7 @@ function InnerBoxLabelA4({ printItems, pageIndex }: { printItems: PrintSelection
 function InnerBoxLabel({ data }: { data: InnerBoxLabelData }) {
   return (
     <div className="inner-box-label">
-      <div className="inner-box-label-cell inner-box-label-header">STYEL NAME</div>
+      <div className="inner-box-label-cell inner-box-label-header">STYLE NAME</div>
       <div className="inner-box-label-cell inner-box-label-header">MATERIAL</div>
       <div className="inner-box-label-cell inner-box-label-header">COLOUR</div>
       <div className="inner-box-label-cell inner-box-label-header">SIZE</div>

@@ -12,7 +12,7 @@ import { App, Button, Cascader, Form, Input, Modal, Pagination, Select, Space, T
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
-import { fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
+import { batchRecordPrintProcess, fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import {
   createShippingNoteTask,
   fetchShippingNoteTask,
@@ -39,6 +39,7 @@ import { getMatchingPackingDetails, hasMatchingPackingDetails } from "../utils/o
 import { getPackingTotalPairs, sumSizeQuantities as sumPackingSizeQuantities } from "../utils/packingTotals";
 
 const defaultRecipient = "达为鞋业";
+const SHIPPING_NOTE_PRINT_PROCESS_TYPE = 7;
 
 function todayText() {
   const now = new Date();
@@ -551,11 +552,42 @@ export default function ShippingNotePrintPage() {
     setPreviewPage((current) => Math.min(Math.max(current, 1), previewPageCount));
   }, [previewPageCount]);
 
-  const printPreviewTask = () => {
+  const recordShippingNotePrinted = async (items: ShippingNoteItem[]) => {
+    const orderGroups = new Map<number, Set<number>>();
+    items.forEach((item) => {
+      const orderId = item.orderId;
+      const detailId = item.sourceDetailId;
+      if (!orderId || !detailId) {
+        return;
+      }
+      if (!orderGroups.has(orderId)) {
+        orderGroups.set(orderId, new Set());
+      }
+      orderGroups.get(orderId)!.add(detailId);
+    });
+
+    if (orderGroups.size === 0) {
+      throw new Error("出货单明细缺少订单信息，不能记录打印状态");
+    }
+
+    await Promise.all(
+      Array.from(orderGroups.entries()).map(([orderId, detailIds]) =>
+        batchRecordPrintProcess(orderId, Array.from(detailIds), SHIPPING_NOTE_PRINT_PROCESS_TYPE),
+      ),
+    );
+  };
+
+  const printPreviewTask = async () => {
     if (!previewTask) {
       return;
     }
     if (!ensureShippingItemsCanPrint(previewTask.items || [])) {
+      return;
+    }
+    try {
+      await recordShippingNotePrinted(previewTask.items || []);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "出货单打印状态记录失败");
       return;
     }
     applyShippingNotePrintSize();

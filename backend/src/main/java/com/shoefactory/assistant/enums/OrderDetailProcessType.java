@@ -9,7 +9,8 @@ public enum OrderDetailProcessType {
     ORDER_INSOLE(3, "定中底"),
     ORDER_HEEL(4, "定跟"),
     INNER_BOX_LABEL(5, "内盒贴标"),
-    OUTER_CARTON_LABEL(6, "外箱贴标");
+    OUTER_CARTON_LABEL(6, "外箱贴标"),
+    SHIPPING_NOTE_PRINT(7, "出货单打印");
 
     private final int code;
     private final String label;

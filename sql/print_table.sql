@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS `order_detail_process` (
   `order_id` bigint NOT NULL COMMENT '订单主表ID',
   `order_detail_id` bigint NOT NULL COMMENT '订单明细ID',
 
-  `process_type` tinyint NOT NULL COMMENT '处理类型: 1订包装, 2定大底, 3定中底, 4定跟, 5内盒贴标, 6外箱贴标',
+  `process_type` tinyint NOT NULL COMMENT '处理类型: 1订包装, 2定大底, 3定中底, 4定跟, 5内盒贴标, 6外箱贴标, 7出货单打印',
 
   `process_status` tinyint NOT NULL DEFAULT 1 COMMENT '处理状态: 1已处理',
 

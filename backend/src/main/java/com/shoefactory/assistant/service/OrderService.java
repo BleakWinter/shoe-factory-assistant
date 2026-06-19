@@ -24,6 +24,7 @@ public interface OrderService {
             String orderNo,
             String developmentNos,
             String recognitionStatus,
+            Integer unfinishedProcessType,
             long page,
             long size
     );
