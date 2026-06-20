@@ -271,32 +271,25 @@ a {
   border-color: #e1e5ec;
 }
 
-.order-packing-expanded {
+.order-detail-page-panel .ant-tabs-nav {
+  margin-bottom: 10px;
+}
+
+.order-detail-tab-content {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 8px 12px 48px;
-  background: #f8fafc;
 }
 
-.order-packing-expanded-meta {
+.packing-filter-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 28px;
-}
-
-.nested-data-table {
-  background: #ffffff;
-}
-
-.nested-data-table .ant-table {
-  font-size: 13px;
-}
-
-.nested-data-table .ant-table-thead > tr > th,
-.nested-data-table .ant-table-tbody > tr > td {
-  padding: 8px 10px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  background: #f6f9ff;
+  border: 1px solid #d9e6ff;
+  border-radius: 4px;
 }
 
 .order-detail-modal {
@@ -355,6 +348,44 @@ a {
   background: #f2f4f7;
   border-radius: 4px;
   white-space: nowrap;
+}
+
+.development-no-preview {
+  max-width: 142px;
+  overflow: hidden;
+  flex-wrap: nowrap;
+  cursor: default;
+}
+
+.development-no-preview .ant-space-item {
+  min-width: 0;
+}
+
+.development-no-preview .ant-space-item:last-child {
+  flex: 0 0 auto;
+}
+
+.development-no-tag.ant-tag {
+  display: inline-block;
+  max-width: 88px;
+  margin-inline-end: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.development-no-count-tag.ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.development-no-popover {
+  max-width: 360px;
+}
+
+.development-no-popover .development-no-tag.ant-tag {
+  max-width: 160px;
 }
 
 .print-modal-body {
@@ -1587,6 +1618,120 @@ a {
   cursor: pointer;
 }
 
+.unshipped-ranking-panel {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e0e6ef;
+  border-radius: 6px;
+}
+
+.unshipped-ranking-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.unshipped-ranking-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.unshipped-ranking-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  text-align: right;
+}
+
+.unshipped-ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unshipped-ranking-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: #ffffff;
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+}
+
+.unshipped-ranking-rank {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #64748b;
+  font-weight: 700;
+  background: #eef2f7;
+  border-radius: 4px;
+}
+
+.unshipped-ranking-rank-top {
+  color: #ffffff;
+  background: #f97316;
+}
+
+.unshipped-ranking-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.unshipped-ranking-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.unshipped-ranking-invoice {
+  min-width: 0;
+}
+
+.unshipped-ranking-value {
+  color: #111827;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.unshipped-ranking-track {
+  height: 9px;
+  overflow: hidden;
+  background: #edf2f7;
+  border-radius: 999px;
+}
+
+.unshipped-ranking-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #f97316, #fb923c);
+  border-radius: inherit;
+}
+
+.unshipped-ranking-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.unshipped-table-title.ant-typography {
+  margin: 4px 0 10px;
+  font-size: 15px;
+}
+
 .statistics-ranking-table .ant-table-row {
   cursor: pointer;
 }
@@ -1643,6 +1788,11 @@ a {
     width: 100%;
   }
 
+  .packing-filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .page-panel {
     padding: 10px;
   }
@@ -1684,6 +1834,24 @@ a {
 
   .statistics-pie-wrap {
     min-height: 280px;
+  }
+
+  .unshipped-ranking-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .unshipped-ranking-actions {
+    align-items: stretch;
+    text-align: left;
+  }
+
+  .unshipped-ranking-line {
+    grid-template-columns: 1fr;
+  }
+
+  .unshipped-ranking-row {
+    grid-template-columns: 32px minmax(0, 1fr);
   }
 }
 

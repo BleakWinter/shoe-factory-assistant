@@ -8,7 +8,7 @@ import {
   ReloadOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Form, Input, Modal, Pagination, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Cascader, Form, Input, Modal, Pagination, Popover, Select, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
@@ -40,6 +40,7 @@ import { getPackingTotalPairs, sumSizeQuantities as sumPackingSizeQuantities } f
 
 const defaultRecipient = "达为鞋业";
 const SHIPPING_NOTE_RELATED_PROCESS_TYPES = [5, 6, 7];
+const CODE_TAG_PREVIEW_LIMIT = 1;
 
 function todayText() {
   const now = new Date();
@@ -161,12 +162,44 @@ function renderDevelopmentNos(value?: string) {
   if (values.length === 0) {
     return "-";
   }
-  return (
-    <Space size={[4, 4]} wrap>
-      {values.map((item) => (
-        <Tag key={item}>{item}</Tag>
+  const previewValues = values.slice(0, CODE_TAG_PREVIEW_LIMIT);
+  const hiddenCount = Math.max(values.length - previewValues.length, 0);
+  const shouldShowPopover = hiddenCount > 0 || values.some((item) => item.length > 14);
+  const preview = (
+    <Space size={[4, 4]} wrap className="development-no-preview">
+      {previewValues.map((item) => (
+        <Tag key={item} className="development-no-tag">
+          {item}
+        </Tag>
       ))}
+      {hiddenCount > 0 ? (
+        <Tag color="blue" className="development-no-count-tag">
+          +{hiddenCount}
+        </Tag>
+      ) : null}
     </Space>
+  );
+
+  if (!shouldShowPopover) {
+    return preview;
+  }
+
+  return (
+    <Popover
+      content={
+        <Space size={[4, 4]} wrap className="development-no-popover">
+          {values.map((item) => (
+            <Tag key={item} className="development-no-tag">
+              {item}
+            </Tag>
+          ))}
+        </Space>
+      }
+      mouseEnterDelay={0.2}
+      title={`编号（${values.length}）`}
+    >
+      {preview}
+    </Popover>
   );
 }
 
@@ -668,11 +701,10 @@ export default function ShippingNotePrintPage() {
 
   const taskColumns = useMemo<ColumnsType<ShippingNoteTask>>(
     () => [
-      { title: "任务编号", dataIndex: "taskNo", width: 160, fixed: "left", render: (_, record) => record.taskNo || record.printNo || "-" },
-      { title: "发票编号", dataIndex: "invoiceNos", width: 220, render: renderDevelopmentNos },
+      { title: "出货日期", dataIndex: "shippingDate", width: 120, fixed: "left", render: formatEmpty },
+      { title: "发票编号", dataIndex: "invoiceNos", width: 170, render: renderDevelopmentNos },
       { title: "收货单位", dataIndex: "recipientName", width: 140, render: formatEmpty },
-      { title: "出货日期", dataIndex: "shippingDate", width: 120, render: formatEmpty },
-      { title: "开发编号", dataIndex: "developmentNos", minWidth: 220, render: renderDevelopmentNos },
+      { title: "开发编号", dataIndex: "developmentNos", width: 170, render: renderDevelopmentNos },
       { title: "明细行", dataIndex: "itemCount", width: 90, align: "right", render: formatEmpty },
       { title: "件数", dataIndex: "totalCartonCount", width: 90, align: "right", render: formatEmpty },
       { title: "双数", dataIndex: "totalPairs", width: 90, align: "right", render: formatEmpty },
@@ -801,7 +833,7 @@ export default function ShippingNotePrintPage() {
             showSizeChanger: true,
             onChange: (nextPage, nextSize) => void loadTasks(nextPage, nextSize),
           }}
-          scroll={{ x: 1520 }}
+          scroll={{ x: 1360 }}
           className="data-table"
         />
       </div>

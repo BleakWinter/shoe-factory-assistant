@@ -1,4 +1,4 @@
-import { Bar, Column, type BarConfig, type ColumnConfig } from "@ant-design/charts";
+import { Column, type ColumnConfig } from "@ant-design/charts";
 import { FileSearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { App, Button, Empty, Modal, Segmented, Skeleton, Statistic, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -60,12 +60,7 @@ function formatPendingDays(value?: number) {
 
 type StatisticModalType = "total" | "shipped" | "unshipped" | "styles";
 type TimeGranularity = "year" | "month" | "day";
-
-interface BarChartDatum {
-  key: string;
-  label: string;
-  value: number;
-}
+type UnshippedSortMode = "pending" | "pairs";
 
 interface TrendChartDatum {
   key: string;
@@ -127,11 +122,24 @@ function buildUnshippedInvoiceRows(items: UnshippedInvoiceStatistic[]): Unshippe
       ...item,
       key: [item.orderId || "order", item.invoiceNo || "invoice", index].join("-"),
       pendingDays: getPendingDays(item.createdAt),
-    }))
+      rank: index + 1,
+    }));
+}
+
+function sortUnshippedInvoiceRows(rows: UnshippedInvoiceRow[], mode: UnshippedSortMode) {
+  return [...rows]
     .sort((left, right) => {
+      const pendingDiff = (right.pendingDays || 0) - (left.pendingDays || 0);
+      const unshippedDiff = (right.unshippedPairCount || 0) - (left.unshippedPairCount || 0);
       const leftTime = parseDate(left.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
       const rightTime = parseDate(right.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
-      return leftTime - rightTime || formatText(left.invoiceNo).localeCompare(formatText(right.invoiceNo), "zh-CN", { numeric: true });
+      const timeDiff = leftTime - rightTime;
+      const invoiceDiff = formatText(left.invoiceNo).localeCompare(formatText(right.invoiceNo), "zh-CN", { numeric: true });
+
+      if (mode === "pairs") {
+        return unshippedDiff || pendingDiff || timeDiff || invoiceDiff;
+      }
+      return pendingDiff || timeDiff || unshippedDiff || invoiceDiff;
     })
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
@@ -185,6 +193,7 @@ export default function ShoeStatisticsPage() {
   const [loading, setLoading] = useState(false);
   const [activeStatistic, setActiveStatistic] = useState<StatisticModalType | null>(null);
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>("month");
+  const [unshippedSortMode, setUnshippedSortMode] = useState<UnshippedSortMode>("pending");
   const [orderReferenceNode, setOrderReferenceNode] = useState<DevelopmentNoStatisticNode | null>(null);
 
   const loadStatistics = useCallback(async () => {
@@ -194,6 +203,7 @@ export default function ShoeStatisticsPage() {
       setStatistics(next);
       setActiveStatistic(null);
       setTimeGranularity("month");
+      setUnshippedSortMode("pending");
       setOrderReferenceNode(null);
     } catch (error) {
       setStatistics(null);
@@ -212,15 +222,27 @@ export default function ShoeStatisticsPage() {
     if (type === "total" || type === "shipped") {
       setTimeGranularity("month");
     }
+    if (type === "unshipped") {
+      setUnshippedSortMode("pending");
+    }
   }, []);
 
   const styleRows = useMemo(
     () => buildStyleRankingRows(statistics?.developmentNoTree || []),
     [statistics?.developmentNoTree],
   );
-  const unshippedInvoiceRows = useMemo(
+  const unshippedInvoiceBaseRows = useMemo(
     () => buildUnshippedInvoiceRows(statistics?.unshippedInvoiceStatistics || []),
     [statistics?.unshippedInvoiceStatistics],
+  );
+  const unshippedInvoiceRows = useMemo(
+    () => sortUnshippedInvoiceRows(unshippedInvoiceBaseRows, unshippedSortMode),
+    [unshippedInvoiceBaseRows, unshippedSortMode],
+  );
+  const unshippedRankingRows = useMemo(() => unshippedInvoiceRows.slice(0, 12), [unshippedInvoiceRows]);
+  const maxUnshippedPairCount = useMemo(
+    () => Math.max(1, ...unshippedRankingRows.map((row) => row.unshippedPairCount || 0)),
+    [unshippedRankingRows],
   );
   const orderReferences = orderReferenceNode?.orderReferences || [];
   const activeRows = useMemo(() => {
@@ -236,20 +258,18 @@ export default function ShoeStatisticsPage() {
       .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label, "zh-CN", { numeric: true }))
       .map((row, index) => ({ ...row, rank: index + 1 }));
   }, [activeStatistic, styleRows]);
-  const unshippedChartData = useMemo<BarChartDatum[]>(
-    () => unshippedInvoiceRows.slice(0, 20).map((row) => ({
-      key: row.key,
-      label: formatText(row.invoiceNo),
-      value: row.unshippedPairCount || 0,
-    })),
-    [unshippedInvoiceRows],
-  );
   const modalTitleMap: Record<StatisticModalType, string> = {
     total: "创建订单双数趋势",
     shipped: "出货对数趋势",
     unshipped: "未出货发票排序",
     styles: "款号数量排名",
   };
+  const unshippedSortTitle = unshippedSortMode === "pending"
+    ? "按最久没有出货排序"
+    : "按未出货双数排序";
+  const unshippedSortNote = unshippedSortMode === "pending"
+    ? "条形长度表示未出货双数，排序优先看等待天数"
+    : "条形长度按最高未出货双数归一";
   const trendSource = activeStatistic === "total"
     ? statistics?.orderCreatedTrend || []
     : activeStatistic === "shipped"
@@ -293,44 +313,6 @@ export default function ShoeStatisticsPage() {
     ],
     [],
   );
-
-  const barChartConfig = useMemo<BarConfig>(() => ({
-    data: unshippedChartData,
-    xField: "label",
-    yField: "value",
-    height: Math.max(300, unshippedChartData.length * 34),
-    autoFit: true,
-    scale: {
-      y: { nice: true },
-    },
-    axis: {
-      x: {
-        title: false,
-        labelFormatter: (value: string) => truncateText(value, 14),
-      },
-      y: {
-        title: false,
-        labelFormatter: (value: number) => formatCount(value),
-      },
-    },
-    label: {
-      text: (datum: BarChartDatum) => `${formatCount(datum.value)} 双`,
-      position: "right",
-      style: {
-        fill: "#172033",
-        fontSize: 12,
-      },
-    },
-    tooltip: {
-      title: "label",
-      items: [{ field: "value", name: "未出货双数" }],
-    },
-    style: {
-      fill: "#f97316",
-      radiusTopRight: 4,
-      radiusBottomRight: 4,
-    },
-  }), [unshippedChartData]);
 
   const trendColumnConfig = useMemo<ColumnConfig>(() => ({
     data: trendChartData,
@@ -513,7 +495,7 @@ export default function ShoeStatisticsPage() {
       <Modal
         open={!!activeStatistic}
         title={activeStatistic ? modalTitleMap[activeStatistic] : ""}
-        width={activeStatistic === "styles" ? 860 : 920}
+        width={activeStatistic === "unshipped" ? 980 : activeStatistic === "styles" ? 860 : 920}
         footer={null}
         onCancel={() => setActiveStatistic(null)}
         destroyOnClose
@@ -545,9 +527,71 @@ export default function ShoeStatisticsPage() {
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
           ) : (
             <>
-              <div className="statistics-modal-chart">
-                <Bar {...barChartConfig} />
+              <div className="unshipped-ranking-panel">
+                <div className="unshipped-ranking-heading">
+                  <div>
+                    <Typography.Text strong>{unshippedSortTitle}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      显示前 {unshippedRankingRows.length} 张，共 {unshippedInvoiceRows.length} 张未出货发票
+                    </Typography.Text>
+                  </div>
+                  <div className="unshipped-ranking-actions">
+                    <Segmented
+                      size="small"
+                      value={unshippedSortMode}
+                      onChange={(value) => setUnshippedSortMode(value as UnshippedSortMode)}
+                      options={[
+                        { label: "最久未出货", value: "pending" },
+                        { label: "未出货双数", value: "pairs" },
+                      ]}
+                    />
+                    <Typography.Text type="secondary">
+                      {unshippedSortNote}
+                    </Typography.Text>
+                  </div>
+                </div>
+
+                <div className="unshipped-ranking-list">
+                  {unshippedRankingRows.map((row) => {
+                    const unshippedPairCount = row.unshippedPairCount || 0;
+                    const percent = Math.max(4, Math.round((unshippedPairCount / maxUnshippedPairCount) * 100));
+
+                    return (
+                      <div className="unshipped-ranking-row" key={row.key}>
+                        <span className={`unshipped-ranking-rank ${row.rank <= 3 ? "unshipped-ranking-rank-top" : ""}`}>
+                          {row.rank}
+                        </span>
+
+                        <div className="unshipped-ranking-main">
+                          <div className="unshipped-ranking-line">
+                            <Typography.Text strong ellipsis className="unshipped-ranking-invoice">
+                              {formatText(row.invoiceNo)}
+                            </Typography.Text>
+                            <span className="unshipped-ranking-value">
+                              {formatCount(unshippedPairCount)} 双
+                            </span>
+                          </div>
+
+                          <div className="unshipped-ranking-track">
+                            <div className="unshipped-ranking-bar" style={{ width: `${percent}%` }} />
+                          </div>
+
+                          <div className="unshipped-ranking-meta">
+                            <span>创建：{formatDate(row.createdAt)}</span>
+                            <span>距今：{formatPendingDays(row.pendingDays)}</span>
+                            <span>已出货：{formatCount(row.shippedPairCount)} 双</span>
+                            <span>总双数：{formatCount(row.pairCount)} 双</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+
+              <Typography.Title level={5} className="unshipped-table-title">
+                全部未出货发票
+              </Typography.Title>
               <Table<UnshippedInvoiceRow>
                 rowKey="key"
                 columns={unshippedInvoiceColumns}

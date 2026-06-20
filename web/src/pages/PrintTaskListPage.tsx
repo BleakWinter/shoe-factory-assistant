@@ -5,7 +5,7 @@ import {
   ReloadOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
-import { App, Button, Modal, Select, Space, Table, Tag, Typography, Upload } from "antd";
+import { App, Button, Modal, Popover, Select, Space, Table, Tag, Typography, Upload } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -22,6 +22,7 @@ import type { PrintTask, PrintTaskStatus, PrintType } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 
 const allowedExtensions = ["xlsx", "xls"];
+const STYLE_NO_PREVIEW_LIMIT = 1;
 
 function isAllowedFile(file: File) {
   // 前端先做一次扩展名校验，后端仍会再校验一遍。
@@ -59,12 +60,44 @@ function renderStyleNos(styleNos?: string[]) {
   if (!styleNos || styleNos.length === 0) {
     return "-";
   }
-  return (
-    <Space size={[4, 4]} wrap>
-      {styleNos.map((styleNo) => (
-        <Tag key={styleNo}>{styleNo}</Tag>
+  const previewValues = styleNos.slice(0, STYLE_NO_PREVIEW_LIMIT);
+  const hiddenCount = Math.max(styleNos.length - previewValues.length, 0);
+  const shouldShowPopover = hiddenCount > 0 || styleNos.some((styleNo) => styleNo.length > 14);
+  const preview = (
+    <Space size={[4, 4]} wrap className="development-no-preview">
+      {previewValues.map((styleNo) => (
+        <Tag key={styleNo} className="development-no-tag">
+          {styleNo}
+        </Tag>
       ))}
+      {hiddenCount > 0 ? (
+        <Tag color="blue" className="development-no-count-tag">
+          +{hiddenCount}
+        </Tag>
+      ) : null}
     </Space>
+  );
+
+  if (!shouldShowPopover) {
+    return preview;
+  }
+
+  return (
+    <Popover
+      content={
+        <Space size={[4, 4]} wrap className="development-no-popover">
+          {styleNos.map((styleNo) => (
+            <Tag key={styleNo} className="development-no-tag">
+              {styleNo}
+            </Tag>
+          ))}
+        </Space>
+      }
+      mouseEnterDelay={0.2}
+      title={`开发编号（${styleNos.length}）`}
+    >
+      {preview}
+    </Popover>
   );
 }
 
@@ -353,15 +386,9 @@ export default function PrintTaskListPage() {
         render: formatEmpty,
       },
       {
-        title: "客户",
-        dataIndex: "customerName",
-        width: 150,
-        render: formatEmpty,
-      },
-      {
         title: "开发编号",
         dataIndex: "styleNos",
-        minWidth: 260,
+        width: 170,
         render: renderStyleNos,
       },
       {
@@ -467,7 +494,7 @@ export default function PrintTaskListPage() {
           columns={columns}
           dataSource={filteredRows}
           pagination={{ pageSize: 20, showSizeChanger: false }}
-          scroll={{ x: 1220 }}
+          scroll={{ x: 930 }}
           className="data-table"
         />
       </div>

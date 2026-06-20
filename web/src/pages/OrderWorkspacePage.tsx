@@ -9,6 +9,7 @@ import {
   Image,
   Input,
   Modal,
+  Popover,
   Select,
   Space,
   Table,
@@ -46,6 +47,7 @@ interface FilterValues {
 }
 
 const FAILED_STATUS = 3;
+const DEVELOPMENT_NO_PREVIEW_LIMIT = 1;
 
 const recognitionOptions = [
   { label: "待识别订单", value: "ORDER_PENDING" },
@@ -59,12 +61,44 @@ function renderDevelopmentNos(values?: string[]) {
   if (!values || values.length === 0) {
     return "-";
   }
-  return (
-    <Space size={[4, 4]} wrap>
-      {values.map((value) => (
-        <Tag key={value}>{value}</Tag>
+  const previewValues = values.slice(0, DEVELOPMENT_NO_PREVIEW_LIMIT);
+  const hiddenCount = Math.max(values.length - previewValues.length, 0);
+  const shouldShowPopover = hiddenCount > 0 || values.some((value) => value.length > 14);
+  const preview = (
+    <Space size={[4, 4]} wrap className="development-no-preview">
+      {previewValues.map((value) => (
+        <Tag key={value} className="development-no-tag">
+          {value}
+        </Tag>
       ))}
+      {hiddenCount > 0 ? (
+        <Tag color="blue" className="development-no-count-tag">
+          +{hiddenCount}
+        </Tag>
+      ) : null}
     </Space>
+  );
+
+  if (!shouldShowPopover) {
+    return preview;
+  }
+
+  return (
+    <Popover
+      content={
+        <Space size={[4, 4]} wrap className="development-no-popover">
+          {values.map((value) => (
+            <Tag key={value} className="development-no-tag">
+              {value}
+            </Tag>
+          ))}
+        </Space>
+      }
+      mouseEnterDelay={0.2}
+      title={`开发编号（${values.length}）`}
+    >
+      {preview}
+    </Popover>
   );
 }
 
@@ -308,8 +342,7 @@ export default function OrderWorkspacePage() {
   const columns = useMemo<ColumnsType<OrderRecord>>(
     () => [
       { title: "订单流水号", dataIndex: "orderNo", width: 170, fixed: "left", render: formatEmpty },
-      { title: "客户", dataIndex: "customerName", width: 140, render: formatEmpty },
-      { title: "开发编号", dataIndex: "developmentNoList", minWidth: 220, render: renderDevelopmentNos },
+      { title: "开发编号", dataIndex: "developmentNoList", width: 170, render: renderDevelopmentNos },
       { title: "订单总双数", dataIndex: "totalQuantity", width: 120, align: "right", render: formatEmpty },
       { title: "总箱数", dataIndex: "totalCartonCount", width: 100, align: "right", render: formatEmpty },
       {
@@ -492,7 +525,7 @@ export default function OrderWorkspacePage() {
           columns={columns}
           dataSource={orders}
           pagination={pagination}
-          scroll={{ x: 1490 }}
+          scroll={{ x: 1200 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({

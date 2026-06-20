@@ -6,6 +6,7 @@ import {
     Popconfirm,
     Space,
     Table,
+    Tabs,
     Tag,
     Typography,
 } from "antd";
@@ -14,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
     fetchOrderDetails,
-    fetchMatchingPackingDetails,
+    fetchOrderPackingDetails,
     toAssetUrl,
     deleteOrderDetail,
 } from "../api/orderApi";
@@ -25,6 +26,7 @@ import type {
     OrderRecordDetail,
 } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
+import { getMatchingPackingDetails } from "../utils/orderMatching";
 import { getPackingTotalPairs } from "../utils/packingTotals";
 
 function renderSizeQuantities(value?: Record<string, number>) {
@@ -107,12 +109,9 @@ export default function OrderDetailPage() {
     const order = routeState?.order || null;
 
     const [details, setDetails] = useState<OrderRecordDetail[]>([]);
-    const [packingDetailsByDetailId, setPackingDetailsByDetailId] = useState<
-        Record<number, OrderPackingDetail[]>
-    >({});
-    const [packingLoadingIds, setPackingLoadingIds] = useState<Set<number>>(
-        () => new Set(),
-    );
+    const [packingDetails, setPackingDetails] = useState<OrderPackingDetail[]>([]);
+    const [activeTab, setActiveTab] = useState("ORDER");
+    const [focusedDetail, setFocusedDetail] = useState<OrderRecordDetail | null>(null);
     const [loading, setLoading] = useState(false);
 
     const loadDetailPage = useCallback(async () => {
@@ -124,13 +123,17 @@ export default function OrderDetailPage() {
         setLoading(true);
 
         try {
-            setDetails(await fetchOrderDetails(orderId));
-            setPackingDetailsByDetailId({});
-            setPackingLoadingIds(new Set());
+            const [nextDetails, nextPackingDetails] = await Promise.all([
+                fetchOrderDetails(orderId),
+                fetchOrderPackingDetails(orderId),
+            ]);
+            setDetails(nextDetails);
+            setPackingDetails(nextPackingDetails);
+            setFocusedDetail(null);
         } catch (error) {
             setDetails([]);
-            setPackingDetailsByDetailId({});
-            setPackingLoadingIds(new Set());
+            setPackingDetails([]);
+            setFocusedDetail(null);
             message.error(
                 error instanceof Error
                     ? error.message
@@ -166,38 +169,24 @@ export default function OrderDetailPage() {
         [loadDetailPage, message],
     );
 
-    const loadMatchingPackingDetails = useCallback(
-        async (record: OrderRecordDetail) => {
-            if (packingDetailsByDetailId[record.id] || packingLoadingIds.has(record.id)) {
-                return;
-            }
-            setPackingLoadingIds((current) => new Set(current).add(record.id));
-            try {
-                const nextPackingDetails = await fetchMatchingPackingDetails(record.id);
-                setPackingDetailsByDetailId((current) => ({
-                    ...current,
-                    [record.id]: nextPackingDetails,
-                }));
-            } catch (error) {
-                setPackingDetailsByDetailId((current) => ({
-                    ...current,
-                    [record.id]: [],
-                }));
-                message.error(
-                    error instanceof Error
-                        ? error.message
-                        : "装箱单明细加载失败",
-                );
-            } finally {
-                setPackingLoadingIds((current) => {
-                    const next = new Set(current);
-                    next.delete(record.id);
-                    return next;
-                });
-            }
-        },
-        [message, packingDetailsByDetailId, packingLoadingIds],
-    );
+    const matchingPackingDetailsByDetailId = useMemo(() => {
+        const next = new Map<number, OrderPackingDetail[]>();
+        details.forEach((detail) => {
+            next.set(detail.id, getMatchingPackingDetails(detail, packingDetails));
+        });
+        return next;
+    }, [details, packingDetails]);
+
+    const visiblePackingDetails = useMemo(() => {
+        return focusedDetail
+            ? getMatchingPackingDetails(focusedDetail, packingDetails)
+            : packingDetails;
+    }, [focusedDetail, packingDetails]);
+
+    const showMatchingPackingDetails = useCallback((record: OrderRecordDetail) => {
+        setFocusedDetail(record);
+        setActiveTab("PACKING");
+    }, []);
 
     const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
         () => [
@@ -370,6 +359,37 @@ export default function OrderDetailPage() {
                 render: formatEmpty,
             },
 
+            {
+                title: "处理记录",
+                dataIndex: "processes",
+                width: 220,
+                render: renderProcesses,
+            },
+
+            {
+                title: "装箱单",
+                key: "packingMatches",
+                width: 130,
+                fixed: "right",
+                render: (_, record) => {
+                    const matchedPackingDetails = matchingPackingDetailsByDetailId.get(record.id) || [];
+
+                    if (matchedPackingDetails.length === 0) {
+                        return <Tag>未匹配</Tag>;
+                    }
+
+                    return (
+                        <Button
+                            size="small"
+                            type="link"
+                            onClick={() => showMatchingPackingDetails(record)}
+                        >
+                            查看 {matchedPackingDetails.length} 条
+                        </Button>
+                    );
+                },
+            },
+
             /**
              * 操作列
              */
@@ -394,7 +414,7 @@ export default function OrderDetailPage() {
                 ),
             },
         ],
-        [handleDeleteDetail],
+        [handleDeleteDetail, matchingPackingDetailsByDetailId, showMatchingPackingDetails],
     );
 
     const packingDetailColumns = useMemo<
@@ -525,43 +545,6 @@ export default function OrderDetailPage() {
         [],
     );
 
-    const renderExpandedDetail = useCallback(
-        (record: OrderRecordDetail) => {
-            const matchedPackingDetails =
-                packingDetailsByDetailId[record.id] || [];
-            const packingLoading = packingLoadingIds.has(record.id);
-
-            return (
-                <div className="order-packing-expanded">
-                    <div className="order-packing-expanded-meta">
-                        <Typography.Text strong>
-                            处理记录
-                        </Typography.Text>
-
-                        {renderProcesses(record.processes)}
-                    </div>
-
-                    <Typography.Text strong>
-                        对应装箱单明细
-                    </Typography.Text>
-
-                    <Table
-                        rowKey="id"
-                        loading={packingLoading}
-                        columns={packingDetailColumns}
-                        dataSource={matchedPackingDetails}
-                        pagination={false}
-                        scroll={{ x: 2140 }}
-                        size="small"
-                        className="data-table nested-data-table"
-                        locale={{ emptyText: "暂无对应装箱单明细" }}
-                    />
-                </div>
-            );
-        },
-        [packingDetailColumns, packingDetailsByDetailId, packingLoadingIds],
-    );
-
     return (
         <div className="workspace">
             <div className="toolbar-band">
@@ -593,29 +576,68 @@ export default function OrderDetailPage() {
                 </Space>
             </div>
 
-            <div className="page-panel">
-                <Table
-                    rowKey="id"
-                    loading={loading}
-                    columns={detailColumns}
-                    dataSource={details}
-                    pagination={{
-                        pageSize: 20,
-                        showSizeChanger: true,
-                    }}
-                    scroll={{ x: 3450 }}
-                    className="data-table"
-                    expandable={{
-                        columnTitle: "装箱单",
-                        expandedRowRender: renderExpandedDetail,
-                        onExpand: (expanded, record) => {
-                            if (expanded) {
-                                void loadMatchingPackingDetails(record);
-                            }
+            <div className="page-panel order-detail-page-panel">
+                <Tabs
+                    activeKey={activeTab}
+                    onChange={setActiveTab}
+                    items={[
+                        {
+                            key: "ORDER",
+                            label: `订单明细 (${details.length})`,
+                            children: (
+                                <Table
+                                    rowKey="id"
+                                    loading={loading}
+                                    columns={detailColumns}
+                                    dataSource={details}
+                                    pagination={{
+                                        pageSize: 20,
+                                        showSizeChanger: true,
+                                    }}
+                                    scroll={{ x: 3700 }}
+                                    className="data-table"
+                                />
+                            ),
                         },
-                        fixed: "left",
-                        rowExpandable: () => true,
-                    }}
+                        {
+                            key: "PACKING",
+                            label: `装箱单明细 (${packingDetails.length})`,
+                            children: (
+                                <div className="order-detail-tab-content">
+                                    {focusedDetail ? (
+                                        <div className="packing-filter-bar">
+                                            <Typography.Text>
+                                                正在查看订单明细
+                                                {" "}
+                                                <Typography.Text strong>
+                                                    {focusedDetail.developmentNo || focusedDetail.id}
+                                                </Typography.Text>
+                                                {" "}
+                                                对应的装箱单，共 {visiblePackingDetails.length} 条
+                                            </Typography.Text>
+
+                                            <Button size="small" onClick={() => setFocusedDetail(null)}>
+                                                显示全部装箱单
+                                            </Button>
+                                        </div>
+                                    ) : null}
+
+                                    <Table
+                                        rowKey="id"
+                                        loading={loading}
+                                        columns={packingDetailColumns}
+                                        dataSource={visiblePackingDetails}
+                                        pagination={{
+                                            pageSize: 20,
+                                            showSizeChanger: true,
+                                        }}
+                                        scroll={{ x: 2140 }}
+                                        className="data-table"
+                                    />
+                                </div>
+                            ),
+                        },
+                    ]}
                 />
             </div>
         </div>
