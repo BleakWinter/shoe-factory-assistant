@@ -1164,9 +1164,9 @@ a {
 .shipping-note-pages {
   --shipping-note-page-width: 297mm;
   --shipping-note-page-height: 210mm;
-  --shipping-note-sheet-width: 285mm;
-  --shipping-note-sheet-offset-top: 5mm;
-  --shipping-note-sheet-offset-left: 6mm;
+  --shipping-note-sheet-width: 291mm;
+  --shipping-note-sheet-offset-top: 2.5mm;
+  --shipping-note-sheet-offset-left: 3mm;
 
   display: flex;
   flex-direction: column;

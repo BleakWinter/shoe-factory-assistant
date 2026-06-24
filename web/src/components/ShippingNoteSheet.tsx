@@ -37,9 +37,9 @@ const colWidths = [
   52, // 开始箱号
   52, // 结束箱号
 ];
-const pageContentHeightMm = 200;
+const pageContentHeightMm = 205;
 const firstPageHeadingHeightMm = 12.8;
-const firstPageTableHeaderHeightMm = 12.8;
+const tableHeaderHeightMm = 12.8;
 const cssPxPerMm = 96 / 25.4;
 const detailRowHeightPx = 35;
 const footerRowHeightPx = 35;
@@ -71,7 +71,7 @@ function getPrintableItems(items: ShippingNoteItem[]) {
 
 function getPageCapacity(pageIndex: number, hasFooter: boolean) {
   const reservedHeightMm =
-    (pageIndex === 0 ? firstPageHeadingHeightMm + firstPageTableHeaderHeightMm : 0) +
+    (pageIndex === 0 ? firstPageHeadingHeightMm + tableHeaderHeightMm : 0) +
     (hasFooter ? footerRowHeightPx / cssPxPerMm : 0);
   return Math.max(1, Math.floor(((pageContentHeightMm - reservedHeightMm) * cssPxPerMm) / detailRowHeightPx));
 }
@@ -89,10 +89,7 @@ function chunkItems(items: ShippingNoteItem[]) {
     }
 
     const pageCapacity = getPageCapacity(pageIndex, false);
-    const takeCount =
-      nextItems.length <= pageCapacity
-        ? Math.max(1, nextItems.length - lastPageCapacity)
-        : pageCapacity;
+    const takeCount = nextItems.length <= pageCapacity ? Math.max(1, nextItems.length - 1) : pageCapacity;
     pages.push(nextItems.slice(0, takeCount));
     nextItems = nextItems.slice(takeCount);
     pageIndex += 1;
@@ -156,6 +153,38 @@ function getSizeQuantity(item: ShippingNoteItem, size: string) {
   return mixed?.[1] || "";
 }
 
+function renderTableHeader() {
+  return (
+    <>
+      <tr className="shipping-note-header-row shipping-note-fixed-header">
+        <td rowSpan={2}>订单号</td>
+        <td rowSpan={2}>开发编号</td>
+        <td rowSpan={2}>客人</td>
+        <td rowSpan={2}>客人型体</td>
+        <td rowSpan={2}>英文颜色</td>
+        <td rowSpan={2}>英文材质</td>
+        <td rowSpan={2}>颜色/材质</td>
+        <td rowSpan={2}>商标</td>
+        {euGroups.map((group, index) => (
+          <td className="shipping-note-size-header" colSpan={group.span} key={`${group.label}-${index}`}>
+            {group.label}
+          </td>
+        ))}
+        <td rowSpan={2}>双数</td>
+        <td className="shipping-note-size-header" rowSpan={2}>件数</td>
+        <td className="shipping-note-size-header" rowSpan={2}>合计</td>
+        <td rowSpan={2}>开始箱号</td>
+        <td rowSpan={2}>结束箱号</td>
+      </tr>
+      <tr className="shipping-note-header-row">
+        {usSizes.map((size) => (
+          <td className="shipping-note-size-header" key={size}>{size}</td>
+        ))}
+      </tr>
+    </>
+  );
+}
+
 export default function ShippingNoteSheet({
   recipientName = "达为鞋业",
   shippingDate,
@@ -201,35 +230,7 @@ export default function ShippingNoteSheet({
                   ))}
                 </colgroup>
                 <tbody>
-                  {isFirstPage ? (
-                    <>
-                      <tr className="shipping-note-header-row shipping-note-fixed-header">
-                        <td rowSpan={2}>订单号</td>
-                        <td rowSpan={2}>开发编号</td>
-                        <td rowSpan={2}>客人</td>
-                        <td rowSpan={2}>客人型体</td>
-                        <td rowSpan={2}>英文颜色</td>
-                        <td rowSpan={2}>英文材质</td>
-                        <td rowSpan={2}>颜色/材质</td>
-                        <td rowSpan={2}>商标</td>
-                        {euGroups.map((group, index) => (
-                          <td className="shipping-note-size-header" colSpan={group.span} key={`${group.label}-${index}`}>
-                            {group.label}
-                          </td>
-                        ))}
-                        <td rowSpan={2}>双数</td>
-                        <td className="shipping-note-size-header" rowSpan={2}>件数</td>
-                        <td className="shipping-note-size-header" rowSpan={2}>合计</td>
-                        <td rowSpan={2}>开始箱号</td>
-                        <td rowSpan={2}>结束箱号</td>
-                      </tr>
-                      <tr className="shipping-note-header-row">
-                        {usSizes.map((size) => (
-                          <td className="shipping-note-size-header" key={size}>{size}</td>
-                        ))}
-                      </tr>
-                    </>
-                  ) : null}
+                  {isFirstPage ? renderTableHeader() : null}
                   {pageItems.map((item, index) => (
                     <tr className="shipping-note-detail-row" key={`${item?.sourceDetailId ?? "empty"}-${pageIndex}-${index}`}>
                       <td>{cell(item?.orderNo)}</td>
