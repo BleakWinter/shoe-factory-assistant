@@ -8,13 +8,14 @@ import {
   ReloadOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Form, Input, Modal, Pagination, Popover, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Cascader, Checkbox, Form, Input, Modal, Pagination, Popover, Select, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
 import { batchRecordPrintProcess, fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import {
   createShippingNoteTask,
+  fetchShippingNoteGeneratedSummary,
   fetchShippingNoteTask,
   fetchShippingNoteTasks,
   updateShippingNoteTask,
@@ -31,6 +32,7 @@ import type {
   OrderRecord,
   OrderRecordDetail,
   ShippingNoteItem,
+  ShippingNoteGeneratedSummary,
   ShippingNoteTask,
   ShippingNoteTaskQueryParams,
 } from "../types/order";
@@ -41,6 +43,10 @@ import { getPackingTotalPairs, sumSizeQuantities as sumPackingSizeQuantities } f
 const defaultRecipient = "达为鞋业";
 const SHIPPING_NOTE_RELATED_PROCESS_TYPES = [5, 6, 7];
 const CODE_TAG_PREVIEW_LIMIT = 1;
+const emptyGeneratedSummary: ShippingNoteGeneratedSummary = {
+  generatedDetailIds: [],
+  fullyGeneratedOrderIds: [],
+};
 
 function todayText() {
   const now = new Date();
@@ -292,9 +298,12 @@ export default function ShippingNotePrintPage() {
   const [selectedPrintIds, setSelectedPrintIds] = useState<Key[]>([]);
   const [printItems, setPrintItems] = useState<ShippingNoteItem[]>([]);
   const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
+  const [hideGeneratedShippingNotes, setHideGeneratedShippingNotes] = useState(true);
+  const [generatedSummary, setGeneratedSummary] = useState<ShippingNoteGeneratedSummary>(emptyGeneratedSummary);
   const [recipientName, setRecipientName] = useState(defaultRecipient);
   const [shippingDate, setShippingDate] = useState(todayText());
   const [orderLoading, setOrderLoading] = useState(false);
+  const [generatedSummaryLoading, setGeneratedSummaryLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -318,6 +327,20 @@ export default function ShippingNotePrintPage() {
     () => orders.find((order) => order.id === selectedOrderId),
     [orders, selectedOrderId],
   );
+  const generatedDetailIdSet = useMemo(
+    () => new Set(generatedSummary.generatedDetailIds || []),
+    [generatedSummary.generatedDetailIds],
+  );
+  const fullyGeneratedOrderIdSet = useMemo(
+    () => new Set(generatedSummary.fullyGeneratedOrderIds || []),
+    [generatedSummary.fullyGeneratedOrderIds],
+  );
+  const visibleOrders = useMemo(() => {
+    if (!hideGeneratedShippingNotes) {
+      return orders;
+    }
+    return orders.filter((order) => !fullyGeneratedOrderIdSet.has(order.id));
+  }, [fullyGeneratedOrderIdSet, hideGeneratedShippingNotes, orders]);
   const previewItems = useMemo(() => getTaskPackingItems(previewTask), [previewTask]);
   const previewTotalPairs = useMemo(() => sumShippingNotePairs(previewItems), [previewItems]);
   const previewTotalCartonCount = useMemo(() => sumShippingNoteCartons(previewItems), [previewItems]);
@@ -356,7 +379,6 @@ export default function ShippingNotePrintPage() {
     try {
       const result = await fetchOrders({ page: 1, size: 100 });
       setOrders(result.records);
-      setSelectedOrderId((current) => current || result.records[0]?.id);
     } catch (error) {
       setOrders([]);
       message.error(error instanceof Error ? error.message : "订单加载失败");
@@ -364,6 +386,52 @@ export default function ShippingNotePrintPage() {
       setOrderLoading(false);
     }
   }, [message]);
+
+  const loadGeneratedSummary = useCallback(
+    async (nextOrders = orders) => {
+      if (!hideGeneratedShippingNotes) {
+        setGeneratedSummaryLoading(false);
+        setGeneratedSummary(emptyGeneratedSummary);
+        return;
+      }
+      const orderIds = nextOrders.map((order) => order.id).filter((id): id is number => Boolean(id));
+      if (orderIds.length === 0) {
+        setGeneratedSummaryLoading(false);
+        setGeneratedSummary(emptyGeneratedSummary);
+        return;
+      }
+
+      setGeneratedSummaryLoading(true);
+      try {
+        setGeneratedSummary(await fetchShippingNoteGeneratedSummary(orderIds));
+      } catch (error) {
+        setGeneratedSummary(emptyGeneratedSummary);
+        message.error(error instanceof Error ? error.message : "出货单生成情况加载失败");
+      } finally {
+        setGeneratedSummaryLoading(false);
+      }
+    },
+    [hideGeneratedShippingNotes, message, orders],
+  );
+
+  useEffect(() => {
+    if (!createOpen) {
+      return;
+    }
+    void loadGeneratedSummary();
+  }, [createOpen, hideGeneratedShippingNotes, loadGeneratedSummary, orders]);
+
+  useEffect(() => {
+    if (!createOpen || generatedSummaryLoading) {
+      return;
+    }
+    setSelectedOrderId((current) => {
+      if (current && visibleOrders.some((order) => order.id === current)) {
+        return current;
+      }
+      return visibleOrders[0]?.id;
+    });
+  }, [createOpen, generatedSummaryLoading, visibleOrders]);
 
   const loadDetails = useCallback(async () => {
     if (!createOpen || !selectedOrderId) {
@@ -402,6 +470,8 @@ export default function ShippingNotePrintPage() {
     setSelectedPrintIds([]);
     setPrintItems([]);
     setDevelopmentNoPaths([]);
+    setHideGeneratedShippingNotes(true);
+    setGeneratedSummary(emptyGeneratedSummary);
     setCreateOpen(true);
     void loadOrders();
   };
@@ -412,6 +482,7 @@ export default function ShippingNotePrintPage() {
     setSelectedPrintIds([]);
     setPrintItems([]);
     setDevelopmentNoPaths([]);
+    setGeneratedSummary(emptyGeneratedSummary);
   };
 
   const printItemKeys = useMemo<Key[]>(() => printItems.map((item) => item.sourceDetailId), [printItems]);
@@ -431,15 +502,26 @@ export default function ShippingNotePrintPage() {
   }, [developmentNoPaths]);
 
   const filteredDetails = useMemo(() => {
+    const baseDetails = hideGeneratedShippingNotes
+      ? details.filter((item) => !generatedDetailIdSet.has(item.id))
+      : details;
     if (selectedDevelopmentNos.size === 0) {
-      return details;
+      return baseDetails;
     }
-    return details.filter((item) =>
+    return baseDetails.filter((item) =>
       Array.from(selectedDevelopmentNos).some((developmentNo) =>
         includesKeyword(item.developmentNo, developmentNo),
       ),
     );
-  }, [details, selectedDevelopmentNos]);
+  }, [details, generatedDetailIdSet, hideGeneratedShippingNotes, selectedDevelopmentNos]);
+
+  useEffect(() => {
+    const visibleDetailIdSet = new Set(filteredDetails.map((item) => item.id));
+    setSelectedDetailIds((current) => {
+      const next = current.filter((key) => visibleDetailIdSet.has(Number(key)));
+      return next.length === current.length ? current : next;
+    });
+  }, [filteredDetails]);
 
   const hasMatchedPacking = useCallback(
     (detail: OrderRecordDetail) => hasMatchingPackingDetails(detail, packingDetails),
@@ -876,12 +958,12 @@ export default function ShippingNotePrintPage() {
                 <Space className="print-transfer-filters" wrap>
                   <Select
                     className="print-order-select"
-                    loading={orderLoading}
+                    loading={orderLoading || generatedSummaryLoading}
                     placeholder="订单号"
                     showSearch
                     optionFilterProp="label"
                     value={selectedOrderId}
-                    options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
+                    options={visibleOrders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
                     onChange={(value) => setSelectedOrderId(value)}
                   />
                   <Cascader
@@ -897,7 +979,23 @@ export default function ShippingNotePrintPage() {
                     value={developmentNoPaths}
                     onChange={(value) => setDevelopmentNoPaths(value as string[][])}
                   />
-                  <Button icon={<ReloadOutlined />} onClick={() => void loadDetails()}>
+                  <Checkbox
+                    checked={hideGeneratedShippingNotes}
+                    onChange={(event) => {
+                      setHideGeneratedShippingNotes(event.target.checked);
+                      setSelectedDetailIds([]);
+                      setDevelopmentNoPaths([]);
+                    }}
+                  >
+                    隐藏已生成出货单
+                  </Checkbox>
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => {
+                      void loadGeneratedSummary();
+                      void loadDetails();
+                    }}
+                  >
                     刷新明细
                   </Button>
                 </Space>

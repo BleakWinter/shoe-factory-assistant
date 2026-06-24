@@ -97,7 +97,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     private OrderRecord parseOrderSummary(Workbook workbook, StoredFile storedFile) {
-        Sheet sheet = workbook.getSheet(OrderExcelTemplate.DEFAULT.getOrderSheetName());
+        Sheet sheet = findOrderSheet(workbook);
         if (sheet == null) {
             throw new BusinessException("Excel 中未找到“订单”sheet");
         }
@@ -112,7 +112,7 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     private OrderSheetImport parseOrderSheet(Workbook workbook, StoredFile storedFile, String fileNo) {
-        Sheet sheet = workbook.getSheet(OrderExcelTemplate.DEFAULT.getOrderSheetName());
+        Sheet sheet = findOrderSheet(workbook);
         if (sheet == null) {
             throw new BusinessException("Excel 中未找到“订单”sheet");
         }
@@ -523,6 +523,23 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             details.add(rowMapper.map(row, rowIndex, details.size() + 1));
         }
         return details;
+    }
+
+    private Sheet findOrderSheet(Workbook workbook) {
+        String expected = normalizeHeader(OrderExcelTemplate.DEFAULT.getOrderSheetName());
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            if (normalizeHeader(sheet.getSheetName()).equals(expected)) {
+                return sheet;
+            }
+        }
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            if (normalizeHeader(sheet.getSheetName()).contains(expected)) {
+                return sheet;
+            }
+        }
+        return null;
     }
 
     private Sheet findPackingSheet(Workbook workbook) {

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.ShippingNoteCreateRequest;
+import com.shoefactory.assistant.dto.ShippingNoteGeneratedSummaryResponse;
 import com.shoefactory.assistant.dto.ShippingNoteItemRequest;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
@@ -124,6 +125,54 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                 .map(task -> ShippingNoteTaskResponse.from(task, List.of()))
                 .toList();
         return PageResponse.from(resultPage, records);
+    }
+
+    @Override
+    public ShippingNoteGeneratedSummaryResponse getGeneratedSummary(List<Long> orderIds) {
+        List<Long> normalizedOrderIds = normalizeOrderIds(orderIds);
+        if (normalizedOrderIds.isEmpty()) {
+            return ShippingNoteGeneratedSummaryResponse.empty();
+        }
+
+        List<OrderRecordDetail> orderDetails = orderRecordDetailMapper.selectList(
+                new LambdaQueryWrapper<OrderRecordDetail>()
+                        .select(OrderRecordDetail::getId, OrderRecordDetail::getOrderId)
+                        .in(OrderRecordDetail::getOrderId, normalizedOrderIds)
+        );
+        if (orderDetails.isEmpty()) {
+            return ShippingNoteGeneratedSummaryResponse.empty();
+        }
+
+        Map<Long, Set<Long>> detailIdsByOrderId = orderDetails.stream()
+                .filter(detail -> detail.getId() != null && detail.getOrderId() != null)
+                .collect(Collectors.groupingBy(
+                        OrderRecordDetail::getOrderId,
+                        Collectors.mapping(OrderRecordDetail::getId, Collectors.toSet())
+                ));
+        Set<Long> allDetailIds = detailIdsByOrderId.values().stream()
+                .flatMap(Collection::stream)
+                .collect(Collectors.toSet());
+        if (allDetailIds.isEmpty()) {
+            return ShippingNoteGeneratedSummaryResponse.empty();
+        }
+
+        List<ShippingNoteTaskItem> generatedItems = shippingNoteTaskItemMapper.selectList(
+                new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                        .select(ShippingNoteTaskItem::getSourceDetailId)
+                        .in(ShippingNoteTaskItem::getSourceDetailId, allDetailIds)
+        );
+        Set<Long> generatedDetailIds = generatedItems.stream()
+                .map(ShippingNoteTaskItem::getSourceDetailId)
+                .filter(allDetailIds::contains)
+                .collect(Collectors.toSet());
+        List<Long> fullyGeneratedOrderIds = normalizedOrderIds.stream()
+                .filter(orderId -> {
+                    Set<Long> orderDetailIds = detailIdsByOrderId.getOrDefault(orderId, Set.of());
+                    return !orderDetailIds.isEmpty() && generatedDetailIds.containsAll(orderDetailIds);
+                })
+                .toList();
+
+        return ShippingNoteGeneratedSummaryResponse.of(generatedDetailIds, fullyGeneratedOrderIds);
     }
 
     @Override
@@ -375,6 +424,16 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         }
         return items.stream()
                 .filter(item -> item != null && item.getSourceDetailId() != null)
+                .toList();
+    }
+
+    private List<Long> normalizeOrderIds(Collection<Long> orderIds) {
+        if (orderIds == null) {
+            return List.of();
+        }
+        return orderIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
                 .toList();
     }
 

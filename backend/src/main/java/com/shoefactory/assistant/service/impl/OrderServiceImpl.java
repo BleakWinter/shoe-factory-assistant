@@ -979,12 +979,23 @@ public class OrderServiceImpl implements OrderService {
     private void ensureReuploadOrderNoMatches(OrderRecord existingOrder, OrderRecord parsedOrder) {
         String existingOrderNo = normalizeOrderNo(existingOrder == null ? null : existingOrder.getOrderNo());
         String parsedOrderNo = normalizeOrderNo(parsedOrder == null ? null : parsedOrder.getOrderNo());
-        if (!hasText(existingOrderNo) || !hasText(parsedOrderNo) || !existingOrderNo.equals(parsedOrderNo)) {
-            throw new BusinessException("重新上传文件里的订单流水号必须和当前订单一致，当前订单："
-                    + (hasText(existingOrderNo) ? existingOrderNo : "空")
-                    + "，上传文件："
-                    + (hasText(parsedOrderNo) ? parsedOrderNo : "空"));
+        if (hasText(existingOrderNo) && hasText(parsedOrderNo) && existingOrderNo.equals(parsedOrderNo)) {
+            return;
         }
+        if (hasText(parsedOrderNo) && isGeneratedUploadFallback(existingOrder)) {
+            return;
+        }
+        throw new BusinessException("重新上传文件里的订单流水号必须和当前订单一致，当前订单："
+                + (hasText(existingOrderNo) ? existingOrderNo : "空")
+                + "，上传文件："
+                + (hasText(parsedOrderNo) ? parsedOrderNo : "空"));
+    }
+
+    private boolean isGeneratedUploadFallback(OrderRecord order) {
+        if (order == null || nullToZero(order.getTotalQuantity()) > 0 || hasText(order.getDevelopmentNos())) {
+            return false;
+        }
+        return normalizeOrderNo(order.getOrderNo()).matches("SF\\d{17}[A-Z0-9]{8}");
     }
 
     private void applyReuploadSummary(OrderRecord target, OrderRecord parsed) {

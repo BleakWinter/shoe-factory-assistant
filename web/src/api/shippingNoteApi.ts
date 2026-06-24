@@ -2,6 +2,7 @@ import request from "../utils/request";
 import type {
   PageResponse,
   ShippingNoteCreatePayload,
+  ShippingNoteGeneratedSummary,
   ShippingNoteQueryParams,
   ShippingNoteTask,
   ShippingNoteTaskQueryParams,
@@ -39,6 +40,19 @@ export async function fetchShippingNoteTasks(params: ShippingNoteTaskQueryParams
 export async function fetchShippingNoteTask(id: number) {
   const { data } = await request.get<ShippingNoteTask>(`/shipping-note-tasks/${id}`);
   return data;
+}
+
+export async function fetchShippingNoteGeneratedSummary(orderIds: number[]) {
+  if (orderIds.length === 0) {
+    return { generatedDetailIds: [], fullyGeneratedOrderIds: [] };
+  }
+  const { data } = await request.get<ShippingNoteGeneratedSummary>("/shipping-note-tasks/generated-summary", {
+    params: { orderIds: orderIds.join(",") },
+  });
+  return {
+    generatedDetailIds: data?.generatedDetailIds || [],
+    fullyGeneratedOrderIds: data?.fullyGeneratedOrderIds || [],
+  };
 }
 
 export async function updateShippingNoteTask(id: number, payload: { recipientName?: string; shippingDate?: string }) {

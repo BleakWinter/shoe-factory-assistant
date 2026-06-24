@@ -2,8 +2,11 @@ package com.shoefactory.assistant.service;
 
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.ShippingNoteCreateRequest;
+import com.shoefactory.assistant.dto.ShippingNoteGeneratedSummaryResponse;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
+
+import java.util.List;
 
 public interface ShippingNoteTaskService {
 
@@ -15,6 +18,8 @@ public interface ShippingNoteTaskService {
             long page,
             long size
     );
+
+    ShippingNoteGeneratedSummaryResponse getGeneratedSummary(List<Long> orderIds);
 
     ShippingNoteTaskResponse getShippingNoteTask(Long id);
 

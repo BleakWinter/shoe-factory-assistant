@@ -3,6 +3,7 @@ package com.shoefactory.assistant.controller;
 import com.shoefactory.assistant.common.ApiResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.ShippingNoteCreateRequest;
+import com.shoefactory.assistant.dto.ShippingNoteGeneratedSummaryResponse;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
@@ -15,6 +16,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Arrays;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/shipping-note-tasks")
@@ -43,6 +47,13 @@ public class ShippingNoteTaskController {
         return ApiResponse.ok(shippingNoteTaskService.listShippingNoteTasks(orderNo, developmentNo, page, size));
     }
 
+    @GetMapping("/generated-summary")
+    public ApiResponse<ShippingNoteGeneratedSummaryResponse> getGeneratedSummary(
+            @RequestParam(required = false) String orderIds
+    ) {
+        return ApiResponse.ok(shippingNoteTaskService.getGeneratedSummary(parseOrderIds(orderIds)));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<ShippingNoteTaskResponse> getShippingNoteTask(@PathVariable Long id) {
         return ApiResponse.ok(shippingNoteTaskService.getShippingNoteTask(id));
@@ -54,5 +65,27 @@ public class ShippingNoteTaskController {
             @Valid @RequestBody ShippingNoteUpdateRequest request
     ) {
         return ApiResponse.ok(shippingNoteTaskService.updateShippingNoteTask(id, request));
+    }
+
+    private List<Long> parseOrderIds(String orderIds) {
+        if (orderIds == null || orderIds.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(orderIds.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .map(this::parsePositiveLong)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+    }
+
+    private Long parsePositiveLong(String value) {
+        try {
+            long parsed = Long.parseLong(value);
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 }

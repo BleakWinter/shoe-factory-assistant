@@ -277,6 +277,11 @@ export interface ShippingNoteTask {
   createdAt?: string;
 }
 
+export interface ShippingNoteGeneratedSummary {
+  generatedDetailIds: number[];
+  fullyGeneratedOrderIds: number[];
+}
+
 export type ShippingNoteRecord = ShippingNoteTask;
 
 export interface ShippingNoteCreatePayload {
