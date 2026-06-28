@@ -8,6 +8,7 @@ import {
   SettingOutlined,
   ShoppingCartOutlined,
   TableOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Button, Layout, Menu, Tabs, Typography } from "antd";
 import type { MenuProps, TabsProps } from "antd";
@@ -86,6 +87,13 @@ const navLeafItems: NavLeafItem[] = [
     parentLabel: "下单中心",
   },
   {
+    path: "/customer-configs",
+    label: "客户配置",
+    icon: <TeamOutlined />,
+    parentKey: "config-center",
+    parentLabel: "配置中心",
+  },
+  {
     path: "/style-configs",
     label: "盒规配置",
     icon: <SettingOutlined />,
@@ -131,6 +139,7 @@ const menuItems: MenuProps["items"] = [
     label: "配置中心",
     icon: <SettingOutlined />,
     children: [
+      { key: "/customer-configs", label: "客户配置", icon: <TeamOutlined /> },
       { key: "/style-configs", label: "盒规配置", icon: <SettingOutlined /> },
       { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
     ],

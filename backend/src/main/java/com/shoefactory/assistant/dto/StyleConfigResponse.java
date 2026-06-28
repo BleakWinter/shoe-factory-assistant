@@ -9,6 +9,7 @@ public class StyleConfigResponse {
 
     private Long id;
     private String developmentNo;
+    private String imageUrl;
     private String boxSpec;
     private BigDecimal netWeightPerPair;
     private BigDecimal grossWeightPerPair;
@@ -52,6 +53,14 @@ public class StyleConfigResponse {
 
     public void setDevelopmentNo(String developmentNo) {
         this.developmentNo = developmentNo;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public String getBoxSpec() {

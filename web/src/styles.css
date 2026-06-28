@@ -245,6 +245,139 @@ a {
   width: 100%;
 }
 
+.customer-filter-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.customer-filter-form .ant-form-item {
+  margin: 0;
+}
+
+.customer-filter-form .ant-form-item-label > label {
+  font-weight: 600;
+}
+
+.customer-filter-form .ant-input {
+  width: 240px;
+}
+
+.customer-filter-form .ant-select {
+  width: 150px;
+}
+
+.customer-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.customer-config-table .ant-table-container {
+  overflow-x: auto;
+}
+
+.customer-config-table table {
+  min-width: 970px;
+}
+
+.customer-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  color: #1d4ed8;
+  font-weight: 700;
+  background: #eaf1ff;
+  border: 1px solid #cddcff;
+  border-radius: 4px;
+}
+
+.customer-editor-form {
+  padding-top: 6px;
+}
+
+.customer-editor-basics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 120px;
+  gap: 0 16px;
+}
+
+.customer-feature-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.customer-feature-list {
+  border-top: 1px solid #e5e7eb;
+}
+
+.customer-feature-group {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 82px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.customer-feature-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex-direction: column;
+}
+
+.customer-feature-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+  width: 100%;
+}
+
+.customer-feature-options .ant-checkbox-wrapper {
+  min-width: 0;
+  margin-inline-start: 0;
+}
+
+@media (max-width: 760px) {
+  .customer-filter-form {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .customer-filter-form .ant-input,
+  .customer-filter-form .ant-select {
+    width: 100%;
+  }
+
+  .customer-editor-basics {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-feature-group {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .customer-feature-heading {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .customer-feature-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .data-table {
   border: 1px solid #dde3eb;
   border-radius: 4px;

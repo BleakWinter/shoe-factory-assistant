@@ -3,6 +3,7 @@ import type { PageResponse } from "./order";
 export interface ShoePriceConfig {
   id: number;
   developmentNo: string;
+  imageUrl?: string;
   upperMaterial?: string;
   shoePrice?: number;
   complete?: boolean;

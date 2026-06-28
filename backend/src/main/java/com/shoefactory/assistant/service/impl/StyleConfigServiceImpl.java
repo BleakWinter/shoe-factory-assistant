@@ -78,6 +78,7 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         List<StyleConfigResponse> records = resultPage.getRecords().stream()
                 .map(StyleConfigResponse::from)
                 .toList();
+        attachStyleConfigShoeImages(records);
         return PageResponse.from(resultPage, records);
     }
 
@@ -165,6 +166,7 @@ public class StyleConfigServiceImpl implements StyleConfigService {
                 .map(ShoePriceConfigResponse::from)
                 .toList();
         attachUpperMaterials(records);
+        attachShoeImages(records);
         return PageResponse.from(resultPage, records);
     }
 
@@ -417,6 +419,62 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         Map<String, String> upperMaterialsByDevelopmentNo = collectUpperMaterialsByDevelopmentNo(developmentNos);
         records.forEach(record -> record.setUpperMaterial(
                 upperMaterialsByDevelopmentNo.get(normalizeDevelopmentNo(record.getDevelopmentNo()))));
+    }
+
+    private void attachShoeImages(List<ShoePriceConfigResponse> records) {
+        List<String> developmentNos = records.stream()
+                .map(ShoePriceConfigResponse::getDevelopmentNo)
+                .map(this::normalizeDevelopmentNo)
+                .filter(this::hasText)
+                .distinct()
+                .toList();
+        Map<String, String> imageUrlsByDevelopmentNo = collectShoeImageUrlsByDevelopmentNo(developmentNos);
+        records.forEach(record -> record.setImageUrl(
+                imageUrlsByDevelopmentNo.get(normalizeDevelopmentNo(record.getDevelopmentNo()))));
+    }
+
+    private void attachStyleConfigShoeImages(List<StyleConfigResponse> records) {
+        List<String> developmentNos = records.stream()
+                .map(StyleConfigResponse::getDevelopmentNo)
+                .map(this::normalizeDevelopmentNo)
+                .filter(this::hasText)
+                .distinct()
+                .toList();
+        Map<String, String> imageUrlsByDevelopmentNo = collectShoeImageUrlsByDevelopmentNo(developmentNos);
+        records.forEach(record -> record.setImageUrl(
+                imageUrlsByDevelopmentNo.get(normalizeDevelopmentNo(record.getDevelopmentNo()))));
+    }
+
+    private Map<String, String> collectShoeImageUrlsByDevelopmentNo(Collection<String> developmentNos) {
+        if (developmentNos == null || developmentNos.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, String> imageUrlsByDevelopmentNo = new LinkedHashMap<>();
+        orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
+                        .select(
+                                OrderRecordDetail::getId,
+                                OrderRecordDetail::getDevelopmentNo,
+                                OrderRecordDetail::getStyleImageUrl,
+                                OrderRecordDetail::getStyleImagePath)
+                        .in(OrderRecordDetail::getDevelopmentNo, developmentNos)
+                        .and(nested -> nested
+                                .isNotNull(OrderRecordDetail::getStyleImagePath)
+                                .ne(OrderRecordDetail::getStyleImagePath, "")
+                                .or()
+                                .isNotNull(OrderRecordDetail::getStyleImageUrl)
+                                .ne(OrderRecordDetail::getStyleImageUrl, ""))
+                        .orderByDesc(OrderRecordDetail::getId))
+                .forEach(detail -> {
+                    String developmentNo = normalizeDevelopmentNo(detail.getDevelopmentNo());
+                    String imageUrl = hasText(detail.getStyleImagePath())
+                            ? "/api/orders/details/" + detail.getId() + "/image"
+                            : blankToNull(detail.getStyleImageUrl());
+                    if (hasText(developmentNo) && hasText(imageUrl)) {
+                        imageUrlsByDevelopmentNo.putIfAbsent(developmentNo, imageUrl);
+                    }
+                });
+        return imageUrlsByDevelopmentNo;
     }
 
     private Map<String, String> collectUpperMaterialsByDevelopmentNo(Collection<String> developmentNos) {

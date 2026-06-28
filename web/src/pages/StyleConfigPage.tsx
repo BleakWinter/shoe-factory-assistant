@@ -10,6 +10,7 @@ import {
   Cascader,
   Checkbox,
   Form,
+  Image,
   Input,
   InputNumber,
   Modal,
@@ -28,6 +29,7 @@ import {
   fetchUnconfiguredDevelopmentNos,
   updateStyleConfig,
 } from "../api/styleConfigApi";
+import { toAssetUrl } from "../api/orderApi";
 import type { DevelopmentNoOption } from "../types/order";
 import type {
   StyleConfig,
@@ -182,6 +184,24 @@ export default function StyleConfigPage() {
 
   const columns = useMemo<ColumnsType<StyleConfig>>(
     () => [
+      {
+        title: "图片",
+        dataIndex: "imageUrl",
+        width: 86,
+        fixed: "left",
+        render: (value?: string) =>
+          value ? (
+            <Image
+              src={toAssetUrl(value)}
+              width={58}
+              height={44}
+              className="order-image"
+              preview={{ mask: "查看" }}
+            />
+          ) : (
+            <Tag>无图</Tag>
+          ),
+      },
       { title: "开发编号", dataIndex: "developmentNo", width: 190, fixed: "left", render: formatEmpty },
       { title: "盒规", dataIndex: "boxSpec", minWidth: 180, render: formatEmpty },
       {
@@ -276,7 +296,7 @@ export default function StyleConfigPage() {
           columns={columns}
           dataSource={configs}
           pagination={pagination}
-          scroll={{ x: 1010 }}
+          scroll={{ x: 1096 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({

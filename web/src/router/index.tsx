@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "../App";
 import ComponentOrderPage from "../pages/ComponentOrderPage";
+import CustomerConfigPage from "../pages/CustomerConfigPage";
 import OrderDetailPage from "../pages/OrderDetailPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
 import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
       { path: "component-orders/outsole", element: <ComponentOrderPage key="component-order-outsole" title="订大底" processType={2} /> },
       { path: "component-orders/insole", element: <ComponentOrderPage key="component-order-insole" title="订中底" processType={3} /> },
       { path: "component-orders/heel", element: <ComponentOrderPage key="component-order-heel" title="订鞋跟" processType={4} /> },
+      { path: "customer-configs", element: <CustomerConfigPage /> },
       { path: "style-configs", element: <StyleConfigPage /> },
       { path: "price-configs", element: <ShoePriceConfigPage /> },
       { path: "*", element: <Navigate to="/orders" replace /> },

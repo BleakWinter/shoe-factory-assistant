@@ -3,6 +3,7 @@ import type { PageResponse } from "./order";
 export interface StyleConfig {
   id: number;
   developmentNo: string;
+  imageUrl?: string;
   boxSpec?: string;
   netWeightPerPair?: number;
   grossWeightPerPair?: number;

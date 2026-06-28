@@ -9,6 +9,7 @@ public class ShoePriceConfigResponse {
 
     private Long id;
     private String developmentNo;
+    private String imageUrl;
     private String upperMaterial;
     private BigDecimal shoePrice;
     private Boolean complete;
@@ -40,6 +41,14 @@ public class ShoePriceConfigResponse {
 
     public void setDevelopmentNo(String developmentNo) {
         this.developmentNo = developmentNo;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public String getUpperMaterial() {
