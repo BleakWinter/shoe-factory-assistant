@@ -1164,9 +1164,9 @@ a {
 .shipping-note-pages {
   --shipping-note-page-width: 297mm;
   --shipping-note-page-height: 210mm;
-  --shipping-note-sheet-width: 291mm;
-  --shipping-note-sheet-offset-top: 2.5mm;
-  --shipping-note-sheet-offset-left: 3mm;
+  --shipping-note-sheet-width: 289mm;
+  --shipping-note-sheet-offset-top: 3.5mm;
+  --shipping-note-sheet-offset-left: 4mm;
 
   display: flex;
   flex-direction: column;
@@ -1177,11 +1177,13 @@ a {
 
 .shipping-note-page {
   width: var(--shipping-note-page-width);
+  height: var(--shipping-note-page-height);
   min-height: var(--shipping-note-page-height);
   box-sizing: border-box;
   padding: var(--shipping-note-sheet-offset-top) 0 var(--shipping-note-sheet-offset-top) var(--shipping-note-sheet-offset-left);
   background: #ffffff;
   box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
+  overflow: hidden;
 }
 
 .shipping-note-inline-preview {
@@ -2013,14 +2015,15 @@ a {
   .shipping-note-page {
     display: block;
     width: 297mm;
-    height: auto;
-    min-height: 0;
+    height: var(--shipping-note-page-height);
+    min-height: var(--shipping-note-page-height);
     margin: 0;
-    padding: var(--shipping-note-sheet-offset-top) 0 0 var(--shipping-note-sheet-offset-left);
+    padding: var(--shipping-note-sheet-offset-top) 0 var(--shipping-note-sheet-offset-top) var(--shipping-note-sheet-offset-left);
     background: transparent;
     box-shadow: none;
-    break-inside: auto;
-    page-break-inside: auto;
+    overflow: hidden;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .shipping-note-sheet {

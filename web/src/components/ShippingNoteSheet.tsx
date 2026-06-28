@@ -37,7 +37,10 @@ const colWidths = [
   52, // 开始箱号
   52, // 结束箱号
 ];
-const pageContentHeightMm = 205;
+const pageHeightMm = 210;
+const verticalPageMarginMm = 3.5;
+const browserPrintSafetyMm = 2;
+const pageContentHeightMm = pageHeightMm - verticalPageMarginMm * 2 - browserPrintSafetyMm;
 const firstPageHeadingHeightMm = 12.8;
 const tableHeaderHeightMm = 12.8;
 const cssPxPerMm = 96 / 25.4;
@@ -73,7 +76,12 @@ function getPageCapacity(pageIndex: number, hasFooter: boolean) {
   const reservedHeightMm =
     (pageIndex === 0 ? firstPageHeadingHeightMm + tableHeaderHeightMm : 0) +
     (hasFooter ? footerRowHeightPx / cssPxPerMm : 0);
-  return Math.max(1, Math.floor(((pageContentHeightMm - reservedHeightMm) * cssPxPerMm) / detailRowHeightPx));
+  const availableHeightPx = (pageContentHeightMm - reservedHeightMm) * cssPxPerMm;
+  let fittedRows = 0;
+  while ((fittedRows + 1) * detailRowHeightPx <= availableHeightPx) {
+    fittedRows += 1;
+  }
+  return Math.max(1, fittedRows);
 }
 
 function chunkItems(items: ShippingNoteItem[]) {
