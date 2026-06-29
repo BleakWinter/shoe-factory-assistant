@@ -1,16 +1,30 @@
 import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
-  FileExcelOutlined,
+  EyeOutlined,
+  FileAddOutlined,
   ReloadOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
-import { App, Button, Cascader, Select, Space, Table, Typography } from "antd";
+import { App, Button, Cascader, Form, Input, Modal, Pagination, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key, MouseEvent } from "react";
+import {
+  createComponentOrderTask,
+  fetchComponentOrderTask,
+  fetchComponentOrderTasks,
+} from "../api/componentOrderApi";
 import { fetchOrderDetails, fetchOrders } from "../api/orderApi";
-import type { DevelopmentNoOption, OrderRecord, OrderRecordDetail } from "../types/order";
-import { formatEmpty } from "../utils/format";
+import type {
+  ComponentOrderTask,
+  ComponentOrderTaskItem,
+  ComponentOrderTaskQueryParams,
+  DevelopmentNoOption,
+  OrderRecord,
+  OrderRecordDetail,
+} from "../types/order";
+import { formatDateTime, formatEmpty } from "../utils/format";
 
 interface ComponentOrderPageProps {
   title: string;
@@ -112,6 +126,16 @@ function buildDevelopmentNoOptions(details: OrderRecordDetail[]) {
 
 export default function ComponentOrderPage({ title, processType }: ComponentOrderPageProps) {
   const { message } = App.useApp();
+  const [taskForm] = Form.useForm<ComponentOrderTaskQueryParams>();
+  const [tasks, setTasks] = useState<ComponentOrderTask[]>([]);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [detailTask, setDetailTask] = useState<ComponentOrderTask | null>(null);
+  const [taskActionLoadingId, setTaskActionLoadingId] = useState<number>();
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
@@ -121,6 +145,31 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
   const [developmentNoPaths, setDevelopmentNoPaths] = useState<string[][]>([]);
   const [orderLoading, setOrderLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  const loadTasks = useCallback(
+    async (targetPage = page, targetSize = size) => {
+      setTaskLoading(true);
+      try {
+        const values = taskForm.getFieldsValue();
+        const result = await fetchComponentOrderTasks({
+          processType,
+          orderNo: values.orderNo?.trim() || undefined,
+          developmentNo: values.developmentNo?.trim() || undefined,
+          page: targetPage,
+          size: targetSize,
+        });
+        setTasks(result.records);
+        setTotal(result.total);
+      } catch (error) {
+        setTasks([]);
+        setTotal(0);
+        message.error(error instanceof Error ? error.message : `${title}任务加载失败`);
+      } finally {
+        setTaskLoading(false);
+      }
+    },
+    [message, page, processType, size, taskForm, title],
+  );
 
   const loadOrders = useCallback(async () => {
     setOrderLoading(true);
@@ -141,7 +190,6 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
       setDetails([]);
       setSelectedDetailIds([]);
       setSelectedComponentOrderIds([]);
-      setComponentOrderItems([]);
       setDevelopmentNoPaths([]);
       return;
     }
@@ -151,7 +199,6 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
       setDetails(data);
       setSelectedDetailIds([]);
       setSelectedComponentOrderIds([]);
-      setComponentOrderItems([]);
       setDevelopmentNoPaths([]);
     } catch (error) {
       setDetails([]);
@@ -160,6 +207,10 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
       setDetailLoading(false);
     }
   }, [message, selectedOrderId]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
 
   useEffect(() => {
     void loadOrders();
@@ -236,8 +287,60 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
     setSelectedComponentOrderIds([]);
   };
 
-  const generateExcel = () => {
-    message.info(`模板接口待接入，稍后生成 ${title} Excel`);
+  const openCreateModal = () => {
+    setSelectedDetailIds([]);
+    setSelectedComponentOrderIds([]);
+    setComponentOrderItems([]);
+    setDevelopmentNoPaths([]);
+    setCreateOpen(true);
+  };
+
+  const closeCreateModal = () => {
+    setCreateOpen(false);
+    setSelectedDetailIds([]);
+    setSelectedComponentOrderIds([]);
+    setComponentOrderItems([]);
+  };
+
+  const saveTask = async () => {
+    if (componentOrderItems.length === 0) {
+      message.warning(`请先选择${title}明细`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await createComponentOrderTask({
+        processType,
+        items: componentOrderItems.map((item) => ({ sourceDetailId: item.id })),
+      });
+      message.success(`${title}任务已保存`);
+      closeCreateModal();
+      setPage(1);
+      await loadTasks(1, size);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : `${title}任务保存失败`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openTaskDetail = async (task: ComponentOrderTask) => {
+    setTaskActionLoadingId(task.id);
+    try {
+      setDetailTask(await fetchComponentOrderTask(task.id));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : `${title}任务详情加载失败`);
+    } finally {
+      setTaskActionLoadingId(undefined);
+    }
+  };
+
+  const searchTasks = () => {
+    if (page === 1) {
+      void loadTasks(1, size);
+      return;
+    }
+    setPage(1);
   };
 
   const leftRowSelection = {
@@ -306,121 +409,244 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
     [detailColumns],
   );
 
+  const taskItemColumns = useMemo<ColumnsType<ComponentOrderTaskItem>>(
+    () => [
+      { title: "订单流水号", dataIndex: "orderNo", width: 140, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNo", width: 150, render: formatEmpty },
+      { title: "楦头", dataIndex: "lastNo", width: 110, render: formatEmpty },
+      { title: "尺码数量", dataIndex: "sizeQuantities", width: 230, render: renderSizeQuantities },
+      { title: "双数", dataIndex: "quantity", width: 80, align: "right", render: formatEmpty },
+      { title: "箱数", dataIndex: "cartonCount", width: 80, align: "right", render: formatEmpty },
+      { title: "开始箱号", dataIndex: "cartonStart", width: 110, render: formatEmpty },
+      { title: "结束箱号", dataIndex: "cartonEnd", width: 110, render: formatEmpty },
+    ],
+    [],
+  );
+
+  const taskColumns = useMemo<ColumnsType<ComponentOrderTask>>(
+    () => [
+      { title: "任务编号", dataIndex: "taskNo", width: 190, render: formatEmpty },
+      { title: "订单流水号", dataIndex: "orderNos", width: 180, ellipsis: true, render: formatEmpty },
+      { title: "开发编号", dataIndex: "developmentNos", width: 200, ellipsis: true, render: formatEmpty },
+      { title: "明细数", dataIndex: "itemCount", width: 90, align: "right", render: formatEmpty },
+      { title: "总双数", dataIndex: "totalPairs", width: 90, align: "right", render: formatEmpty },
+      { title: "总箱数", dataIndex: "totalCartonCount", width: 90, align: "right", render: formatEmpty },
+      { title: "保存时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
+      {
+        title: "操作",
+        key: "actions",
+        width: 100,
+        fixed: "right",
+        render: (_, record) => (
+          <Button
+            type="link"
+            icon={<EyeOutlined />}
+            loading={taskActionLoadingId === record.id}
+            onClick={() => void openTaskDetail(record)}
+          >
+            查看
+          </Button>
+        ),
+      },
+    ],
+    [taskActionLoadingId],
+  );
+
   return (
     <div className="workspace component-order-page">
       <div className="toolbar-band">
         <div>
           <Typography.Title level={3}>{title}</Typography.Title>
           <Typography.Text type="secondary">
-            当前订单：{selectedOrderNo} / 工序编号：{processType}
+            保存每次{title}任务，可按订单流水号和开发编号查询并查看明细。
           </Typography.Text>
         </div>
-        <Space wrap>
+        <Button type="primary" icon={<FileAddOutlined />} onClick={openCreateModal}>
+          新建{title}
+        </Button>
+      </div>
+
+      <div className="page-panel">
+        <Form
+          form={taskForm}
+          layout="inline"
+          onFinish={searchTasks}
+          className="task-filter-form"
+        >
+          <Form.Item label="订单流水号" name="orderNo">
+            <Input allowClear placeholder="请输入订单流水号" />
+          </Form.Item>
+          <Form.Item label="开发编号" name="developmentNo">
+            <Input allowClear placeholder="请输入开发编号" />
+          </Form.Item>
+          <Form.Item label=" " colon={false}>
+            <Space>
+              <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
+                查询
+              </Button>
+              <Button icon={<ReloadOutlined />} onClick={() => void loadTasks(page, size)}>
+                刷新
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+
+        <Table
+          rowKey="id"
+          loading={taskLoading}
+          columns={taskColumns}
+          dataSource={tasks}
+          pagination={false}
+          scroll={{ x: 1020 }}
+          className="data-table"
+          locale={{ emptyText: `暂无${title}任务` }}
+        />
+        <Pagination
+          current={page}
+          pageSize={size}
+          total={total}
+          showSizeChanger
+          showTotal={(value) => `共 ${value} 条`}
+          onChange={(nextPage, nextSize) => {
+            setPage(nextPage);
+            setSize(nextSize);
+          }}
+        />
+      </div>
+
+      <Modal
+        open={createOpen}
+        title={`新建${title}`}
+        width="96vw"
+        onCancel={closeCreateModal}
+        footer={[
+          <Button key="close" onClick={closeCreateModal}>
+            取消
+          </Button>,
           <Button
+            key="save"
             type="primary"
-            icon={<FileExcelOutlined />}
-            disabled={componentOrderItems.length === 0}
-            onClick={generateExcel}
+            loading={saving}
+            disabled={!componentOrderItems.length}
+            onClick={() => void saveTask()}
           >
-            生成Excel
-          </Button>
-        </Space>
-      </div>
-
-      <div className="print-transfer-layout">
-        <div className="page-panel print-transfer-panel">
-          <div className="print-transfer-heading">
-            <div className="print-transfer-heading-main">
-              <Typography.Title level={4}>订单明细表数据</Typography.Title>
-              <Space className="print-transfer-filters" wrap>
-                <Select
-                  className="print-order-select"
-                  placeholder="订单号"
-                  loading={orderLoading}
-                  showSearch
-                  optionFilterProp="label"
-                  value={selectedOrderId}
-                  options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
-                  onChange={(value) => setSelectedOrderId(value)}
-                />
-                <Cascader
-                  allowClear
-                  className="print-development-cascader"
-                  displayRender={(labels) => labels.join("-")}
-                  maxTagCount="responsive"
-                  multiple
-                  options={developmentNoOptions}
-                  placeholder="开发编号"
-                  showCheckedStrategy={Cascader.SHOW_CHILD}
-                  showSearch
-                  value={developmentNoPaths}
-                  onChange={(value) => setDevelopmentNoPaths(value as string[][])}
-                />
-                <Button icon={<ReloadOutlined />} onClick={() => void loadDetails()}>
-                  刷新明细
-                </Button>
-              </Space>
+            保存任务
+          </Button>,
+        ]}
+        styles={{ body: { maxHeight: "78vh", overflow: "auto" } }}
+      >
+        <div className="print-transfer-layout">
+          <div className="page-panel print-transfer-panel">
+            <div className="print-transfer-heading">
+              <div className="print-transfer-heading-main">
+                <Typography.Title level={4}>订单明细表数据</Typography.Title>
+                <Space className="print-transfer-filters" wrap>
+                  <Select
+                    className="print-order-select"
+                    placeholder="订单号"
+                    loading={orderLoading}
+                    showSearch
+                    optionFilterProp="label"
+                    value={selectedOrderId}
+                    options={orders.map((order) => ({ value: order.id, label: buildOrderLabel(order) }))}
+                    onChange={(value) => setSelectedOrderId(value)}
+                  />
+                  <Cascader
+                    allowClear
+                    className="print-development-cascader"
+                    displayRender={(labels) => labels.join("-")}
+                    maxTagCount="responsive"
+                    multiple
+                    options={developmentNoOptions}
+                    placeholder="开发编号"
+                    showCheckedStrategy={Cascader.SHOW_CHILD}
+                    showSearch
+                    value={developmentNoPaths}
+                    onChange={(value) => setDevelopmentNoPaths(value as string[][])}
+                  />
+                  <Button icon={<ReloadOutlined />} onClick={() => void loadDetails()}>
+                    刷新明细
+                  </Button>
+                </Space>
+              </div>
+              <Typography.Text type="secondary" className="component-order-count">
+                {renderCountText(
+                  filteredDetails.length,
+                  details.length,
+                  "明细",
+                  selectedDevelopmentNos.size > 0,
+                )}
+              </Typography.Text>
             </div>
-            <Typography.Text type="secondary" className="component-order-count">
-              {renderCountText(
-                filteredDetails.length,
-                details.length,
-                "明细",
-                selectedDevelopmentNos.size > 0,
-              )}
-            </Typography.Text>
+            <Table
+              rowKey="id"
+              loading={detailLoading}
+              columns={leftColumns}
+              dataSource={filteredDetails}
+              pagination={{ pageSize: 10, showSizeChanger: false }}
+              scroll={{ x: 1010 }}
+              className="data-table"
+              rowClassName={leftRowClassName}
+              rowSelection={leftRowSelection}
+              onRow={getLeftRowProps}
+              locale={{ emptyText: "暂无订单明细，请先在订单列表点击“识别订单”" }}
+            />
           </div>
-          <Table
-            rowKey="id"
-            loading={detailLoading}
-            columns={leftColumns}
-            dataSource={filteredDetails}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 1010 }}
-            className="data-table"
-            rowClassName={leftRowClassName}
-            rowSelection={leftRowSelection}
-            onRow={getLeftRowProps}
-            locale={{ emptyText: "暂无订单明细，请先在订单列表点击“识别订单”" }}
-          />
-        </div>
 
-        <div className="print-transfer-actions">
-          <Button
-            type="primary"
-            icon={<ArrowRightOutlined />}
-            disabled={!selectedDetailIds.length}
-            onClick={addSelectedComponentOrderItems}
-          />
-          <Button
-            icon={<ArrowLeftOutlined />}
-            disabled={!selectedComponentOrderIds.length}
-            onClick={removeComponentOrderItems}
-          />
-        </div>
+          <div className="print-transfer-actions">
+            <Button
+              type="primary"
+              icon={<ArrowRightOutlined />}
+              disabled={!selectedDetailIds.length}
+              onClick={addSelectedComponentOrderItems}
+            />
+            <Button
+              icon={<ArrowLeftOutlined />}
+              disabled={!selectedComponentOrderIds.length}
+              onClick={removeComponentOrderItems}
+            />
+          </div>
 
-        <div className="page-panel print-transfer-panel">
-          <div className="print-transfer-heading">
-            <div className="print-transfer-heading-main">
-              <Typography.Title level={4}>待下单明细</Typography.Title>
+          <div className="page-panel print-transfer-panel">
+            <div className="print-transfer-heading">
+              <div className="print-transfer-heading-main">
+                <Typography.Title level={4}>待保存{title}明细</Typography.Title>
+              </div>
+              <Typography.Text type="secondary">{componentOrderItems.length} 条待下单</Typography.Text>
             </div>
-            <Typography.Text type="secondary">{componentOrderItems.length} 条待下单</Typography.Text>
+            <Table
+              rowKey="id"
+              columns={componentOrderColumns}
+              dataSource={componentOrderItems}
+              pagination={{ pageSize: 10, showSizeChanger: false }}
+              scroll={{ x: 1010 }}
+              className="data-table"
+              rowSelection={{
+                selectedRowKeys: selectedComponentOrderIds,
+                onChange: setSelectedComponentOrderIds,
+              }}
+              locale={{ emptyText: "请从左侧选择明细加入待下单列表" }}
+            />
           </div>
-          <Table
-            rowKey="id"
-            columns={componentOrderColumns}
-            dataSource={componentOrderItems}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 1010 }}
-            className="data-table"
-            rowSelection={{
-              selectedRowKeys: selectedComponentOrderIds,
-              onChange: setSelectedComponentOrderIds,
-            }}
-            locale={{ emptyText: "请从左侧选择明细加入待下单列表" }}
-          />
         </div>
-      </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(detailTask)}
+        title={detailTask ? `${title}明细：${detailTask.taskNo}` : `${title}明细`}
+        width="92vw"
+        footer={null}
+        onCancel={() => setDetailTask(null)}
+      >
+        <Table
+          rowKey="sourceDetailId"
+          columns={taskItemColumns}
+          dataSource={detailTask?.items || []}
+          pagination={{ pageSize: 10, showSizeChanger: false }}
+          scroll={{ x: 1010 }}
+          className="data-table"
+        />
+      </Modal>
     </div>
   );
 }

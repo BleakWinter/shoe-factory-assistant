@@ -293,3 +293,43 @@ export interface ShippingNoteQueryParams {
 }
 
 export type ShippingNoteTaskQueryParams = ShippingNoteQueryParams;
+
+export interface ComponentOrderTaskItem {
+  sourceDetailId: number;
+  orderId?: number;
+  orderNo?: string;
+  developmentNo?: string;
+  lastNo?: string;
+  sizeQuantities?: Record<string, number>;
+  quantity?: number;
+  cartonCount?: number;
+  cartonStart?: string;
+  cartonEnd?: string;
+}
+
+export interface ComponentOrderTask {
+  id: number;
+  taskNo: string;
+  processType: 1 | 2 | 3 | 4;
+  processTypeText?: string;
+  orderNos?: string;
+  developmentNos?: string;
+  itemCount?: number;
+  totalPairs?: number;
+  totalCartonCount?: number;
+  items: ComponentOrderTaskItem[];
+  createdAt?: string;
+}
+
+export interface ComponentOrderCreatePayload {
+  processType: 1 | 2 | 3 | 4;
+  items: Array<{ sourceDetailId: number }>;
+}
+
+export interface ComponentOrderTaskQueryParams {
+  processType: 1 | 2 | 3 | 4;
+  orderNo?: string;
+  developmentNo?: string;
+  page?: number;
+  size?: number;
+}
