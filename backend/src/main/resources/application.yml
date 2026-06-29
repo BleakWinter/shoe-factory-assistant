@@ -20,4 +20,4 @@ mybatis-plus:
 
 app:
   file-storage:
-    root-path: ${user.dir}/src/main/resources/files
+    root-path: ${user.dir}/backend/src/main/resources/files

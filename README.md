@@ -71,6 +71,8 @@ D:\清化资料\pdf\年份\月份\订单号
 - `/component-orders/outsole`：订大底。
 - `/component-orders/insole`：订中底。
 - `/component-orders/heel`：订鞋跟。
+
+订包装的装箱容量汇总规则见 [`docs/订包装业务规则.md`](docs/订包装业务规则.md)。
 - `/style-configs`：盒规、净重、毛重配置。
 - `/price-configs`：鞋价配置。
 
@@ -150,6 +152,8 @@ sql/print_table.sql
 - `shoe_style_config`：盒规、净重、毛重、鞋价配置。
 - `shipping_note_task`：出货单打印任务主表。
 - `shipping_note_task_item`：出货单打印任务明细快照。
+- `component_order_task`：订包装、订大底等配件下单任务主表。
+- `component_order_task_item`：配件下单任务明细。
 
 旧库升级可参考：
 
@@ -157,6 +161,7 @@ sql/print_table.sql
 sql/add_order_sheet_print_task.sql
 sql/move_original_file_to_sheet_print_task.sql
 sql/add_shipping_note_task.sql
+sql/add_component_order_task.sql
 ```
 
 ## 主要接口
