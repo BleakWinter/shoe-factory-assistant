@@ -368,7 +368,11 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
         Map<String, Integer> sizeQuantities = readSizeQuantities(header, row, columns);
         int sizeQuantityTotal = sumPositiveValues(sizeQuantities);
-        detail.setQuantity(sizeQuantityTotal > 0 ? sizeQuantityTotal : nullToZero(integerValue(row, columns.quantity())));
+        detail.setQuantity(firstPositiveNumber(
+                integerValue(row, columns.totalQuantity()),
+                integerValue(row, columns.quantity()),
+                sizeQuantityTotal
+        ));
         detail.setCartonCount(nullToZero(integerValue(row, columns.cartonCount())));
         detail.setCartonStart(blankToNull(text(row, columns.cartonStart())));
         detail.setCartonEnd(blankToNull(text(row, columns.cartonEnd())));
@@ -488,11 +492,14 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             Integer cartonCount,
             Integer parsedTotalPairs
     ) {
+        if (parsedTotalPairs != null && parsedTotalPairs > 0) {
+            return parsedTotalPairs;
+        }
         int perCartonPairs = sumPositiveValues(sizeQuantities);
         if (perCartonPairs > 0 && cartonCount != null && cartonCount > 0) {
             return perCartonPairs * cartonCount;
         }
-        return nullToZero(parsedTotalPairs);
+        return 0;
     }
 
     private <C, D> List<D> parseDataRows(
@@ -613,8 +620,8 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         String rowText = rowText(row, columns.firstDataColumn(), columns.dataEnd());
         return rowText.contains("合计")
                 || (text(row, columns.companyStyleNo()).isBlank()
-                && integerValue(row, columns.totalPairs()) != null
-                && integerValue(row, columns.cartonCount()) != null);
+                && (integerValue(row, columns.totalPairs()) != null
+                || integerValue(row, columns.cartonCount()) != null));
     }
 
     private boolean isPackingBlankRow(Row row, PackingColumns columns) {
@@ -923,6 +930,15 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return value == null ? 0 : value;
     }
 
+    private int firstPositiveNumber(Integer... values) {
+        for (Integer value : values) {
+            if (value != null && value > 0) {
+                return value;
+            }
+        }
+        return 0;
+    }
+
     private static String normalizeHeader(String value) {
         if (value == null) {
             return "";
@@ -964,6 +980,28 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private static int findColumnExact(Row header, String... aliases) {
         return findColumnByHeader(header, true, aliases);
+    }
+
+    private static int findLastColumnExact(Row header, String... aliases) {
+        if (header == null) {
+            return -1;
+        }
+        int first = Math.max(0, header.getFirstCellNum());
+        int last = Math.max(first, header.getLastCellNum() - 1);
+        for (int col = last; col >= first; col--) {
+            Cell cell = header.getCell(col);
+            if (cell == null) {
+                continue;
+            }
+            String name = normalizeHeader(new DataFormatter(Locale.CHINA).formatCellValue(cell))
+                    .toUpperCase(Locale.ROOT);
+            for (String alias : aliases) {
+                if (name.equals(normalizeHeader(alias).toUpperCase(Locale.ROOT))) {
+                    return col;
+                }
+            }
+        }
+        return -1;
     }
 
     private static int findColumnByHeader(Row header, boolean exact, String... aliases) {
@@ -1054,7 +1092,9 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int totalQuantity = findColumn(header, OrderExcelColumn.TOTAL_QUANTITY);
             int firstSummary = firstPositive(quantity, cartonCount, totalQuantity, cartonStart, cartonEnd);
             // 尺码从商标后一列开始；如果商标列识别异常，再退回样本订单的尺码起始列。
-            int sizeStart = Math.max(OrderExcelColumn.TRADEMARK.getFallbackIndex() + 1, trademark + 1);
+            int sizeStart = trademark >= 0
+                    ? trademark + 1
+                    : OrderExcelColumn.TRADEMARK.getFallbackIndex() + 1;
             int sizeEnd = firstSummary > sizeStart
                     ? firstSummary - 1
                     : Math.max(sizeStart - 1, header == null ? OrderExcelColumn.QUANTITY.getFallbackIndex() - 1 : header.getLastCellNum() - 1);
@@ -1126,9 +1166,10 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int customerColor = findColumnContains(header, "COLOR/客人颜色", "客人颜色");
             int material = findColumnContains(header, "MATERIAL/面料材质", "面料材质");
             int itemNumber = findColumnContains(header, "ITEMNUMBER", "项目编号");
-            int trademark = findColumnContains(header, "商标");
+            // 有些装箱单保留了一列隐藏的旧“商标”表头，实际商标值在最右侧同名列。
+            int trademark = findLastColumnExact(header, "商标");
             int pairs = findColumnExact(header, "PRS", "双数");
-            int cartonCount = findColumnExact(header, "CTNS", "箱数");
+            int cartonCount = findColumnContains(header, "CTNS", "箱数");
             int totalPairs = findColumnContains(header, "TTLPRS", "TOTALPRS", "总数量");
             int cartonStart = findColumnContains(header, "CTNSTART", "开始箱号");
             int cartonEnd = findColumnContains(header, "CTNEND", "结束箱号");
