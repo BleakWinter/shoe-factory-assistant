@@ -22,6 +22,8 @@ import com.shoefactory.assistant.entity.OrderPackingDetail;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.entity.OrderSheetPrintTask;
+import com.shoefactory.assistant.entity.ComponentOrderTask;
+import com.shoefactory.assistant.entity.ComponentOrderTaskItem;
 import com.shoefactory.assistant.entity.ShoeStyleConfig;
 import com.shoefactory.assistant.entity.ShippingNoteTask;
 import com.shoefactory.assistant.entity.ShippingNoteTaskItem;
@@ -35,6 +37,8 @@ import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.OrderSheetPrintTaskMapper;
+import com.shoefactory.assistant.mapper.ComponentOrderTaskItemMapper;
+import com.shoefactory.assistant.mapper.ComponentOrderTaskMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
@@ -95,6 +99,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderDetailProcessMapper orderDetailProcessMapper;
+    private final ComponentOrderTaskMapper componentOrderTaskMapper;
+    private final ComponentOrderTaskItemMapper componentOrderTaskItemMapper;
     private final ShoeStyleConfigMapper shoeStyleConfigMapper;
     private final ShippingNoteTaskMapper shippingNoteTaskMapper;
     private final ShippingNoteTaskItemMapper shippingNoteTaskItemMapper;
@@ -108,6 +114,8 @@ public class OrderServiceImpl implements OrderService {
             OrderRecordDetailMapper orderRecordDetailMapper,
             OrderPackingDetailMapper orderPackingDetailMapper,
             OrderDetailProcessMapper orderDetailProcessMapper,
+            ComponentOrderTaskMapper componentOrderTaskMapper,
+            ComponentOrderTaskItemMapper componentOrderTaskItemMapper,
             ShoeStyleConfigMapper shoeStyleConfigMapper,
             ShippingNoteTaskMapper shippingNoteTaskMapper,
             ShippingNoteTaskItemMapper shippingNoteTaskItemMapper,
@@ -120,6 +128,8 @@ public class OrderServiceImpl implements OrderService {
         this.orderRecordDetailMapper = orderRecordDetailMapper;
         this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderDetailProcessMapper = orderDetailProcessMapper;
+        this.componentOrderTaskMapper = componentOrderTaskMapper;
+        this.componentOrderTaskItemMapper = componentOrderTaskItemMapper;
         this.shoeStyleConfigMapper = shoeStyleConfigMapper;
         this.shippingNoteTaskMapper = shippingNoteTaskMapper;
         this.shippingNoteTaskItemMapper = shippingNoteTaskItemMapper;
@@ -682,11 +692,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private int detailPairCount(OrderRecordDetail detail) {
-        int sizeTotal = sumSizeQuantities(detail.getSizeQuantitiesJson());
-        if (sizeTotal > 0) {
-            return sizeTotal;
-        }
-        return detail.getQuantity() != null && detail.getQuantity() > 0 ? detail.getQuantity() : 0;
+        return resolveOrderDetailQuantity(detail);
     }
 
     private String normalizeStatisticsDevelopmentNo(String value) {
@@ -899,8 +905,32 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional
     public Boolean removeOrderDetailById(Long id) {
-        return orderRecordDetailMapper.deleteById(id) > 0;
+        OrderRecordDetail detail = orderRecordDetailMapper.selectById(id);
+        if (detail == null) {
+            return false;
+        }
+
+        Long orderId = detail.getOrderId();
+        orderDetailProcessMapper.delete(new LambdaQueryWrapper<OrderDetailProcess>()
+                .eq(OrderDetailProcess::getOrderDetailId, id));
+
+        Set<Long> affectedShippingTaskIds = deleteShippingNoteTaskItemsByDetailId(id);
+        // 暂时停用 component_order_task_item 联动删除。
+        // prod 里还没确认这张表是否存在，先避免删订单明细时访问缺失表而报错。
+        // Set<Long> affectedComponentTaskIds = deleteComponentOrderTaskItemsByDetailId(id);
+
+        boolean deleted = orderRecordDetailMapper.deleteById(id) > 0;
+        if (!deleted) {
+            return false;
+        }
+
+        refreshShippingNoteTasks(affectedShippingTaskIds);
+        // 暂时停用 component_order_task 联动刷新，和上面的明细联动删除保持一致。
+        // refreshComponentOrderTasks(affectedComponentTaskIds);
+        refreshOrderSummaryAfterDetailRemoval(orderId);
+        return true;
     }
 
     private OrderRecord readUploadSummary(StoredFile storedFile, String fileNo) {
@@ -1176,6 +1206,197 @@ public class OrderServiceImpl implements OrderService {
                 .eq(OrderPackingDetail::getOrderId, orderId));
     }
 
+    private Set<Long> deleteShippingNoteTaskItemsByDetailId(Long detailId) {
+        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
+                new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                        .select(ShippingNoteTaskItem::getTaskId)
+                        .eq(ShippingNoteTaskItem::getSourceDetailId, detailId)
+        );
+        if (taskItems.isEmpty()) {
+            return Collections.emptySet();
+        }
+        shippingNoteTaskItemMapper.delete(new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                .eq(ShippingNoteTaskItem::getSourceDetailId, detailId));
+        return taskItems.stream()
+                .map(ShippingNoteTaskItem::getTaskId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<Long> deleteComponentOrderTaskItemsByDetailId(Long detailId) {
+        List<ComponentOrderTaskItem> taskItems = componentOrderTaskItemMapper.selectList(
+                new LambdaQueryWrapper<ComponentOrderTaskItem>()
+                        .select(ComponentOrderTaskItem::getTaskId)
+                        .eq(ComponentOrderTaskItem::getSourceDetailId, detailId)
+        );
+        if (taskItems.isEmpty()) {
+            return Collections.emptySet();
+        }
+        componentOrderTaskItemMapper.delete(new LambdaQueryWrapper<ComponentOrderTaskItem>()
+                .eq(ComponentOrderTaskItem::getSourceDetailId, detailId));
+        return taskItems.stream()
+                .map(ComponentOrderTaskItem::getTaskId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private void refreshShippingNoteTasks(Set<Long> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return;
+        }
+        for (Long taskId : taskIds) {
+            List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
+                    new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                            .eq(ShippingNoteTaskItem::getTaskId, taskId)
+                            .orderByAsc(ShippingNoteTaskItem::getLineNo)
+                            .orderByAsc(ShippingNoteTaskItem::getId)
+            );
+            if (taskItems.isEmpty()) {
+                shippingNoteTaskMapper.deleteById(taskId);
+                continue;
+            }
+
+            List<OrderRecordDetail> details = loadExistingOrderDetails(taskItems.stream()
+                    .map(ShippingNoteTaskItem::getSourceDetailId)
+                    .toList());
+            if (details.isEmpty()) {
+                shippingNoteTaskItemMapper.delete(new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                        .eq(ShippingNoteTaskItem::getTaskId, taskId));
+                shippingNoteTaskMapper.deleteById(taskId);
+                continue;
+            }
+
+            ShippingNoteTask task = shippingNoteTaskMapper.selectById(taskId);
+            if (task == null) {
+                continue;
+            }
+            Map<Long, OrderRecord> orderMap = loadOrdersByIds(details.stream()
+                    .map(OrderRecordDetail::getOrderId)
+                    .filter(id -> id != null)
+                    .distinct()
+                    .toList());
+            task.setInvoiceNos(joinTaskOrderNos(details, orderMap));
+            task.setDevelopmentNos(joinTaskDevelopmentNos(details));
+            task.setItemCount(details.size());
+            task.setTotalPairs(details.stream().mapToInt(this::resolveOrderDetailQuantity).sum());
+            task.setTotalCartonCount(details.stream().mapToInt(item -> nullToZero(item.getCartonCount())).sum());
+            task.setUpdatedAt(LocalDateTime.now());
+            shippingNoteTaskMapper.updateById(task);
+        }
+    }
+
+    private void refreshComponentOrderTasks(Set<Long> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return;
+        }
+        for (Long taskId : taskIds) {
+            List<ComponentOrderTaskItem> taskItems = componentOrderTaskItemMapper.selectList(
+                    new LambdaQueryWrapper<ComponentOrderTaskItem>()
+                            .eq(ComponentOrderTaskItem::getTaskId, taskId)
+                            .orderByAsc(ComponentOrderTaskItem::getLineNo)
+                            .orderByAsc(ComponentOrderTaskItem::getId)
+            );
+            if (taskItems.isEmpty()) {
+                componentOrderTaskMapper.deleteById(taskId);
+                continue;
+            }
+
+            List<OrderRecordDetail> details = loadExistingOrderDetails(taskItems.stream()
+                    .map(ComponentOrderTaskItem::getSourceDetailId)
+                    .toList());
+            if (details.isEmpty()) {
+                componentOrderTaskItemMapper.delete(new LambdaQueryWrapper<ComponentOrderTaskItem>()
+                        .eq(ComponentOrderTaskItem::getTaskId, taskId));
+                componentOrderTaskMapper.deleteById(taskId);
+                continue;
+            }
+
+            ComponentOrderTask task = componentOrderTaskMapper.selectById(taskId);
+            if (task == null) {
+                continue;
+            }
+            Map<Long, OrderRecord> orderMap = loadOrdersByIds(details.stream()
+                    .map(OrderRecordDetail::getOrderId)
+                    .filter(id -> id != null)
+                    .distinct()
+                    .toList());
+            task.setOrderNos(joinTaskOrderNos(details, orderMap));
+            task.setDevelopmentNos(joinTaskDevelopmentNos(details));
+            task.setItemCount(details.size());
+            task.setTotalPairs(details.stream().mapToInt(this::resolveOrderDetailQuantity).sum());
+            task.setTotalCartonCount(details.stream().mapToInt(item -> nullToZero(item.getCartonCount())).sum());
+            task.setUpdatedAt(LocalDateTime.now());
+            componentOrderTaskMapper.updateById(task);
+        }
+    }
+
+    private void refreshOrderSummaryAfterDetailRemoval(Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        OrderRecord order = orderRecordMapper.selectById(orderId);
+        if (order == null) {
+            return;
+        }
+        List<OrderRecordDetail> details = loadDetails(orderId);
+        order.setDevelopmentNos(joinTaskDevelopmentNos(details));
+        order.setTotalQuantity(0);
+        order.setTotalCartonCount(0);
+        fillTotalsFromDetails(order, details);
+        fillTotalsFromPackingDetails(order, loadPackingDetails(orderId));
+        order.setUpdatedAt(LocalDateTime.now());
+        orderRecordMapper.updateById(order);
+    }
+
+    private List<OrderRecordDetail> loadExistingOrderDetails(List<Long> detailIds) {
+        List<Long> normalizedIds = detailIds == null ? List.of() : detailIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        if (normalizedIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, OrderRecordDetail> detailMap = orderRecordDetailMapper.selectBatchIds(normalizedIds).stream()
+                .filter(detail -> detail.getId() != null)
+                .collect(Collectors.toMap(OrderRecordDetail::getId, detail -> detail));
+        return normalizedIds.stream()
+                .map(detailMap::get)
+                .filter(detail -> detail != null)
+                .toList();
+    }
+
+    private Map<Long, OrderRecord> loadOrdersByIds(List<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return orderRecordMapper.selectBatchIds(orderIds).stream()
+                .filter(order -> order.getId() != null)
+                .collect(Collectors.toMap(OrderRecord::getId, order -> order));
+    }
+
+    private String joinTaskOrderNos(List<OrderRecordDetail> details, Map<Long, OrderRecord> orderMap) {
+        Set<String> values = new LinkedHashSet<>();
+        for (OrderRecordDetail detail : details) {
+            OrderRecord order = detail.getOrderId() == null ? null : orderMap.get(detail.getOrderId());
+            String orderNo = firstText(order == null ? null : order.getOrderNo(), detail.getCustomerOrderNo());
+            if (hasText(orderNo)) {
+                values.add(orderNo);
+            }
+        }
+        return String.join(",", values);
+    }
+
+    private String joinTaskDevelopmentNos(List<OrderRecordDetail> details) {
+        Set<String> values = new LinkedHashSet<>();
+        for (OrderRecordDetail detail : details) {
+            String developmentNo = detail.getDevelopmentNo();
+            if (hasText(developmentNo)) {
+                values.add(developmentNo.trim());
+            }
+        }
+        return String.join(",", values);
+    }
+
     private void applyOrderSummary(OrderRecord target, OrderRecord parsed) {
         if (parsed == null) {
             return;
@@ -1363,12 +1584,7 @@ public class OrderServiceImpl implements OrderService {
         int quantity = 0;
         int cartonCount = 0;
         for (OrderRecordDetail detail : details) {
-            int sizeTotal = sumSizeQuantities(detail.getSizeQuantitiesJson());
-            if (sizeTotal > 0) {
-                quantity += sizeTotal;
-            } else if (detail.getQuantity() != null && detail.getQuantity() > 0) {
-                quantity += detail.getQuantity();
-            }
+            quantity += resolveOrderDetailQuantity(detail);
             if (detail.getCartonCount() != null && detail.getCartonCount() > 0) {
                 cartonCount += detail.getCartonCount();
             }
@@ -1380,14 +1596,7 @@ public class OrderServiceImpl implements OrderService {
         int quantity = 0;
         int cartonCount = 0;
         for (OrderPackingDetail detail : details) {
-            int perCartonPairs = sumSizeQuantities(detail.getSizeQuantitiesJson());
-            if (perCartonPairs > 0 && detail.getCartonCount() != null && detail.getCartonCount() > 0) {
-                quantity += perCartonPairs * detail.getCartonCount();
-            } else if (detail.getTotalPairs() != null && detail.getTotalPairs() > 0) {
-                quantity += detail.getTotalPairs();
-            } else {
-                quantity += perCartonPairs;
-            }
+            quantity += resolvePackingDetailQuantity(detail);
             if (detail.getCartonCount() != null && detail.getCartonCount() > 0) {
                 cartonCount += detail.getCartonCount();
             }
@@ -1413,6 +1622,34 @@ public class OrderServiceImpl implements OrderService {
         if (totals.cartonCount() > 0) {
             order.setTotalCartonCount(totals.cartonCount());
         }
+    }
+
+    private int resolveOrderDetailQuantity(OrderRecordDetail detail) {
+        if (detail == null) {
+            return 0;
+        }
+        if (detail.getQuantity() != null && detail.getQuantity() > 0) {
+            return detail.getQuantity();
+        }
+        int perCartonPairs = sumSizeQuantities(detail.getSizeQuantitiesJson());
+        if (perCartonPairs > 0 && detail.getCartonCount() != null && detail.getCartonCount() > 0) {
+            return perCartonPairs * detail.getCartonCount();
+        }
+        return perCartonPairs;
+    }
+
+    private int resolvePackingDetailQuantity(OrderPackingDetail detail) {
+        if (detail == null) {
+            return 0;
+        }
+        if (detail.getTotalPairs() != null && detail.getTotalPairs() > 0) {
+            return detail.getTotalPairs();
+        }
+        int perCartonPairs = sumSizeQuantities(detail.getSizeQuantitiesJson());
+        if (perCartonPairs > 0 && detail.getCartonCount() != null && detail.getCartonCount() > 0) {
+            return perCartonPairs * detail.getCartonCount();
+        }
+        return perCartonPairs;
     }
 
     private int sumSizeQuantities(String json) {
