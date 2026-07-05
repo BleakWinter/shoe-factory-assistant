@@ -6,6 +6,7 @@ import com.shoefactory.assistant.dto.ShippingNoteGeneratedSummaryResponse;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 
+import java.time.LocalDate;
 import java.util.List;
 
 public interface ShippingNoteTaskService {
@@ -15,6 +16,8 @@ public interface ShippingNoteTaskService {
     PageResponse<ShippingNoteTaskResponse> listShippingNoteTasks(
             String orderNo,
             String developmentNo,
+            LocalDate startDate,
+            LocalDate endDate,
             long page,
             long size
     );

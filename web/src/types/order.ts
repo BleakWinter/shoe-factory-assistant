@@ -293,6 +293,8 @@ export interface ShippingNoteCreatePayload {
 export interface ShippingNoteQueryParams {
   orderNo?: string;
   developmentNo?: string;
+  startDate?: string;
+  endDate?: string;
   page?: number;
   size?: number;
 }

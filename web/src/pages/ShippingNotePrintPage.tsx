@@ -896,6 +896,12 @@ export default function ShippingNotePrintPage() {
           <Form.Item label="开发编号" name="developmentNo">
             <Input allowClear placeholder="输入开发编号" />
           </Form.Item>
+          <Form.Item label="开始时间" name="startDate">
+            <Input allowClear type="date" />
+          </Form.Item>
+          <Form.Item label="结束时间" name="endDate">
+            <Input allowClear type="date" />
+          </Form.Item>
           <Form.Item label=" " colon={false}>
             <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
               查询

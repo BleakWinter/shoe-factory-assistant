@@ -774,32 +774,40 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderRecordResponse recognizeOrder(Long orderId) {
         OrderRecord order = getRequiredOrder(orderId);
+        List<OrderRecordDetail> existingDetails = loadDetails(orderId);
+        OrderImportResult importResult;
         try {
             StoredFile storedFile = storedFileFromTask(orderId, PrintType.ORDER);
-            deleteOrderDetailRows(orderId);
-            OrderImportResult importResult = orderExcelImportService.importOrderDetails(
+            importResult = orderExcelImportService.importOrderDetails(
                     storedFile.getPath(),
                     storedFile,
                     FileStorageUtil.newBusinessNo("SF")
             );
-            applyOrderSummary(order, importResult.getOrder());
-            for (OrderRecordDetail detail : importResult.getDetails()) {
-                detail.setOrderId(order.getId());
-                orderRecordDetailMapper.insert(detail);
+            if (importResult.getDetails().isEmpty()) {
+                throw new BusinessException("订单 sheet 未解析到明细行");
             }
-            styleConfigService.ensureConfigsForDevelopmentNos(importResult.getDetails().stream()
-                    .map(OrderRecordDetail::getDevelopmentNo)
-                    .toList());
-            fillTotalsFromDetails(order, importResult.getDetails());
-            fillTotalsFromPackingDetails(order, loadPackingDetails(orderId));
-            order.setOrderRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
-            order.setOrderErrorMessage(null);
-            order.setUpdatedAt(LocalDateTime.now());
-            syncRecognitionErrorMessage(order);
-            orderRecordMapper.updateById(order);
+            validateRecognizedDetailCount(
+                    "订单",
+                    existingDetails.size(),
+                    importResult.getDetails().size()
+            );
         } catch (RuntimeException ex) {
             markRecognitionFailed(order, true, ex);
+            return buildOrderResponse(order, existingDetails, loadPackingDetails(orderId));
         }
+
+        saveRecognizedOrderDetails(orderId, existingDetails, importResult.getDetails());
+        applyOrderSummary(order, importResult.getOrder());
+        styleConfigService.ensureConfigsForDevelopmentNos(importResult.getDetails().stream()
+                .map(OrderRecordDetail::getDevelopmentNo)
+                .toList());
+        fillTotalsFromDetails(order, importResult.getDetails());
+        fillTotalsFromPackingDetails(order, loadPackingDetails(orderId));
+        order.setOrderRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
+        order.setOrderErrorMessage(null);
+        order.setUpdatedAt(LocalDateTime.now());
+        syncRecognitionErrorMessage(order);
+        orderRecordMapper.updateById(order);
         return buildOrderResponse(order, loadDetails(orderId), loadPackingDetails(orderId));
     }
 
@@ -807,10 +815,13 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderRecordResponse recognizePacking(Long orderId) {
         OrderRecord order = getRequiredOrder(orderId);
+        List<OrderRecordDetail> orderDetails = loadDetails(orderId);
+        List<OrderPackingDetail> existingDetails = loadPackingDetails(orderId);
+        List<OrderPackingDetail> packingDetails;
         try {
+            ensureOrderDetailsHaveCartonRanges(orderDetails);
             StoredFile storedFile = storedFileFromTask(orderId, PrintType.PACKING);
-            deletePackingDetailRows(orderId);
-            List<OrderPackingDetail> packingDetails = orderExcelImportService.importPackingDetails(
+            packingDetails = orderExcelImportService.importPackingDetails(
                     storedFile.getPath(),
                     order,
                     FileStorageUtil.newBusinessNo("SF")
@@ -818,20 +829,24 @@ public class OrderServiceImpl implements OrderService {
             if (packingDetails.isEmpty()) {
                 throw new BusinessException("装箱单 sheet 未解析到明细行");
             }
-            for (OrderPackingDetail detail : packingDetails) {
-                detail.setOrderId(order.getId());
-                orderPackingDetailMapper.insert(detail);
-            }
-            fillTotalsFromPackingDetails(order, packingDetails);
-            order.setPackingRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
-            order.setPackingErrorMessage(null);
-            order.setUpdatedAt(LocalDateTime.now());
-            syncRecognitionErrorMessage(order);
-            orderRecordMapper.updateById(order);
+            validateRecognizedDetailCount(
+                    "装箱单",
+                    existingDetails.size(),
+                    packingDetails.size()
+            );
         } catch (RuntimeException ex) {
             markRecognitionFailed(order, false, ex);
+            return buildOrderResponse(order, orderDetails, existingDetails);
         }
-        return buildOrderResponse(order, loadDetails(orderId), loadPackingDetails(orderId));
+
+        saveRecognizedPackingDetails(orderId, existingDetails, packingDetails);
+        fillTotalsFromPackingDetails(order, packingDetails);
+        order.setPackingRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
+        order.setPackingErrorMessage(null);
+        order.setUpdatedAt(LocalDateTime.now());
+        syncRecognitionErrorMessage(order);
+        orderRecordMapper.updateById(order);
+        return buildOrderResponse(order, orderDetails, loadPackingDetails(orderId));
     }
 
     @Override
@@ -1194,16 +1209,85 @@ public class OrderServiceImpl implements OrderService {
         return new StoredFile(originalName, extension, null, 0, path);
     }
 
-    private void deleteOrderDetailRows(Long orderId) {
-        orderDetailProcessMapper.delete(new LambdaQueryWrapper<OrderDetailProcess>()
-                .eq(OrderDetailProcess::getOrderId, orderId));
-        orderRecordDetailMapper.delete(new LambdaQueryWrapper<OrderRecordDetail>()
-                .eq(OrderRecordDetail::getOrderId, orderId));
+    private void validateRecognizedDetailCount(
+            String detailType,
+            int existingCount,
+            int recognizedCount
+    ) {
+        if (existingCount == 0) {
+            return;
+        }
+        if (existingCount != recognizedCount) {
+            throw new BusinessException(detailType + "明细行数不一致，原有 "
+                    + existingCount + " 行，本次识别 "
+                    + recognizedCount + " 行，已保留原明细");
+        }
     }
 
-    private void deletePackingDetailRows(Long orderId) {
-        orderPackingDetailMapper.delete(new LambdaQueryWrapper<OrderPackingDetail>()
-                .eq(OrderPackingDetail::getOrderId, orderId));
+    private void ensureOrderDetailsHaveCartonRanges(List<OrderRecordDetail> orderDetails) {
+        if (orderDetails.isEmpty()) {
+            throw new BusinessException("请先识别订单明细并填写开始箱号、结束箱号，再识别装箱单");
+        }
+        List<String> missingDetails = new ArrayList<>();
+        for (int index = 0; index < orderDetails.size(); index++) {
+            OrderRecordDetail detail = orderDetails.get(index);
+            if (hasText(detail.getCartonStart()) && hasText(detail.getCartonEnd())) {
+                continue;
+            }
+            String label = hasText(detail.getDevelopmentNo())
+                    ? detail.getDevelopmentNo()
+                    : "第 " + (index + 1) + " 条";
+            missingDetails.add(label);
+            if (missingDetails.size() == 10) {
+                break;
+            }
+        }
+        if (!missingDetails.isEmpty()) {
+            throw new BusinessException("订单明细缺少开始箱号或结束箱号，不能识别装箱单："
+                    + String.join("、", missingDetails));
+        }
+    }
+
+    private void saveRecognizedOrderDetails(
+            Long orderId,
+            List<OrderRecordDetail> existingDetails,
+            List<OrderRecordDetail> recognizedDetails
+    ) {
+        for (int index = 0; index < recognizedDetails.size(); index++) {
+            OrderRecordDetail recognizedDetail = recognizedDetails.get(index);
+            recognizedDetail.setOrderId(orderId);
+            if (existingDetails.isEmpty()) {
+                orderRecordDetailMapper.insert(recognizedDetail);
+                continue;
+            }
+            OrderRecordDetail existingDetail = existingDetails.get(index);
+            recognizedDetail.setId(existingDetail.getId());
+            recognizedDetail.setCreatedAt(existingDetail.getCreatedAt());
+            if (orderRecordDetailMapper.updateById(recognizedDetail) != 1) {
+                throw new BusinessException("订单第 " + (index + 1) + " 条明细更新失败");
+            }
+        }
+    }
+
+    private void saveRecognizedPackingDetails(
+            Long orderId,
+            List<OrderPackingDetail> existingDetails,
+            List<OrderPackingDetail> recognizedDetails
+    ) {
+        for (int index = 0; index < recognizedDetails.size(); index++) {
+            OrderPackingDetail recognizedDetail = recognizedDetails.get(index);
+            recognizedDetail.setOrderId(orderId);
+            if (existingDetails.isEmpty()) {
+                orderPackingDetailMapper.insert(recognizedDetail);
+                continue;
+            }
+            OrderPackingDetail existingDetail = existingDetails.get(index);
+            recognizedDetail.setId(existingDetail.getId());
+            recognizedDetail.setCreatedAt(existingDetail.getCreatedAt());
+            if (orderPackingDetailMapper.updateById(recognizedDetail) != 1) {
+                throw new BusinessException("装箱单第 " + (index + 1) + " 条明细更新失败");
+            }
+        }
     }
 
     private Set<Long> deleteShippingNoteTaskItemsByDetailId(Long detailId) {

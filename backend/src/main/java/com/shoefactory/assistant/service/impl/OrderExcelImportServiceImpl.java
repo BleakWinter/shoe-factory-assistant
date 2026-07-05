@@ -625,12 +625,26 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
     }
 
     private boolean isPackingBlankRow(Row row, PackingColumns columns) {
-        for (int col = columns.firstDataColumn(); col <= columns.dataEnd(); col++) {
-            if (!text(row, col).isBlank()) {
+        if (text(row, columns.companyStyleNo()).isBlank()
+                || text(row, columns.cartonStart()).isBlank()
+                || text(row, columns.cartonEnd()).isBlank()) {
+            return true;
+        }
+        if (isPositive(integerValue(row, columns.pairs()))
+                || isPositive(integerValue(row, columns.cartonCount()))
+                || isPositive(integerValue(row, columns.totalPairs()))) {
+            return false;
+        }
+        for (int col = columns.sizeStart(); col <= columns.sizeEnd(); col++) {
+            if (isPositive(integerValue(row, col))) {
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean isPositive(Integer value) {
+        return value != null && value > 0;
     }
 
     private boolean isPackingRepeatedHeaderRow(Row row, PackingColumns columns) {

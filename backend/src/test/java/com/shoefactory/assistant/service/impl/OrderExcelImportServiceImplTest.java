@@ -1,5 +1,6 @@
 package com.shoefactory.assistant.service.impl;
 
+import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.config.FileStorageProperties;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.service.OrderImportResult;
@@ -16,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OrderExcelImportServiceImplTest {
 
@@ -48,6 +51,47 @@ class OrderExcelImportServiceImplTest {
         OrderImportResult importResult = service.importOrderDetails(workbookPath, storedFile, "SFTEST");
         assertEquals(2, importResult.getDetails().size());
         assertEquals(43, importResult.getOrder().getTotalQuantity());
+    }
+
+    @Test
+    void skipsEmptyPackingTemplateRows() throws Exception {
+        Path workbookPath = tempDir.resolve("packing.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("装箱单");
+            populatePackingHeader(sheet.createRow(0));
+            sheet.createRow(1).createCell(2).setCellValue("模板中的空行");
+            populatePackingDetailRow(sheet.createRow(2));
+            try (OutputStream outputStream = Files.newOutputStream(workbookPath)) {
+                workbook.write(outputStream);
+            }
+        }
+
+        OrderExcelImportServiceImpl service = new OrderExcelImportServiceImpl(fileStorageUtil());
+        var details = service.importPackingDetails(workbookPath, packingOrder(), "SFTEST");
+
+        assertEquals(1, details.size());
+        assertEquals("JCD-401-1-01", details.get(0).getCompanyStyleNo());
+    }
+
+    @Test
+    void rejectsPackingSheetWithoutActualData() throws Exception {
+        Path workbookPath = tempDir.resolve("empty-packing.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("装箱单");
+            populatePackingHeader(sheet.createRow(0));
+            sheet.createRow(1).createCell(2).setCellValue("模板中的空行");
+            try (OutputStream outputStream = Files.newOutputStream(workbookPath)) {
+                workbook.write(outputStream);
+            }
+        }
+
+        OrderExcelImportServiceImpl service = new OrderExcelImportServiceImpl(fileStorageUtil());
+        BusinessException error = assertThrows(
+                BusinessException.class,
+                () -> service.importPackingDetails(workbookPath, packingOrder(), "SFTEST")
+        );
+
+        assertTrue(error.getMessage().contains("未解析到明细行"));
     }
 
     private FileStorageUtil fileStorageUtil() {
@@ -96,5 +140,39 @@ class OrderExcelImportServiceImplTest {
         row.createCell(39).setCellValue(quantity);
         row.createCell(40).setCellValue(cartons);
         row.createCell(41).setCellValue(quantity);
+    }
+
+    private OrderRecord packingOrder() {
+        OrderRecord order = new OrderRecord();
+        order.setOrderNo("ORDER-401");
+        order.setCustomerName("TEST");
+        return order;
+    }
+
+    private void populatePackingHeader(Row header) {
+        header.createCell(0).setCellValue("图片");
+        header.createCell(1).setCellValue("公司款号");
+        header.createCell(2).setCellValue("客人");
+        header.createCell(3).setCellValue("客人订单号");
+        header.createCell(4).setCellValue("商标");
+        header.createCell(5).setCellValue("6");
+        header.createCell(6).setCellValue("PRS");
+        header.createCell(7).setCellValue("CTNS");
+        header.createCell(8).setCellValue("TTL PRS");
+        header.createCell(9).setCellValue("CTN START");
+        header.createCell(10).setCellValue("CTN END");
+    }
+
+    private void populatePackingDetailRow(Row row) {
+        row.createCell(1).setCellValue("JCD-401-1-01");
+        row.createCell(2).setCellValue("TEST");
+        row.createCell(3).setCellValue("ORDER-401");
+        row.createCell(4).setCellValue("TEST");
+        row.createCell(5).setCellValue(10);
+        row.createCell(6).setCellValue(10);
+        row.createCell(7).setCellValue(1);
+        row.createCell(8).setCellValue(10);
+        row.createCell(9).setCellValue("100");
+        row.createCell(10).setCellValue("100");
     }
 }

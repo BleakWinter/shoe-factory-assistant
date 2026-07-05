@@ -112,13 +112,20 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
     public PageResponse<ShippingNoteTaskResponse> listShippingNoteTasks(
             String orderNo,
             String developmentNo,
+            LocalDate startDate,
+            LocalDate endDate,
             long page,
             long size
     ) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new BusinessException("开始时间不能晚于结束时间");
+        }
         Page<ShippingNoteTask> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
         LambdaQueryWrapper<ShippingNoteTask> wrapper = new LambdaQueryWrapper<ShippingNoteTask>()
                 .like(hasText(orderNo), ShippingNoteTask::getInvoiceNos, orderNo)
                 .like(hasText(developmentNo), ShippingNoteTask::getDevelopmentNos, developmentNo)
+                .ge(startDate != null, ShippingNoteTask::getShippingDate, startDate)
+                .le(endDate != null, ShippingNoteTask::getShippingDate, endDate)
                 .orderByDesc(ShippingNoteTask::getCreatedAt);
         Page<ShippingNoteTask> resultPage = shippingNoteTaskMapper.selectPage(pageRequest, wrapper);
         List<ShippingNoteTaskResponse> records = resultPage.getRecords().stream()

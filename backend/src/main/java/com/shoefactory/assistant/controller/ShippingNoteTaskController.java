@@ -8,6 +8,7 @@ import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 
@@ -41,10 +43,19 @@ public class ShippingNoteTaskController {
     public ApiResponse<PageResponse<ShippingNoteTaskResponse>> listShippingNoteTasks(
             @RequestParam(required = false) String orderNo,
             @RequestParam(required = false) String developmentNo,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size
     ) {
-        return ApiResponse.ok(shippingNoteTaskService.listShippingNoteTasks(orderNo, developmentNo, page, size));
+        return ApiResponse.ok(shippingNoteTaskService.listShippingNoteTasks(
+                orderNo,
+                developmentNo,
+                startDate,
+                endDate,
+                page,
+                size
+        ));
     }
 
     @GetMapping("/generated-summary")
