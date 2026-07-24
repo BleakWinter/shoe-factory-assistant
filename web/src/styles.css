@@ -2009,7 +2009,7 @@ a {
 
   @page inner-box-label-page {
     size: A4 portrait;
-    margin: 0;
+    margin: 10px;
   }
 
   @page shipping-note-page {
@@ -2126,10 +2126,10 @@ a {
   }
 
   .inner-box-label-a4 {
-    width: 210mm;
+    width: calc(210mm - 20px);
     min-width: 0;
-    height: auto;
-    min-height: 0;
+    height: calc(297mm - 20px);
+    min-height: calc(297mm - 20px);
     box-shadow: none;
     overflow: hidden;
     break-inside: auto;
@@ -2137,7 +2137,10 @@ a {
   }
 
   .inner-box-label-grid {
-    grid-auto-rows: 32.85mm;
+    grid-template-rows: repeat(9, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+    box-sizing: border-box;
+    height: 100%;
   }
 
   .inner-box-label-a4:not(:last-child) {

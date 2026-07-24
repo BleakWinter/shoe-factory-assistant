@@ -586,13 +586,14 @@ function applyPrintPageSize(format: PrintFormatKey) {
   const styleId = "label-print-page-size";
   const pageSize = format === "inner-box-a4" ? "A4 portrait" : "A4 landscape";
   const isInnerBox = format === "inner-box-a4";
+  const pageMargin = isInnerBox ? "10px" : "0";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement("style");
     style.id = styleId;
     document.head.appendChild(style);
   }
-  style.textContent = `@media print { @page { size: ${pageSize}; margin: 0; }${isInnerBox ? ".label-print-root{page:inner-box-label-page;}" : ""} }`;
+  style.textContent = `@media print { @page { size: ${pageSize}; margin: ${pageMargin}; }${isInnerBox ? ".label-print-root{page:inner-box-label-page;}" : ""} }`;
 }
 
 export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
