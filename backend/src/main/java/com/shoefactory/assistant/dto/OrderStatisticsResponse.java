@@ -15,6 +15,9 @@ public class OrderStatisticsResponse {
     private Integer detailCount;
     private BigDecimal totalPaymentAmount = BigDecimal.ZERO;
     private Integer unpricedShippedPairs;
+    private Integer unpricedUnshippedPairs;
+    private List<UnpricedShippedStyle> unpricedShippedStyles = new ArrayList<>();
+    private List<UnpricedUnshippedStyle> unpricedUnshippedStyles = new ArrayList<>();
     private List<StatisticsTimePoint> orderCreatedTrend = new ArrayList<>();
     private List<StatisticsTimePoint> shippedPairsTrend = new ArrayList<>();
     private List<StatisticsAmountPoint> paymentAmountTrend = new ArrayList<>();
@@ -39,6 +42,18 @@ public class OrderStatisticsResponse {
     public Integer getUnpricedShippedPairs() { return unpricedShippedPairs; }
     public void setUnpricedShippedPairs(Integer unpricedShippedPairs) {
         this.unpricedShippedPairs = unpricedShippedPairs;
+    }
+    public List<UnpricedShippedStyle> getUnpricedShippedStyles() { return unpricedShippedStyles; }
+    public void setUnpricedShippedStyles(List<UnpricedShippedStyle> unpricedShippedStyles) {
+        this.unpricedShippedStyles = unpricedShippedStyles;
+    }
+    public Integer getUnpricedUnshippedPairs() { return unpricedUnshippedPairs; }
+    public void setUnpricedUnshippedPairs(Integer unpricedUnshippedPairs) {
+        this.unpricedUnshippedPairs = unpricedUnshippedPairs;
+    }
+    public List<UnpricedUnshippedStyle> getUnpricedUnshippedStyles() { return unpricedUnshippedStyles; }
+    public void setUnpricedUnshippedStyles(List<UnpricedUnshippedStyle> unpricedUnshippedStyles) {
+        this.unpricedUnshippedStyles = unpricedUnshippedStyles;
     }
     public List<StatisticsTimePoint> getOrderCreatedTrend() { return orderCreatedTrend; }
     public void setOrderCreatedTrend(List<StatisticsTimePoint> orderCreatedTrend) {
@@ -122,6 +137,26 @@ public class OrderStatisticsResponse {
         public void setDate(LocalDate date) { this.date = date; }
         public BigDecimal getValue() { return value; }
         public void setValue(BigDecimal value) { this.value = value; }
+    }
+
+    public static class UnpricedShippedStyle {
+        private String developmentNo;
+        private Integer shippedPairs;
+
+        public String getDevelopmentNo() { return developmentNo; }
+        public void setDevelopmentNo(String developmentNo) { this.developmentNo = developmentNo; }
+        public Integer getShippedPairs() { return shippedPairs; }
+        public void setShippedPairs(Integer shippedPairs) { this.shippedPairs = shippedPairs; }
+    }
+
+    public static class UnpricedUnshippedStyle {
+        private String developmentNo;
+        private Integer unshippedPairs;
+
+        public String getDevelopmentNo() { return developmentNo; }
+        public void setDevelopmentNo(String developmentNo) { this.developmentNo = developmentNo; }
+        public Integer getUnshippedPairs() { return unshippedPairs; }
+        public void setUnshippedPairs(Integer unshippedPairs) { this.unshippedPairs = unshippedPairs; }
     }
 
     public static class UnshippedInvoiceStatistic {

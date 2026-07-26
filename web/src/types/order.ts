@@ -118,6 +118,16 @@ export interface UnshippedInvoiceStatistic {
   detailCount?: number;
 }
 
+export interface UnpricedShippedStyle {
+  developmentNo: string;
+  shippedPairs: number;
+}
+
+export interface UnpricedUnshippedStyle {
+  developmentNo: string;
+  unshippedPairs: number;
+}
+
 export interface OrderStatistics {
   totalPairs: number;
   shippedPairs: number;
@@ -126,6 +136,9 @@ export interface OrderStatistics {
   detailCount: number;
   totalPaymentAmount?: number;
   unpricedShippedPairs?: number;
+  unpricedShippedStyles?: UnpricedShippedStyle[];
+  unpricedUnshippedPairs?: number;
+  unpricedUnshippedStyles?: UnpricedUnshippedStyle[];
   orderCreatedTrend?: StatisticsTimePoint[];
   shippedPairsTrend?: StatisticsTimePoint[];
   paymentAmountTrend?: StatisticsTimePoint[];

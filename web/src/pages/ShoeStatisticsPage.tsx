@@ -9,6 +9,8 @@ import type {
   DevelopmentNoStatisticNode,
   OrderStatistics,
   StatisticsTimePoint,
+  UnpricedShippedStyle,
+  UnpricedUnshippedStyle,
   UnshippedInvoiceStatistic,
 } from "../types/order";
 
@@ -474,6 +476,58 @@ export default function ShoeStatisticsPage() {
     ],
     [],
   );
+  const unpricedStyleColumns = useMemo<ColumnsType<UnpricedShippedStyle>>(
+    () => [
+      {
+        title: "序号",
+        key: "rank",
+        width: 72,
+        align: "center" as const,
+        render: (_value, _record, index) => index + 1,
+      },
+      {
+        title: "开发编号",
+        dataIndex: "developmentNo",
+        key: "developmentNo",
+        render: (value?: string) => formatText(value),
+      },
+      {
+        title: "未计价出货双数",
+        dataIndex: "shippedPairs",
+        key: "shippedPairs",
+        width: 180,
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+    ],
+    [],
+  );
+  const unpricedUnshippedStyleColumns = useMemo<ColumnsType<UnpricedUnshippedStyle>>(
+    () => [
+      {
+        title: "序号",
+        key: "rank",
+        width: 72,
+        align: "center" as const,
+        render: (_value, _record, index) => index + 1,
+      },
+      {
+        title: "开发编号",
+        dataIndex: "developmentNo",
+        key: "developmentNo",
+        render: (value?: string) => formatText(value),
+      },
+      {
+        title: "待出货双数",
+        dataIndex: "unshippedPairs",
+        key: "unshippedPairs",
+        width: 140,
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="workspace statistics-page">
@@ -528,7 +582,7 @@ export default function ShoeStatisticsPage() {
         width={activeStatistic === "unshipped" ? 980 : activeStatistic === "styles" ? 860 : 920}
         footer={null}
         onCancel={() => setActiveStatistic(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         {activeStatistic && (activeStatistic === "total" || activeStatistic === "shipped" || activeStatistic === "payment") ? (
           <>
@@ -558,6 +612,57 @@ export default function ShoeStatisticsPage() {
                 <Column {...trendColumnConfig} />
               </div>
             )}
+            {activeStatistic === "payment" ? (
+              <div className="statistics-unpriced-section">
+                <Typography.Title level={5}>
+                  未配置单价的款号
+                </Typography.Title>
+                <div className="statistics-unpriced-grid">
+                  <div className="statistics-unpriced-panel">
+                    <div className="statistics-unpriced-heading">
+                      <Typography.Text strong>已出货</Typography.Text>
+                      <Typography.Text type="warning">
+                        {formatCount(statistics?.unpricedShippedPairs)} 双未计入货款
+                      </Typography.Text>
+                    </div>
+                    {statistics?.unpricedShippedStyles?.length ? (
+                      <Table<UnpricedShippedStyle>
+                        rowKey="developmentNo"
+                        columns={unpricedStyleColumns}
+                        dataSource={statistics.unpricedShippedStyles}
+                        pagination={statistics.unpricedShippedStyles.length > 6
+                          ? { pageSize: 6, showSizeChanger: false }
+                          : false}
+                        size="small"
+                      />
+                    ) : (
+                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有缺价的已出货款号" />
+                    )}
+                  </div>
+                  <div className="statistics-unpriced-panel">
+                    <div className="statistics-unpriced-heading">
+                      <Typography.Text strong>未出货</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {formatCount(statistics?.unpricedUnshippedPairs)} 双待出货
+                      </Typography.Text>
+                    </div>
+                    {statistics?.unpricedUnshippedStyles?.length ? (
+                      <Table<UnpricedUnshippedStyle>
+                        rowKey="developmentNo"
+                        columns={unpricedUnshippedStyleColumns}
+                        dataSource={statistics.unpricedUnshippedStyles}
+                        pagination={statistics.unpricedUnshippedStyles.length > 6
+                          ? { pageSize: 6, showSizeChanger: false }
+                          : false}
+                        size="small"
+                      />
+                    ) : (
+                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有缺价的未出货款号" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </>
         ) : null}
         {activeStatistic === "unshipped" ? (
@@ -665,7 +770,7 @@ export default function ShoeStatisticsPage() {
         width={560}
         footer={null}
         onCancel={() => setOrderReferenceNode(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Table<DevelopmentNoOrderReference>
           rowKey={(record, index) => [

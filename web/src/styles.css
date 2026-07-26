@@ -1767,6 +1767,40 @@ a {
   min-width: 0;
 }
 
+.statistics-unpriced-section {
+  margin-top: 18px;
+}
+
+.statistics-unpriced-section .ant-typography {
+  margin-bottom: 10px;
+}
+
+.statistics-unpriced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.statistics-unpriced-panel {
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e0e6ef;
+  border-radius: 6px;
+}
+
+.statistics-unpriced-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.statistics-unpriced-heading .ant-typography {
+  margin-bottom: 0;
+}
+
 .statistics-modal-chart canvas {
   cursor: pointer;
 }
@@ -1982,6 +2016,10 @@ a {
   }
 
   .statistics-chart-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .statistics-unpriced-grid {
     grid-template-columns: 1fr;
   }
 

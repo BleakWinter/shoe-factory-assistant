@@ -14,6 +14,8 @@ import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoOrderR
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsAmountPoint;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsTimePoint;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnpricedShippedStyle;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnpricedUnshippedStyle;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnshippedInvoiceStatistic;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
@@ -468,7 +470,12 @@ public class OrderServiceImpl implements OrderService {
         PaymentStatistics paymentStatistics = buildPaymentStatistics();
         response.setTotalPaymentAmount(paymentStatistics.totalAmount());
         response.setUnpricedShippedPairs(paymentStatistics.unpricedShippedPairs());
+        response.setUnpricedShippedStyles(paymentStatistics.unpricedShippedStyles());
         response.setPaymentAmountTrend(paymentStatistics.trend());
+        UnpricedUnshippedStatistics unpricedUnshippedStatistics =
+                buildUnpricedUnshippedStatistics(details, shippedPairsByDetailId);
+        response.setUnpricedUnshippedPairs(unpricedUnshippedStatistics.totalPairs());
+        response.setUnpricedUnshippedStyles(unpricedUnshippedStatistics.styles());
         response.setUnshippedInvoiceStatistics(buildUnshippedInvoiceStatistics(details, ordersById, shippedPairsByDetailId));
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));
         response.setTopDevelopmentNos(buildTopDevelopmentNoStatistics(buckets.values()));
@@ -547,7 +554,7 @@ public class OrderServiceImpl implements OrderService {
                 .distinct()
                 .toList();
         if (detailIds.isEmpty()) {
-            return new PaymentStatistics(BigDecimal.ZERO, 0, buildAmountTimePoints(amountByDate));
+            return new PaymentStatistics(BigDecimal.ZERO, 0, List.of(), buildAmountTimePoints(amountByDate));
         }
 
         Map<Long, OrderRecordDetail> detailById = orderRecordDetailMapper.selectList(
@@ -570,6 +577,7 @@ public class OrderServiceImpl implements OrderService {
         Map<String, BigDecimal> priceByDevelopmentNo = loadShoePrices(detailById.values());
 
         int unpricedShippedPairs = 0;
+        Map<String, Integer> unpricedPairsByDevelopmentNo = new LinkedHashMap<>();
         for (ShippingNoteTaskItem taskItem : taskItems) {
             LocalDate shippingDate = shippingDateByTaskId.get(taskItem.getTaskId());
             OrderRecordDetail detail = detailById.get(taskItem.getSourceDetailId());
@@ -584,6 +592,12 @@ public class OrderServiceImpl implements OrderService {
                     normalizePaymentDevelopmentNo(detail.getDevelopmentNo()));
             if (shoePrice == null) {
                 unpricedShippedPairs += pairCount;
+                String developmentNo = normalizePaymentDevelopmentNo(detail.getDevelopmentNo());
+                unpricedPairsByDevelopmentNo.merge(
+                        hasText(developmentNo) ? developmentNo : "未填开发编号",
+                        pairCount,
+                        Integer::sum
+                );
                 continue;
             }
             BigDecimal detailAmount = shoePrice.multiply(BigDecimal.valueOf(pairCount));
@@ -593,7 +607,73 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal totalAmount = amountByDate.values()
                 .stream()
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new PaymentStatistics(totalAmount, unpricedShippedPairs, buildAmountTimePoints(amountByDate));
+        return new PaymentStatistics(
+                totalAmount,
+                unpricedShippedPairs,
+                buildUnpricedShippedStyles(unpricedPairsByDevelopmentNo),
+                buildAmountTimePoints(amountByDate)
+        );
+    }
+
+    private List<UnpricedShippedStyle> buildUnpricedShippedStyles(
+            Map<String, Integer> pairsByDevelopmentNo
+    ) {
+        return pairsByDevelopmentNo.entrySet()
+                .stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue()
+                        .reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .map(entry -> {
+                    UnpricedShippedStyle style = new UnpricedShippedStyle();
+                    style.setDevelopmentNo(entry.getKey());
+                    style.setShippedPairs(entry.getValue());
+                    return style;
+                })
+                .toList();
+    }
+
+    private UnpricedUnshippedStatistics buildUnpricedUnshippedStatistics(
+            List<OrderRecordDetail> details,
+            Map<Long, Integer> shippedPairsByDetailId
+    ) {
+        Map<String, BigDecimal> priceByDevelopmentNo = loadShoePrices(details);
+        Map<String, Integer> unpricedPairsByDevelopmentNo = new LinkedHashMap<>();
+        for (OrderRecordDetail detail : details) {
+            String developmentNo = normalizePaymentDevelopmentNo(detail.getDevelopmentNo());
+            if (priceByDevelopmentNo.containsKey(developmentNo)) {
+                continue;
+            }
+            int totalPairs = detailPairCount(detail);
+            int shippedPairs = detail.getId() == null
+                    ? 0
+                    : nullToZero(shippedPairsByDetailId.get(detail.getId()));
+            int unshippedPairs = Math.max(0, totalPairs - shippedPairs);
+            if (unshippedPairs <= 0) {
+                continue;
+            }
+            unpricedPairsByDevelopmentNo.merge(
+                    hasText(developmentNo) ? developmentNo : "未填开发编号",
+                    unshippedPairs,
+                    Integer::sum
+            );
+        }
+        List<UnpricedUnshippedStyle> styles = unpricedPairsByDevelopmentNo.entrySet()
+                .stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue()
+                        .reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .map(entry -> {
+                    UnpricedUnshippedStyle style = new UnpricedUnshippedStyle();
+                    style.setDevelopmentNo(entry.getKey());
+                    style.setUnshippedPairs(entry.getValue());
+                    return style;
+                })
+                .toList();
+        int totalPairs = unpricedPairsByDevelopmentNo.values()
+                .stream()
+                .mapToInt(Integer::intValue)
+                .sum();
+        return new UnpricedUnshippedStatistics(totalPairs, styles);
     }
 
     private Map<String, BigDecimal> loadShoePrices(Collection<OrderRecordDetail> details) {
@@ -866,11 +946,18 @@ public class OrderServiceImpl implements OrderService {
     private record PaymentStatistics(
             BigDecimal totalAmount,
             int unpricedShippedPairs,
+            List<UnpricedShippedStyle> unpricedShippedStyles,
             List<StatisticsAmountPoint> trend
     ) {
         private static PaymentStatistics empty() {
-            return new PaymentStatistics(BigDecimal.ZERO, 0, List.of());
+            return new PaymentStatistics(BigDecimal.ZERO, 0, List.of(), List.of());
         }
+    }
+
+    private record UnpricedUnshippedStatistics(
+            int totalPairs,
+            List<UnpricedUnshippedStyle> styles
+    ) {
     }
 
     private String normalizeStatisticsDevelopmentNo(String value) {
