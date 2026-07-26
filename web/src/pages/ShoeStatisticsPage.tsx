@@ -8,6 +8,7 @@ import type {
   DevelopmentNoOrderReference,
   DevelopmentNoStatisticNode,
   OrderStatistics,
+  ShippedOrderStatistic,
   StatisticsTimePoint,
   UnpricedShippedStyle,
   UnpricedUnshippedStyle,
@@ -94,6 +95,21 @@ interface UnshippedInvoiceRow extends UnshippedInvoiceStatistic {
   pendingDays?: number;
 }
 
+interface UnpricedShippedStyleRow {
+  key: string;
+  developmentNo: string;
+  periodKey: string;
+  periodLabel: string;
+  shippedPairs: number;
+}
+
+interface ShippedOrderStatisticRow {
+  key: string;
+  orderNo: string;
+  developmentNo: string;
+  shippedPairs: number;
+}
+
 function getNodeChildren(node?: DevelopmentNoStatisticNode) {
   return node?.children || [];
 }
@@ -178,6 +194,41 @@ function getPeriodLabel(period: string, granularity: TimeGranularity) {
   return period;
 }
 
+function buildUnpricedShippedStyleRows(
+  items: UnpricedShippedStyle[],
+  granularity: TimeGranularity,
+): UnpricedShippedStyleRow[] {
+  const rowsByKey = new Map<string, UnpricedShippedStyleRow>();
+  for (const item of items) {
+    const developmentNo = formatText(item.developmentNo);
+    const periodKey = item.shippingDate ? getPeriodKey(item.shippingDate, granularity) : "unknown";
+    const key = `${periodKey}::${developmentNo}`;
+    const row = rowsByKey.get(key);
+    if (row) {
+      row.shippedPairs += item.shippedPairs || 0;
+      continue;
+    }
+    rowsByKey.set(key, {
+      key,
+      developmentNo,
+      periodKey,
+      periodLabel: periodKey === "unknown" ? "-" : getPeriodLabel(periodKey, granularity),
+      shippedPairs: item.shippedPairs || 0,
+    });
+  }
+  return [...rowsByKey.values()].sort((left, right) => {
+    if (left.periodKey === "unknown") {
+      return right.periodKey === "unknown" ? right.shippedPairs - left.shippedPairs : 1;
+    }
+    if (right.periodKey === "unknown") {
+      return -1;
+    }
+    return right.periodKey.localeCompare(left.periodKey)
+      || right.shippedPairs - left.shippedPairs
+      || left.developmentNo.localeCompare(right.developmentNo, "zh-CN", { numeric: true });
+  });
+}
+
 function buildTrendChartData(points: StatisticsTimePoint[], granularity: TimeGranularity): TrendChartDatum[] {
   const valuesByPeriod = new Map<string, number>();
   for (const point of points) {
@@ -196,6 +247,40 @@ function buildTrendChartData(points: StatisticsTimePoint[], granularity: TimeGra
     }));
 }
 
+function buildShippedOrderStatisticRows(
+  items: ShippedOrderStatistic[],
+  granularity: TimeGranularity,
+  selectedPeriod: string | null,
+): ShippedOrderStatisticRow[] {
+  if (!selectedPeriod) {
+    return [];
+  }
+  const rowsByKey = new Map<string, ShippedOrderStatisticRow>();
+  for (const item of items) {
+    if (!item.shippingDate || getPeriodKey(item.shippingDate, granularity) !== selectedPeriod) {
+      continue;
+    }
+    const orderNo = formatText(item.orderNo);
+    const developmentNo = formatText(item.developmentNo);
+    const key = `${orderNo}::${developmentNo}`;
+    const row = rowsByKey.get(key);
+    if (row) {
+      row.shippedPairs += item.shippedPairs || 0;
+      continue;
+    }
+    rowsByKey.set(key, {
+      key,
+      orderNo,
+      developmentNo,
+      shippedPairs: item.shippedPairs || 0,
+    });
+  }
+  return [...rowsByKey.values()].sort(
+    (left, right) => left.orderNo.localeCompare(right.orderNo, "zh-CN", { numeric: true })
+      || left.developmentNo.localeCompare(right.developmentNo, "zh-CN", { numeric: true }),
+  );
+}
+
 export default function ShoeStatisticsPage() {
   const { message } = App.useApp();
   const [statistics, setStatistics] = useState<OrderStatistics | null>(null);
@@ -204,6 +289,7 @@ export default function ShoeStatisticsPage() {
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>("month");
   const [unshippedSortMode, setUnshippedSortMode] = useState<UnshippedSortMode>("pending");
   const [orderReferenceNode, setOrderReferenceNode] = useState<DevelopmentNoStatisticNode | null>(null);
+  const [selectedShippedPeriod, setSelectedShippedPeriod] = useState<string | null>(null);
 
   const loadStatistics = useCallback(async () => {
     setLoading(true);
@@ -214,6 +300,7 @@ export default function ShoeStatisticsPage() {
       setTimeGranularity("month");
       setUnshippedSortMode("pending");
       setOrderReferenceNode(null);
+      setSelectedShippedPeriod(null);
     } catch (error) {
       setStatistics(null);
       message.error(error instanceof Error ? error.message : "统计数据加载失败");
@@ -228,6 +315,7 @@ export default function ShoeStatisticsPage() {
 
   const openStatistic = useCallback((type: StatisticModalType) => {
     setActiveStatistic(type);
+    setSelectedShippedPeriod(null);
     if (type === "total" || type === "shipped" || type === "payment") {
       setTimeGranularity("month");
     }
@@ -249,6 +337,10 @@ export default function ShoeStatisticsPage() {
     [unshippedInvoiceBaseRows, unshippedSortMode],
   );
   const unshippedRankingRows = useMemo(() => unshippedInvoiceRows.slice(0, 12), [unshippedInvoiceRows]);
+  const unpricedShippedStyleRows = useMemo(
+    () => buildUnpricedShippedStyleRows(statistics?.unpricedShippedStyles || [], timeGranularity),
+    [statistics?.unpricedShippedStyles, timeGranularity],
+  );
   const maxUnshippedPairCount = useMemo(
     () => Math.max(1, ...unshippedRankingRows.map((row) => row.unshippedPairCount || 0)),
     [unshippedRankingRows],
@@ -291,6 +383,18 @@ export default function ShoeStatisticsPage() {
     () => buildTrendChartData(trendSource, timeGranularity),
     [timeGranularity, trendSource],
   );
+  const shippedOrderStatisticRows = useMemo(
+    () => buildShippedOrderStatisticRows(
+      statistics?.shippedOrderStatistics || [],
+      timeGranularity,
+      selectedShippedPeriod,
+    ),
+    [selectedShippedPeriod, statistics?.shippedOrderStatistics, timeGranularity],
+  );
+  const selectedShippedPairs = useMemo(
+    () => shippedOrderStatisticRows.reduce((total, row) => total + row.shippedPairs, 0),
+    [shippedOrderStatisticRows],
+  );
   const isPaymentTrend = activeStatistic === "payment";
   const trendUnit = isPaymentTrend ? "元" : "双";
   const trendTooltipName = activeStatistic === "total"
@@ -324,6 +428,31 @@ export default function ShoeStatisticsPage() {
         title: "未出货",
         dataIndex: "unshippedPairCount",
         key: "unshippedPairCount",
+        align: "right" as const,
+        render: (value?: number) => `${formatCount(value)} 双`,
+      },
+    ],
+    [],
+  );
+  const shippedOrderStatisticColumns = useMemo<ColumnsType<ShippedOrderStatisticRow>>(
+    () => [
+      {
+        title: "订单流水号",
+        dataIndex: "orderNo",
+        key: "orderNo",
+        ellipsis: true,
+      },
+      {
+        title: "开发款号",
+        dataIndex: "developmentNo",
+        key: "developmentNo",
+        ellipsis: true,
+      },
+      {
+        title: "出货双数",
+        dataIndex: "shippedPairs",
+        key: "shippedPairs",
+        width: 120,
         align: "right" as const,
         render: (value?: number) => `${formatCount(value)} 双`,
       },
@@ -368,6 +497,18 @@ export default function ShoeStatisticsPage() {
       fill: activeStatistic === "total" ? "#2f6df6" : activeStatistic === "payment" ? "#b45309" : "#0f766e",
       radiusTopLeft: 4,
       radiusTopRight: 4,
+      cursor: activeStatistic === "shipped" ? "pointer" : "default",
+    },
+    onReady: (chart) => {
+      if (activeStatistic !== "shipped") {
+        return;
+      }
+      chart.on("element:click", (event: { data?: { data?: TrendChartDatum } }) => {
+        const datum = event?.data?.data;
+        if (datum?.key) {
+          setSelectedShippedPeriod(datum.key);
+        }
+      });
     },
   }), [activeStatistic, isPaymentTrend, timeGranularity, trendChartData, trendTooltipName, trendUnit]);
 
@@ -476,12 +617,17 @@ export default function ShoeStatisticsPage() {
     ],
     [],
   );
-  const unpricedStyleColumns = useMemo<ColumnsType<UnpricedShippedStyle>>(
+  const unpricedPeriodColumnTitle = timeGranularity === "year"
+    ? "出货年份"
+    : timeGranularity === "month"
+      ? "出货月份"
+      : "出货日期";
+  const unpricedStyleColumns = useMemo<ColumnsType<UnpricedShippedStyleRow>>(
     () => [
       {
         title: "序号",
         key: "rank",
-        width: 72,
+        width: 58,
         align: "center" as const,
         render: (_value, _record, index) => index + 1,
       },
@@ -492,15 +638,21 @@ export default function ShoeStatisticsPage() {
         render: (value?: string) => formatText(value),
       },
       {
+        title: unpricedPeriodColumnTitle,
+        dataIndex: "periodLabel",
+        key: "periodLabel",
+        width: timeGranularity === "day" ? 126 : 112,
+      },
+      {
         title: "未计价出货双数",
         dataIndex: "shippedPairs",
         key: "shippedPairs",
-        width: 180,
+        width: 144,
         align: "right" as const,
         render: (value?: number) => `${formatCount(value)} 双`,
       },
     ],
-    [],
+    [timeGranularity, unpricedPeriodColumnTitle],
   );
   const unpricedUnshippedStyleColumns = useMemo<ColumnsType<UnpricedUnshippedStyle>>(
     () => [
@@ -579,9 +731,18 @@ export default function ShoeStatisticsPage() {
       <Modal
         open={!!activeStatistic}
         title={activeStatistic ? modalTitleMap[activeStatistic] : ""}
-        width={activeStatistic === "unshipped" ? 980 : activeStatistic === "styles" ? 860 : 920}
+        width={activeStatistic === "payment"
+          ? 1120
+          : activeStatistic === "unshipped"
+            ? 980
+            : activeStatistic === "styles"
+              ? 860
+              : 920}
         footer={null}
-        onCancel={() => setActiveStatistic(null)}
+        onCancel={() => {
+          setActiveStatistic(null);
+          setSelectedShippedPeriod(null);
+        }}
         destroyOnHidden
       >
         {activeStatistic && (activeStatistic === "total" || activeStatistic === "shipped" || activeStatistic === "payment") ? (
@@ -594,10 +755,17 @@ export default function ShoeStatisticsPage() {
                     ? `，另有 ${formatCount(statistics.unpricedShippedPairs)} 双未配置单价`
                     : ""}
                 </Typography.Text>
+              ) : activeStatistic === "shipped" ? (
+                <Typography.Text type="secondary" className="statistics-payment-note">
+                  点击柱状图，查看对应的订单流水号、开发款号和出货双数
+                </Typography.Text>
               ) : null}
               <Segmented
                 value={timeGranularity}
-                onChange={(value) => setTimeGranularity(value as TimeGranularity)}
+                onChange={(value) => {
+                  setTimeGranularity(value as TimeGranularity);
+                  setSelectedShippedPeriod(null);
+                }}
                 options={[
                   { label: "年", value: "year" },
                   { label: "月", value: "month" },
@@ -625,12 +793,12 @@ export default function ShoeStatisticsPage() {
                         {formatCount(statistics?.unpricedShippedPairs)} 双未计入货款
                       </Typography.Text>
                     </div>
-                    {statistics?.unpricedShippedStyles?.length ? (
-                      <Table<UnpricedShippedStyle>
-                        rowKey="developmentNo"
+                    {unpricedShippedStyleRows.length ? (
+                      <Table<UnpricedShippedStyleRow>
+                        rowKey="key"
                         columns={unpricedStyleColumns}
-                        dataSource={statistics.unpricedShippedStyles}
-                        pagination={statistics.unpricedShippedStyles.length > 6
+                        dataSource={unpricedShippedStyleRows}
+                        pagination={unpricedShippedStyleRows.length > 6
                           ? { pageSize: 6, showSizeChanger: false }
                           : false}
                         size="small"
@@ -643,7 +811,7 @@ export default function ShoeStatisticsPage() {
                     <div className="statistics-unpriced-heading">
                       <Typography.Text strong>未出货</Typography.Text>
                       <Typography.Text type="secondary">
-                        {formatCount(statistics?.unpricedUnshippedPairs)} 双待出货
+                        {formatCount(statistics?.unpricedUnshippedPairs)} 双待出货，暂无出货日期
                       </Typography.Text>
                     </div>
                     {statistics?.unpricedUnshippedStyles?.length ? (
@@ -759,6 +927,31 @@ export default function ShoeStatisticsPage() {
             })}
           />
         ) : null}
+      </Modal>
+      <Modal
+        open={activeStatistic === "shipped" && !!selectedShippedPeriod}
+        title={selectedShippedPeriod
+          ? `${getPeriodLabel(selectedShippedPeriod, timeGranularity)}出货明细`
+          : "出货明细"}
+        width={720}
+        footer={null}
+        onCancel={() => setSelectedShippedPeriod(null)}
+        destroyOnHidden
+      >
+        <Typography.Paragraph type="secondary">
+          共 {formatCount(shippedOrderStatisticRows.length)} 条，合计 {formatCount(selectedShippedPairs)} 双
+        </Typography.Paragraph>
+        <Table<ShippedOrderStatisticRow>
+          rowKey="key"
+          columns={shippedOrderStatisticColumns}
+          dataSource={shippedOrderStatisticRows}
+          pagination={shippedOrderStatisticRows.length > 10
+            ? { pageSize: 10, showSizeChanger: false }
+            : false}
+          size="small"
+          className="statistics-order-reference-table"
+          locale={{ emptyText: "该时间段暂无出货明细" }}
+        />
       </Modal>
       <Modal
         open={!!orderReferenceNode}

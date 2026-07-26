@@ -20,6 +20,7 @@ public class OrderStatisticsResponse {
     private List<UnpricedUnshippedStyle> unpricedUnshippedStyles = new ArrayList<>();
     private List<StatisticsTimePoint> orderCreatedTrend = new ArrayList<>();
     private List<StatisticsTimePoint> shippedPairsTrend = new ArrayList<>();
+    private List<ShippedOrderStatistic> shippedOrderStatistics = new ArrayList<>();
     private List<StatisticsAmountPoint> paymentAmountTrend = new ArrayList<>();
     private List<UnshippedInvoiceStatistic> unshippedInvoiceStatistics = new ArrayList<>();
     private List<DevelopmentNoStatisticNode> developmentNoTree = new ArrayList<>();
@@ -62,6 +63,10 @@ public class OrderStatisticsResponse {
     public List<StatisticsTimePoint> getShippedPairsTrend() { return shippedPairsTrend; }
     public void setShippedPairsTrend(List<StatisticsTimePoint> shippedPairsTrend) {
         this.shippedPairsTrend = shippedPairsTrend;
+    }
+    public List<ShippedOrderStatistic> getShippedOrderStatistics() { return shippedOrderStatistics; }
+    public void setShippedOrderStatistics(List<ShippedOrderStatistic> shippedOrderStatistics) {
+        this.shippedOrderStatistics = shippedOrderStatistics;
     }
     public List<StatisticsAmountPoint> getPaymentAmountTrend() { return paymentAmountTrend; }
     public void setPaymentAmountTrend(List<StatisticsAmountPoint> paymentAmountTrend) {
@@ -139,12 +144,31 @@ public class OrderStatisticsResponse {
         public void setValue(BigDecimal value) { this.value = value; }
     }
 
+    public static class ShippedOrderStatistic {
+        private LocalDate shippingDate;
+        private String orderNo;
+        private String developmentNo;
+        private Integer shippedPairs;
+
+        public LocalDate getShippingDate() { return shippingDate; }
+        public void setShippingDate(LocalDate shippingDate) { this.shippingDate = shippingDate; }
+        public String getOrderNo() { return orderNo; }
+        public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+        public String getDevelopmentNo() { return developmentNo; }
+        public void setDevelopmentNo(String developmentNo) { this.developmentNo = developmentNo; }
+        public Integer getShippedPairs() { return shippedPairs; }
+        public void setShippedPairs(Integer shippedPairs) { this.shippedPairs = shippedPairs; }
+    }
+
     public static class UnpricedShippedStyle {
         private String developmentNo;
+        private LocalDate shippingDate;
         private Integer shippedPairs;
 
         public String getDevelopmentNo() { return developmentNo; }
         public void setDevelopmentNo(String developmentNo) { this.developmentNo = developmentNo; }
+        public LocalDate getShippingDate() { return shippingDate; }
+        public void setShippingDate(LocalDate shippingDate) { this.shippingDate = shippingDate; }
         public Integer getShippedPairs() { return shippedPairs; }
         public void setShippedPairs(Integer shippedPairs) { this.shippedPairs = shippedPairs; }
     }

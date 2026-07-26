@@ -120,12 +120,20 @@ export interface UnshippedInvoiceStatistic {
 
 export interface UnpricedShippedStyle {
   developmentNo: string;
+  shippingDate: string;
   shippedPairs: number;
 }
 
 export interface UnpricedUnshippedStyle {
   developmentNo: string;
   unshippedPairs: number;
+}
+
+export interface ShippedOrderStatistic {
+  shippingDate: string;
+  orderNo?: string;
+  developmentNo?: string;
+  shippedPairs: number;
 }
 
 export interface OrderStatistics {
@@ -141,6 +149,7 @@ export interface OrderStatistics {
   unpricedUnshippedStyles?: UnpricedUnshippedStyle[];
   orderCreatedTrend?: StatisticsTimePoint[];
   shippedPairsTrend?: StatisticsTimePoint[];
+  shippedOrderStatistics?: ShippedOrderStatistic[];
   paymentAmountTrend?: StatisticsTimePoint[];
   unshippedInvoiceStatistics?: UnshippedInvoiceStatistic[];
   developmentNoTree: DevelopmentNoStatisticNode[];

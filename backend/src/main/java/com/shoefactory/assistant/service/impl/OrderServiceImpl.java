@@ -12,6 +12,7 @@ import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoOrderReference;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.ShippedOrderStatistic;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsAmountPoint;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsTimePoint;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnpricedShippedStyle;
@@ -467,6 +468,7 @@ public class OrderServiceImpl implements OrderService {
         response.setDetailCount(details.size());
         response.setOrderCreatedTrend(buildOrderCreatedTrend());
         response.setShippedPairsTrend(buildShippedPairsTrend());
+        response.setShippedOrderStatistics(buildShippedOrderStatistics(details, ordersById));
         PaymentStatistics paymentStatistics = buildPaymentStatistics();
         response.setTotalPaymentAmount(paymentStatistics.totalAmount());
         response.setUnpricedShippedPairs(paymentStatistics.unpricedShippedPairs());
@@ -514,6 +516,103 @@ public class OrderServiceImpl implements OrderService {
             valuesByDate.merge(date, nullToZero(task.getTotalPairs()), Integer::sum);
         }
         return buildTimePoints(valuesByDate);
+    }
+
+    private List<ShippedOrderStatistic> buildShippedOrderStatistics(
+            List<OrderRecordDetail> details,
+            Map<Long, OrderRecord> ordersById
+    ) {
+        List<ShippingNoteTask> tasks = shippingNoteTaskMapper.selectList(new LambdaQueryWrapper<ShippingNoteTask>()
+                .select(
+                        ShippingNoteTask::getId,
+                        ShippingNoteTask::getShippingDate,
+                        ShippingNoteTask::getCreatedAt
+                ));
+        Map<Long, LocalDate> shippingDateByTaskId = new LinkedHashMap<>();
+        for (ShippingNoteTask task : tasks) {
+            LocalDate shippingDate = task.getShippingDate();
+            if (shippingDate == null && task.getCreatedAt() != null) {
+                shippingDate = task.getCreatedAt().toLocalDate();
+            }
+            if (task.getId() != null && shippingDate != null) {
+                shippingDateByTaskId.put(task.getId(), shippingDate);
+            }
+        }
+        if (shippingDateByTaskId.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, OrderRecordDetail> detailById = details.stream()
+                .filter(detail -> detail.getId() != null)
+                .collect(Collectors.toMap(
+                        OrderRecordDetail::getId,
+                        detail -> detail,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
+                new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                        .select(
+                                ShippingNoteTaskItem::getTaskId,
+                                ShippingNoteTaskItem::getOrderId,
+                                ShippingNoteTaskItem::getSourceDetailId
+                        )
+                        .in(ShippingNoteTaskItem::getTaskId, shippingDateByTaskId.keySet())
+        );
+        Map<ShippedOrderStatisticKey, Integer> pairsByOrder = new LinkedHashMap<>();
+        for (ShippingNoteTaskItem taskItem : taskItems) {
+            LocalDate shippingDate = shippingDateByTaskId.get(taskItem.getTaskId());
+            OrderRecordDetail detail = detailById.get(taskItem.getSourceDetailId());
+            if (shippingDate == null || detail == null) {
+                continue;
+            }
+            int pairCount = detailPairCount(detail);
+            if (pairCount <= 0) {
+                continue;
+            }
+            Long orderId = detail.getOrderId() == null ? taskItem.getOrderId() : detail.getOrderId();
+            OrderRecord order = orderId == null ? null : ordersById.get(orderId);
+            String orderNo = cleanStatisticText(order == null ? null : order.getOrderNo());
+            if (!hasText(orderNo)) {
+                orderNo = cleanStatisticText(detail.getCustomerOrderNo());
+            }
+            pairsByOrder.merge(
+                    new ShippedOrderStatisticKey(
+                            shippingDate,
+                            orderNo,
+                            normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo())
+                    ),
+                    pairCount,
+                    Integer::sum
+            );
+        }
+        return pairsByOrder.entrySet()
+                .stream()
+                .map(entry -> {
+                    ShippedOrderStatistic statistic = new ShippedOrderStatistic();
+                    statistic.setShippingDate(entry.getKey().shippingDate());
+                    statistic.setOrderNo(entry.getKey().orderNo());
+                    statistic.setDevelopmentNo(entry.getKey().developmentNo());
+                    statistic.setShippedPairs(entry.getValue());
+                    return statistic;
+                })
+                .sorted(Comparator.comparing(
+                                ShippedOrderStatistic::getShippingDate,
+                                Comparator.reverseOrder())
+                        .thenComparing(
+                                ShippedOrderStatistic::getOrderNo,
+                                Comparator.nullsLast(String::compareTo))
+                        .thenComparing(
+                                ShippedOrderStatistic::getDevelopmentNo,
+                                Comparator.nullsLast(String::compareTo)))
+                .toList();
+    }
+
+    private record ShippedOrderStatisticKey(
+            LocalDate shippingDate,
+            String orderNo,
+            String developmentNo
+    ) {
     }
 
     private PaymentStatistics buildPaymentStatistics() {
@@ -577,7 +676,7 @@ public class OrderServiceImpl implements OrderService {
         Map<String, BigDecimal> priceByDevelopmentNo = loadShoePrices(detailById.values());
 
         int unpricedShippedPairs = 0;
-        Map<String, Integer> unpricedPairsByDevelopmentNo = new LinkedHashMap<>();
+        Map<UnpricedShippedStyleDateKey, Integer> unpricedPairsByStyleAndDate = new LinkedHashMap<>();
         for (ShippingNoteTaskItem taskItem : taskItems) {
             LocalDate shippingDate = shippingDateByTaskId.get(taskItem.getTaskId());
             OrderRecordDetail detail = detailById.get(taskItem.getSourceDetailId());
@@ -593,8 +692,11 @@ public class OrderServiceImpl implements OrderService {
             if (shoePrice == null) {
                 unpricedShippedPairs += pairCount;
                 String developmentNo = normalizePaymentDevelopmentNo(detail.getDevelopmentNo());
-                unpricedPairsByDevelopmentNo.merge(
-                        hasText(developmentNo) ? developmentNo : "未填开发编号",
+                unpricedPairsByStyleAndDate.merge(
+                        new UnpricedShippedStyleDateKey(
+                                hasText(developmentNo) ? developmentNo : "未填开发编号",
+                                shippingDate
+                        ),
                         pairCount,
                         Integer::sum
                 );
@@ -610,26 +712,37 @@ public class OrderServiceImpl implements OrderService {
         return new PaymentStatistics(
                 totalAmount,
                 unpricedShippedPairs,
-                buildUnpricedShippedStyles(unpricedPairsByDevelopmentNo),
+                buildUnpricedShippedStyles(unpricedPairsByStyleAndDate),
                 buildAmountTimePoints(amountByDate)
         );
     }
 
     private List<UnpricedShippedStyle> buildUnpricedShippedStyles(
-            Map<String, Integer> pairsByDevelopmentNo
+            Map<UnpricedShippedStyleDateKey, Integer> pairsByStyleAndDate
     ) {
-        return pairsByDevelopmentNo.entrySet()
+        return pairsByStyleAndDate.entrySet()
                 .stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue()
-                        .reversed()
-                        .thenComparing(Map.Entry.comparingByKey()))
                 .map(entry -> {
                     UnpricedShippedStyle style = new UnpricedShippedStyle();
-                    style.setDevelopmentNo(entry.getKey());
+                    style.setDevelopmentNo(entry.getKey().developmentNo());
+                    style.setShippingDate(entry.getKey().shippingDate());
                     style.setShippedPairs(entry.getValue());
                     return style;
                 })
+                .sorted(Comparator.comparing(
+                                UnpricedShippedStyle::getShippingDate,
+                                Comparator.reverseOrder())
+                        .thenComparing(Comparator.comparingInt(
+                                        (UnpricedShippedStyle style) -> nullToZero(style.getShippedPairs()))
+                                .reversed())
+                        .thenComparing(UnpricedShippedStyle::getDevelopmentNo))
                 .toList();
+    }
+
+    private record UnpricedShippedStyleDateKey(
+            String developmentNo,
+            LocalDate shippingDate
+    ) {
     }
 
     private UnpricedUnshippedStatistics buildUnpricedUnshippedStatistics(
