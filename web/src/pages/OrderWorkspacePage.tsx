@@ -341,7 +341,18 @@ export default function OrderWorkspacePage() {
 
   const columns = useMemo<ColumnsType<OrderRecord>>(
     () => [
-      { title: "订单流水号", dataIndex: "orderNo", width: 170, fixed: "left", render: formatEmpty },
+      {
+        title: "订单流水号",
+        dataIndex: "orderNo",
+        width: 190,
+        fixed: "left",
+        render: (value, record) => (
+          <Space size={6}>
+            <span>{formatEmpty(value)}</span>
+            {(record.partCount || 0) > 1 ? <Tag color="blue">{record.partCount}份</Tag> : null}
+          </Space>
+        ),
+      },
       { title: "开发编号", dataIndex: "developmentNoList", width: 170, render: renderDevelopmentNos },
       { title: "订单总双数", dataIndex: "totalQuantity", width: 120, align: "right", render: formatEmpty },
       { title: "总箱数", dataIndex: "totalCartonCount", width: 100, align: "right", render: formatEmpty },
@@ -402,6 +413,13 @@ export default function OrderWorkspacePage() {
             <Tag>无图</Tag>
           ),
       },
+      {
+        title: "来源份数",
+        dataIndex: "partNo",
+        width: 100,
+        fixed: "left",
+        render: (value?: number) => value ? <Tag color="blue">第{value}份</Tag> : "-",
+      },
       { title: "开发编号", dataIndex: "developmentNo", width: 150, fixed: "left", render: formatEmpty },
       { title: "楦头", dataIndex: "lastNo", width: 110, render: formatEmpty },
       { title: "客人", dataIndex: "customerName", width: 150, render: formatEmpty },
@@ -441,6 +459,13 @@ export default function OrderWorkspacePage() {
             <Tag>无图</Tag>
           ),
       },
+      {
+        title: "来源份数",
+        dataIndex: "partNo",
+        width: 100,
+        fixed: "left",
+        render: (value?: number) => value ? <Tag color="blue">第{value}份</Tag> : "-",
+      },
       { title: "公司款号", dataIndex: "companyStyleNo", width: 150, fixed: "left", render: formatEmpty },
       { title: "客人", dataIndex: "customerName", width: 130, render: formatEmpty },
       { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
@@ -473,7 +498,7 @@ export default function OrderWorkspacePage() {
         <div>
           <Typography.Title level={3}>订单列表</Typography.Title>
           <Typography.Text type="secondary">
-            上传后先进入待识别状态，按需要分别识别订单明细和装箱单明细。
+            同一流水号的追加文件合并为一条订单显示，识别时会处理全部份数。
           </Typography.Text>
         </div>
       </div>
@@ -565,7 +590,7 @@ export default function OrderWorkspacePage() {
                   columns={detailColumns}
                   dataSource={details}
                   pagination={{ pageSize: 5, showSizeChanger: false }}
-                  scroll={{ x: 3330 }}
+                  scroll={{ x: 3430 }}
                   className="data-table"
                   expandable={{
                     expandedRowRender: (record) => renderProcesses(record.processes),
@@ -584,7 +609,7 @@ export default function OrderWorkspacePage() {
                   columns={packingDetailColumns}
                   dataSource={packingDetails}
                   pagination={{ pageSize: 5, showSizeChanger: false }}
-                  scroll={{ x: 2140 }}
+                  scroll={{ x: 2240 }}
                   className="data-table"
                 />
               ),

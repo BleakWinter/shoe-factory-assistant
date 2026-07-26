@@ -339,7 +339,10 @@ export default function ShippingNotePrintPage() {
     if (!hideGeneratedShippingNotes) {
       return orders;
     }
-    return orders.filter((order) => !fullyGeneratedOrderIdSet.has(order.id));
+    return orders.filter((order) => {
+      const partOrderIds = order.partOrderIds?.length ? order.partOrderIds : [order.id];
+      return !partOrderIds.every((orderId) => fullyGeneratedOrderIdSet.has(orderId));
+    });
   }, [fullyGeneratedOrderIdSet, hideGeneratedShippingNotes, orders]);
   const previewItems = useMemo(() => getTaskPackingItems(previewTask), [previewTask]);
   const previewTotalPairs = useMemo(() => sumShippingNotePairs(previewItems), [previewItems]);
@@ -394,7 +397,9 @@ export default function ShippingNotePrintPage() {
         setGeneratedSummary(emptyGeneratedSummary);
         return;
       }
-      const orderIds = nextOrders.map((order) => order.id).filter((id): id is number => Boolean(id));
+      const orderIds = Array.from(new Set(
+        nextOrders.flatMap((order) => order.partOrderIds?.length ? order.partOrderIds : [order.id]),
+      )).filter((id): id is number => Boolean(id));
       if (orderIds.length === 0) {
         setGeneratedSummaryLoading(false);
         setGeneratedSummary(emptyGeneratedSummary);

@@ -210,6 +210,14 @@ export default function OrderDetailPage() {
             },
 
             {
+                title: "来源份数",
+                dataIndex: "partNo",
+                width: 100,
+                fixed: "left",
+                render: (value?: number) => value ? <Tag color="blue">第{value}份</Tag> : "-",
+            },
+
+            {
                 title: "开发编号",
                 dataIndex: "developmentNo",
                 width: 150,
@@ -441,6 +449,14 @@ export default function OrderDetailPage() {
             },
 
             {
+                title: "来源份数",
+                dataIndex: "partNo",
+                width: 100,
+                fixed: "left",
+                render: (value?: number) => value ? <Tag color="blue">第{value}份</Tag> : "-",
+            },
+
+            {
                 title: "公司款号",
                 dataIndex: "companyStyleNo",
                 width: 150,
@@ -594,7 +610,7 @@ export default function OrderDetailPage() {
                                         pageSize: 20,
                                         showSizeChanger: true,
                                     }}
-                                    scroll={{ x: 3700 }}
+                                    scroll={{ x: 3800 }}
                                     className="data-table"
                                 />
                             ),
@@ -631,7 +647,7 @@ export default function OrderDetailPage() {
                                             pageSize: 20,
                                             showSizeChanger: true,
                                         }}
-                                        scroll={{ x: 2140 }}
+                                        scroll={{ x: 2240 }}
                                         className="data-table"
                                     />
                                 </div>

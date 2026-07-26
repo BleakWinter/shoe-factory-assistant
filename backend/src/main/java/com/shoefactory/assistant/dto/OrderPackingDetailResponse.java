@@ -17,6 +17,7 @@ public class OrderPackingDetailResponse {
 
     private Long id;
     private Long orderId;
+    private Integer partNo;
     private Integer lineNo;
     private String imageUrl;
     private String companyStyleNo;
@@ -82,6 +83,8 @@ public class OrderPackingDetailResponse {
     public void setId(Long id) { this.id = id; }
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
+    public Integer getPartNo() { return partNo; }
+    public void setPartNo(Integer partNo) { this.partNo = partNo; }
     public Integer getLineNo() { return lineNo; }
     public void setLineNo(Integer lineNo) { this.lineNo = lineNo; }
     public String getImageUrl() { return imageUrl; }

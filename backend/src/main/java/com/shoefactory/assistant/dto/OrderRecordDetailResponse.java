@@ -21,6 +21,7 @@ public class OrderRecordDetailResponse {
     private Long id;
     private Long orderId;
     private String orderNo;
+    private Integer partNo;
     private Integer lineNo;
     private String lastNo;
     private String developmentNo;
@@ -125,6 +126,8 @@ public class OrderRecordDetailResponse {
     public void setOrderId(Long orderId) { this.orderId = orderId; }
     public String getOrderNo() { return orderNo; }
     public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+    public Integer getPartNo() { return partNo; }
+    public void setPartNo(Integer partNo) { this.partNo = partNo; }
     public Integer getLineNo() { return lineNo; }
     public void setLineNo(Integer lineNo) { this.lineNo = lineNo; }
     public String getLastNo() { return lastNo; }

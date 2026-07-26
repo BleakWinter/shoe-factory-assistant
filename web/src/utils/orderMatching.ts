@@ -49,6 +49,9 @@ function isPackingRangeInsideOrderRange(detail: OrderRecordDetail, packingDetail
 }
 
 export function isMatchingPackingDetail(detail: OrderRecordDetail, packingDetail: OrderPackingDetail) {
+  if (detail.orderId && packingDetail.orderId && detail.orderId !== packingDetail.orderId) {
+    return false;
+  }
   return isPackingRangeInsideOrderRange(detail, packingDetail);
 }
 

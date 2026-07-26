@@ -30,6 +30,8 @@ public class OrderRecordResponse {
     private String orderErrorMessage;
     private String packingErrorMessage;
     private LocalDateTime createdAt;
+    private Integer partCount;
+    private List<Long> partOrderIds;
 
     public static OrderRecordResponse from(OrderRecord order) {
         OrderRecordResponse response = new OrderRecordResponse();
@@ -219,5 +221,21 @@ public class OrderRecordResponse {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Integer getPartCount() {
+        return partCount;
+    }
+
+    public void setPartCount(Integer partCount) {
+        this.partCount = partCount;
+    }
+
+    public List<Long> getPartOrderIds() {
+        return partOrderIds == null ? List.of() : partOrderIds;
+    }
+
+    public void setPartOrderIds(List<Long> partOrderIds) {
+        this.partOrderIds = partOrderIds == null ? List.of() : partOrderIds;
     }
 }

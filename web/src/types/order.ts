@@ -59,6 +59,8 @@ export interface OrderRecord {
   orderErrorMessage?: string;
   packingErrorMessage?: string;
   createdAt?: string;
+  partCount?: number;
+  partOrderIds?: number[];
 }
 
 export interface OrderRecordQueryParams {
@@ -152,6 +154,7 @@ export interface OrderRecordDetail {
   id: number;
   orderId: number;
   orderNo?: string;
+  partNo?: number;
   lineNo?: number;
   lastNo?: string;
   developmentNo?: string;
@@ -187,6 +190,7 @@ export interface OrderPackingDetail {
   // 对应 order_packing_detail。
   id: number;
   orderId: number;
+  partNo?: number;
   lineNo?: number;
   imageUrl?: string;
   companyStyleNo?: string;
