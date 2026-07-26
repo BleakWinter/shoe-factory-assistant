@@ -78,6 +78,12 @@ interface TrendChartDatum {
   value: number;
 }
 
+interface TrendChartClickEvent {
+  data?: {
+    data?: TrendChartDatum | TrendChartDatum[];
+  };
+}
+
 interface StyleRankingRow {
   rank: number;
   key: string;
@@ -503,10 +509,13 @@ export default function ShoeStatisticsPage() {
       if (activeStatistic !== "shipped") {
         return;
       }
-      chart.on("element:click", (event: { data?: { data?: TrendChartDatum } }) => {
-        const datum = event?.data?.data;
-        if (datum?.key) {
-          setSelectedShippedPeriod(datum.key);
+      chart.on("element:click", (event: TrendChartClickEvent) => {
+        const eventData = event?.data?.data;
+        const datum = Array.isArray(eventData) ? eventData[0] : eventData;
+        const periodKey = datum?.key
+          || trendChartData.find((item) => item.label === datum?.label)?.key;
+        if (periodKey) {
+          setSelectedShippedPeriod(periodKey);
         }
       });
     },
@@ -777,7 +786,10 @@ export default function ShoeStatisticsPage() {
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
             ) : (
               <div className="statistics-modal-chart">
-                <Column {...trendColumnConfig} />
+                <Column
+                  key={`${activeStatistic}-${timeGranularity}`}
+                  {...trendColumnConfig}
+                />
               </div>
             )}
             {activeStatistic === "payment" ? (
