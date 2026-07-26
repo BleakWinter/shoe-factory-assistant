@@ -1194,7 +1194,8 @@ public class OrderServiceImpl implements OrderService {
                 .eq(OrderRecord::getOrderNo, orderNo)
                 .last("LIMIT 1"));
         if (existing != null) {
-            throw new BusinessException("订单流水号 " + orderNo + " 已经上传过，请在对应记录上点“重新上传”。");
+            throw new BusinessException("订单流水号 " + orderNo
+                    + " 已存在，请找到对应订单，根据实际情况选择“追加一份”或“重新上传”。");
         }
     }
 
