@@ -62,6 +62,7 @@ public class PrintPreviewServiceImpl implements PrintPreviewService {
 
         Path targetPdf = fileStorageUtil.allocateOrderPdfPath(
                 order.getOrderNo(),
+                order.getId(),
                 printType.name().toLowerCase(Locale.ROOT)
         );
         LocalDateTime now = LocalDateTime.now();

@@ -1532,7 +1532,7 @@ a {
 /* Statistics dashboard. */
 .statistics-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
@@ -1566,6 +1566,13 @@ a {
 
 .statistics-metric .ant-statistic-content {
   color: #152033;
+}
+
+.statistics-metric-note {
+  display: block;
+  min-height: 22px;
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .statistics-grid {
@@ -1745,8 +1752,19 @@ a {
 
 .statistics-modal-controls {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
   margin-bottom: 12px;
+}
+
+.statistics-modal-controls:has(> .ant-segmented:first-child) {
+  justify-content: flex-end;
+}
+
+.statistics-payment-note {
+  min-width: 0;
 }
 
 .statistics-modal-chart canvas {

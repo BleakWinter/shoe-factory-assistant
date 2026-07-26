@@ -16,6 +16,13 @@ function formatCount(value?: number) {
   return new Intl.NumberFormat("zh-CN").format(value || 0);
 }
 
+function formatAmount(value?: number) {
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+}
+
 function formatText(value?: string) {
   return value?.trim() || "-";
 }
@@ -58,7 +65,7 @@ function formatPendingDays(value?: number) {
   return value === 0 ? "今天" : `${formatCount(value)} 天`;
 }
 
-type StatisticModalType = "total" | "shipped" | "unshipped" | "styles";
+type StatisticModalType = "total" | "shipped" | "payment" | "unshipped" | "styles";
 type TimeGranularity = "year" | "month" | "day";
 type UnshippedSortMode = "pending" | "pairs";
 
@@ -219,7 +226,7 @@ export default function ShoeStatisticsPage() {
 
   const openStatistic = useCallback((type: StatisticModalType) => {
     setActiveStatistic(type);
-    if (type === "total" || type === "shipped") {
+    if (type === "total" || type === "shipped" || type === "payment") {
       setTimeGranularity("month");
     }
     if (type === "unshipped") {
@@ -261,6 +268,7 @@ export default function ShoeStatisticsPage() {
   const modalTitleMap: Record<StatisticModalType, string> = {
     total: "创建订单双数趋势",
     shipped: "出货对数趋势",
+    payment: "出货总货款趋势",
     unshipped: "未出货发票排序",
     styles: "款号数量排名",
   };
@@ -274,13 +282,20 @@ export default function ShoeStatisticsPage() {
     ? statistics?.orderCreatedTrend || []
     : activeStatistic === "shipped"
       ? statistics?.shippedPairsTrend || []
+      : activeStatistic === "payment"
+        ? statistics?.paymentAmountTrend || []
       : [];
   const trendChartData = useMemo(
     () => buildTrendChartData(trendSource, timeGranularity),
     [timeGranularity, trendSource],
   );
-  const trendUnit = "双";
-  const trendTooltipName = activeStatistic === "total" ? "创建订单双数" : "出货对数";
+  const isPaymentTrend = activeStatistic === "payment";
+  const trendUnit = isPaymentTrend ? "元" : "双";
+  const trendTooltipName = activeStatistic === "total"
+    ? "创建订单双数"
+    : activeStatistic === "payment"
+      ? "出货总货款"
+      : "出货对数";
   const orderReferenceColumns = useMemo<ColumnsType<DevelopmentNoOrderReference>>(
     () => [
       {
@@ -330,11 +345,13 @@ export default function ShoeStatisticsPage() {
       },
       y: {
         title: false,
-        labelFormatter: (value: number) => formatCount(value),
+        labelFormatter: (value: number) => isPaymentTrend ? `¥${formatCount(value)}` : formatCount(value),
       },
     },
     label: {
-      text: (datum: TrendChartDatum) => `${formatCount(datum.value)}${trendUnit}`,
+      text: (datum: TrendChartDatum) => isPaymentTrend
+        ? `¥${formatAmount(datum.value)}`
+        : `${formatCount(datum.value)}${trendUnit}`,
       position: "top",
       style: {
         fill: "#172033",
@@ -346,11 +363,11 @@ export default function ShoeStatisticsPage() {
       items: [{ field: "value", name: trendTooltipName }],
     },
     style: {
-      fill: activeStatistic === "total" ? "#2f6df6" : "#0f766e",
+      fill: activeStatistic === "total" ? "#2f6df6" : activeStatistic === "payment" ? "#b45309" : "#0f766e",
       radiusTopLeft: 4,
       radiusTopRight: 4,
     },
-  }), [activeStatistic, timeGranularity, trendChartData, trendTooltipName, trendUnit]);
+  }), [activeStatistic, isPaymentTrend, timeGranularity, trendChartData, trendTooltipName, trendUnit]);
 
   const rankingColumns = useMemo<ColumnsType<StyleRankingRow>>(
     () => [
@@ -463,7 +480,7 @@ export default function ShoeStatisticsPage() {
       <div className="toolbar-band">
         <div>
           <Typography.Title level={3}>数据统计</Typography.Title>
-          <Typography.Text type="secondary">按订单明细汇总鞋子双数和款号层级。</Typography.Text>
+          <Typography.Text type="secondary">按订单明细汇总鞋子双数、款号和出货货款。</Typography.Text>
         </div>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadStatistics()}>
           刷新
@@ -483,6 +500,19 @@ export default function ShoeStatisticsPage() {
             <button className="statistics-metric statistics-metric-button" type="button" onClick={() => openStatistic("shipped")}>
               <Statistic title="已出货对数" value={statistics?.shippedPairs || 0} suffix="双" />
             </button>
+            <button className="statistics-metric statistics-metric-button" type="button" onClick={() => openStatistic("payment")}>
+              <Statistic
+                title="出货总货款"
+                value={statistics?.totalPaymentAmount || 0}
+                precision={2}
+                prefix="¥"
+              />
+              <Typography.Text type={statistics?.unpricedShippedPairs ? "warning" : "secondary"} className="statistics-metric-note">
+                {statistics?.unpricedShippedPairs
+                  ? `${formatCount(statistics.unpricedShippedPairs)} 双未配置单价，暂未计入`
+                  : "全部已出货明细均已计价"}
+              </Typography.Text>
+            </button>
             <button className="statistics-metric statistics-metric-button" type="button" onClick={() => openStatistic("unshipped")}>
               <Statistic title="未出货对数" value={statistics?.unshippedPairs || 0} suffix="双" />
             </button>
@@ -500,9 +530,17 @@ export default function ShoeStatisticsPage() {
         onCancel={() => setActiveStatistic(null)}
         destroyOnClose
       >
-        {activeStatistic && (activeStatistic === "total" || activeStatistic === "shipped") ? (
+        {activeStatistic && (activeStatistic === "total" || activeStatistic === "shipped" || activeStatistic === "payment") ? (
           <>
             <div className="statistics-modal-controls">
+              {activeStatistic === "payment" ? (
+                <Typography.Text type="secondary" className="statistics-payment-note">
+                  按出货日期和当前价格配置计算
+                  {statistics?.unpricedShippedPairs
+                    ? `，另有 ${formatCount(statistics.unpricedShippedPairs)} 双未配置单价`
+                    : ""}
+                </Typography.Text>
+              ) : null}
               <Segmented
                 value={timeGranularity}
                 onChange={(value) => setTimeGranularity(value as TimeGranularity)}

@@ -57,6 +57,21 @@ export async function reuploadOrderFile(orderId: number, file: File) {
   return data;
 }
 
+export async function appendOrderFile(orderId: number, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await request.post<OrderUploadResult>(
+    `/orders/${orderId}/append`,
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  );
+
+  return data;
+}
+
 export async function fetchOrders(params: OrderRecordQueryParams) {
   // /orders 返回 order_record 主表分页数据。
   const { data } = await request.get<

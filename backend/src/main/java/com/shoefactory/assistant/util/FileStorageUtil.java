@@ -94,15 +94,16 @@ public class FileStorageUtil {
         return target;
     }
 
-    public Path allocateOrderPdfPath(String orderNo, String printType) {
+    public Path allocateOrderPdfPath(String orderNo, Long orderId, String printType) {
         String safeOrderNo = cleanDirectoryName(orderNo == null || orderNo.isBlank()
                 ? FileStorageUtil.newBusinessNo("ORDER")
                 : orderNo);
+        String safeOrderId = orderId == null ? "" : "-" + orderId;
         String suffix = printType == null || printType.isBlank() ? "preview" : printType.toLowerCase(Locale.ROOT);
-        // 固定保存为 根目录/年份/月/pdf/订单号-order.pdf。
+        // 同一流水号可以追加多份订单，文件名带内部订单 ID，避免 PDF 互相覆盖。
         Path directory = archiveDirectory(LocalDate.now(), "pdf");
         createDirectories(directory);
-        Path target = directory.resolve(safeOrderNo + "-" + suffix + ".pdf").normalize();
+        Path target = directory.resolve(safeOrderNo + safeOrderId + "-" + suffix + ".pdf").normalize();
         ensureAllowedPath(target);
         return target;
     }

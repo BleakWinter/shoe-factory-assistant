@@ -179,6 +179,13 @@ POST /api/orders/upload
 Content-Type: multipart/form-data
 ```
 
+在已有流水号下追加一份独立订单：
+
+```http
+POST /api/orders/{id}/append
+Content-Type: multipart/form-data
+```
+
 查询订单主表：
 
 ```http

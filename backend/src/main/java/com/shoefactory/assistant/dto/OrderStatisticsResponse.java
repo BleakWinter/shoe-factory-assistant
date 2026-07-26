@@ -1,5 +1,6 @@
 package com.shoefactory.assistant.dto;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -12,8 +13,11 @@ public class OrderStatisticsResponse {
     private Integer unshippedPairs;
     private Integer styleCount;
     private Integer detailCount;
+    private BigDecimal totalPaymentAmount = BigDecimal.ZERO;
+    private Integer unpricedShippedPairs;
     private List<StatisticsTimePoint> orderCreatedTrend = new ArrayList<>();
     private List<StatisticsTimePoint> shippedPairsTrend = new ArrayList<>();
+    private List<StatisticsAmountPoint> paymentAmountTrend = new ArrayList<>();
     private List<UnshippedInvoiceStatistic> unshippedInvoiceStatistics = new ArrayList<>();
     private List<DevelopmentNoStatisticNode> developmentNoTree = new ArrayList<>();
     private List<DevelopmentNoStatisticNode> topDevelopmentNos = new ArrayList<>();
@@ -28,6 +32,14 @@ public class OrderStatisticsResponse {
     public void setStyleCount(Integer styleCount) { this.styleCount = styleCount; }
     public Integer getDetailCount() { return detailCount; }
     public void setDetailCount(Integer detailCount) { this.detailCount = detailCount; }
+    public BigDecimal getTotalPaymentAmount() { return totalPaymentAmount; }
+    public void setTotalPaymentAmount(BigDecimal totalPaymentAmount) {
+        this.totalPaymentAmount = totalPaymentAmount;
+    }
+    public Integer getUnpricedShippedPairs() { return unpricedShippedPairs; }
+    public void setUnpricedShippedPairs(Integer unpricedShippedPairs) {
+        this.unpricedShippedPairs = unpricedShippedPairs;
+    }
     public List<StatisticsTimePoint> getOrderCreatedTrend() { return orderCreatedTrend; }
     public void setOrderCreatedTrend(List<StatisticsTimePoint> orderCreatedTrend) {
         this.orderCreatedTrend = orderCreatedTrend;
@@ -35,6 +47,10 @@ public class OrderStatisticsResponse {
     public List<StatisticsTimePoint> getShippedPairsTrend() { return shippedPairsTrend; }
     public void setShippedPairsTrend(List<StatisticsTimePoint> shippedPairsTrend) {
         this.shippedPairsTrend = shippedPairsTrend;
+    }
+    public List<StatisticsAmountPoint> getPaymentAmountTrend() { return paymentAmountTrend; }
+    public void setPaymentAmountTrend(List<StatisticsAmountPoint> paymentAmountTrend) {
+        this.paymentAmountTrend = paymentAmountTrend;
     }
     public List<UnshippedInvoiceStatistic> getUnshippedInvoiceStatistics() { return unshippedInvoiceStatistics; }
     public void setUnshippedInvoiceStatistics(List<UnshippedInvoiceStatistic> unshippedInvoiceStatistics) {
@@ -96,6 +112,16 @@ public class OrderStatisticsResponse {
         public void setDate(LocalDate date) { this.date = date; }
         public Integer getValue() { return value; }
         public void setValue(Integer value) { this.value = value; }
+    }
+
+    public static class StatisticsAmountPoint {
+        private LocalDate date;
+        private BigDecimal value;
+
+        public LocalDate getDate() { return date; }
+        public void setDate(LocalDate date) { this.date = date; }
+        public BigDecimal getValue() { return value; }
+        public void setValue(BigDecimal value) { this.value = value; }
     }
 
     public static class UnshippedInvoiceStatistic {

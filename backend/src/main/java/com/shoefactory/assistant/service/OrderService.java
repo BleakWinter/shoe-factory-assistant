@@ -17,6 +17,9 @@ public interface OrderService {
     // 上传订单 Excel，保存原稿、解析主表和明细。
     OrderUploadResponse uploadOrderSource(MultipartFile file);
 
+    // 在已有流水号下追加一份独立订单，保留原订单和原打印任务。
+    OrderUploadResponse appendOrderSource(Long orderId, MultipartFile file);
+
     OrderUploadResponse reuploadOrderSource(Long orderId, MultipartFile file);
 
     // 查询订单主表，页面订单列表和打印列表都以它为入口。

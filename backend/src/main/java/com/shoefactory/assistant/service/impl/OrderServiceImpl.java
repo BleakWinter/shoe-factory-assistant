@@ -13,6 +13,7 @@ import com.shoefactory.assistant.dto.OrderRecordResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoOrderReference;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.DevelopmentNoStatisticNode;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsAmountPoint;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsTimePoint;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnshippedInvoiceStatistic;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
@@ -57,6 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -156,6 +158,38 @@ public class OrderServiceImpl implements OrderService {
         List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(orderRecord, storedFile);
         styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
         return buildUploadResponse(orderRecord, firstTaskId(printTasks), 0);
+    }
+
+    @Override
+    @Transactional
+    public OrderUploadResponse appendOrderSource(Long orderId, MultipartFile file) {
+        OrderRecord existingOrder = getRequiredOrder(orderId);
+        String extension = fileStorageUtil.extractExtension(file == null ? null : file.getOriginalFilename());
+        FileType fileType = toFileType(extension);
+        if (fileType != FileType.EXCEL) {
+            throw new BusinessException("V1 仅支持上传 Excel 订单文件");
+        }
+
+        String fileNo = FileStorageUtil.newBusinessNo("SF");
+        StoredFile storedFile = fileStorageUtil.saveOriginal(file, fileNo);
+        boolean appended = false;
+        try {
+            OrderRecord appendedOrder = readUploadSummary(storedFile, fileNo);
+            initializeRecognitionFields(appendedOrder);
+            ensureAppendOrderNoMatches(existingOrder, appendedOrder);
+            // 使用原订单的标准写法，避免前后空格造成列表不能归为同一流水号。
+            appendedOrder.setOrderNo(existingOrder.getOrderNo());
+
+            orderRecordMapper.insert(appendedOrder);
+            List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(appendedOrder, storedFile);
+            styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(appendedOrder.getDevelopmentNos()));
+            appended = true;
+            return buildUploadResponse(appendedOrder, firstTaskId(printTasks), 0);
+        } finally {
+            if (!appended) {
+                deleteStoredFileQuietly(storedFile);
+            }
+        }
     }
 
     @Override
@@ -430,6 +464,10 @@ public class OrderServiceImpl implements OrderService {
         response.setDetailCount(details.size());
         response.setOrderCreatedTrend(buildOrderCreatedTrend());
         response.setShippedPairsTrend(buildShippedPairsTrend());
+        PaymentStatistics paymentStatistics = buildPaymentStatistics();
+        response.setTotalPaymentAmount(paymentStatistics.totalAmount());
+        response.setUnpricedShippedPairs(paymentStatistics.unpricedShippedPairs());
+        response.setPaymentAmountTrend(paymentStatistics.trend());
         response.setUnshippedInvoiceStatistics(buildUnshippedInvoiceStatistics(details, ordersById, shippedPairsByDetailId));
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));
         response.setTopDevelopmentNos(buildTopDevelopmentNoStatistics(buckets.values()));
@@ -470,12 +508,141 @@ public class OrderServiceImpl implements OrderService {
         return buildTimePoints(valuesByDate);
     }
 
+    private PaymentStatistics buildPaymentStatistics() {
+        List<ShippingNoteTask> tasks = shippingNoteTaskMapper.selectList(new LambdaQueryWrapper<ShippingNoteTask>()
+                .select(
+                        ShippingNoteTask::getId,
+                        ShippingNoteTask::getShippingDate,
+                        ShippingNoteTask::getCreatedAt
+                ));
+        Map<Long, LocalDate> shippingDateByTaskId = new LinkedHashMap<>();
+        Map<LocalDate, BigDecimal> amountByDate = new LinkedHashMap<>();
+        for (ShippingNoteTask task : tasks) {
+            LocalDate shippingDate = task.getShippingDate();
+            if (shippingDate == null && task.getCreatedAt() != null) {
+                shippingDate = task.getCreatedAt().toLocalDate();
+            }
+            if (task.getId() == null || shippingDate == null) {
+                continue;
+            }
+            shippingDateByTaskId.put(task.getId(), shippingDate);
+            amountByDate.putIfAbsent(shippingDate, BigDecimal.ZERO);
+        }
+        if (shippingDateByTaskId.isEmpty()) {
+            return PaymentStatistics.empty();
+        }
+
+        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
+                new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                        .select(
+                                ShippingNoteTaskItem::getTaskId,
+                                ShippingNoteTaskItem::getSourceDetailId
+                        )
+                        .in(ShippingNoteTaskItem::getTaskId, shippingDateByTaskId.keySet())
+        );
+        List<Long> detailIds = taskItems.stream()
+                .map(ShippingNoteTaskItem::getSourceDetailId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (detailIds.isEmpty()) {
+            return new PaymentStatistics(BigDecimal.ZERO, 0, buildAmountTimePoints(amountByDate));
+        }
+
+        Map<Long, OrderRecordDetail> detailById = orderRecordDetailMapper.selectList(
+                        new LambdaQueryWrapper<OrderRecordDetail>()
+                                .select(
+                                        OrderRecordDetail::getId,
+                                        OrderRecordDetail::getDevelopmentNo,
+                                        OrderRecordDetail::getQuantity,
+                                        OrderRecordDetail::getSizeQuantitiesJson
+                                )
+                                .in(OrderRecordDetail::getId, detailIds))
+                .stream()
+                .filter(detail -> detail.getId() != null)
+                .collect(Collectors.toMap(
+                        OrderRecordDetail::getId,
+                        detail -> detail,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        Map<String, BigDecimal> priceByDevelopmentNo = loadShoePrices(detailById.values());
+
+        int unpricedShippedPairs = 0;
+        for (ShippingNoteTaskItem taskItem : taskItems) {
+            LocalDate shippingDate = shippingDateByTaskId.get(taskItem.getTaskId());
+            OrderRecordDetail detail = detailById.get(taskItem.getSourceDetailId());
+            if (shippingDate == null || detail == null) {
+                continue;
+            }
+            int pairCount = detailPairCount(detail);
+            if (pairCount <= 0) {
+                continue;
+            }
+            BigDecimal shoePrice = priceByDevelopmentNo.get(
+                    normalizePaymentDevelopmentNo(detail.getDevelopmentNo()));
+            if (shoePrice == null) {
+                unpricedShippedPairs += pairCount;
+                continue;
+            }
+            BigDecimal detailAmount = shoePrice.multiply(BigDecimal.valueOf(pairCount));
+            amountByDate.merge(shippingDate, detailAmount, BigDecimal::add);
+        }
+
+        BigDecimal totalAmount = amountByDate.values()
+                .stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new PaymentStatistics(totalAmount, unpricedShippedPairs, buildAmountTimePoints(amountByDate));
+    }
+
+    private Map<String, BigDecimal> loadShoePrices(Collection<OrderRecordDetail> details) {
+        List<String> developmentNos = details.stream()
+                .map(OrderRecordDetail::getDevelopmentNo)
+                .map(DevelopmentNoUtil::normalize)
+                .filter(this::hasText)
+                .distinct()
+                .toList();
+        if (developmentNos.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return shoeStyleConfigMapper.selectList(new LambdaQueryWrapper<ShoeStyleConfig>()
+                        .select(ShoeStyleConfig::getDevelopmentNo, ShoeStyleConfig::getShoePrice)
+                        .in(ShoeStyleConfig::getDevelopmentNo, developmentNos))
+                .stream()
+                .filter(config -> hasText(config.getDevelopmentNo()))
+                .filter(config -> config.getShoePrice() != null)
+                .collect(Collectors.toMap(
+                        config -> normalizePaymentDevelopmentNo(config.getDevelopmentNo()),
+                        ShoeStyleConfig::getShoePrice,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+    }
+
+    private String normalizePaymentDevelopmentNo(String value) {
+        String developmentNo = DevelopmentNoUtil.normalize(value);
+        return hasText(developmentNo) ? developmentNo.toUpperCase(Locale.ROOT) : "";
+    }
+
     private List<StatisticsTimePoint> buildTimePoints(Map<LocalDate, Integer> valuesByDate) {
         return valuesByDate.entrySet()
                 .stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> {
                     StatisticsTimePoint point = new StatisticsTimePoint();
+                    point.setDate(entry.getKey());
+                    point.setValue(entry.getValue());
+                    return point;
+                })
+                .toList();
+    }
+
+    private List<StatisticsAmountPoint> buildAmountTimePoints(Map<LocalDate, BigDecimal> valuesByDate) {
+        return valuesByDate.entrySet()
+                .stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> {
+                    StatisticsAmountPoint point = new StatisticsAmountPoint();
                     point.setDate(entry.getKey());
                     point.setValue(entry.getValue());
                     return point;
@@ -693,6 +860,16 @@ public class OrderServiceImpl implements OrderService {
 
     private int detailPairCount(OrderRecordDetail detail) {
         return resolveOrderDetailQuantity(detail);
+    }
+
+    private record PaymentStatistics(
+            BigDecimal totalAmount,
+            int unpricedShippedPairs,
+            List<StatisticsAmountPoint> trend
+    ) {
+        private static PaymentStatistics empty() {
+            return new PaymentStatistics(BigDecimal.ZERO, 0, List.of());
+        }
     }
 
     private String normalizeStatisticsDevelopmentNo(String value) {
@@ -1034,6 +1211,18 @@ public class OrderServiceImpl implements OrderService {
                 + (hasText(existingOrderNo) ? existingOrderNo : "空")
                 + "，上传文件："
                 + (hasText(parsedOrderNo) ? parsedOrderNo : "空"));
+    }
+
+    private void ensureAppendOrderNoMatches(OrderRecord existingOrder, OrderRecord appendedOrder) {
+        String existingOrderNo = normalizeOrderNo(existingOrder == null ? null : existingOrder.getOrderNo());
+        String appendedOrderNo = normalizeOrderNo(appendedOrder == null ? null : appendedOrder.getOrderNo());
+        if (hasText(existingOrderNo) && hasText(appendedOrderNo) && existingOrderNo.equals(appendedOrderNo)) {
+            return;
+        }
+        throw new BusinessException("追加文件里的订单流水号必须和当前订单一致，当前订单："
+                + (hasText(existingOrderNo) ? existingOrderNo : "空")
+                + "，上传文件："
+                + (hasText(appendedOrderNo) ? appendedOrderNo : "空"));
     }
 
     private boolean isGeneratedUploadFallback(OrderRecord order) {

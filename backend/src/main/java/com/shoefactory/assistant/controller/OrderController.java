@@ -40,6 +40,14 @@ public class OrderController {
         return ApiResponse.ok(orderService.uploadOrderSource(file));
     }
 
+    @PostMapping(value = "/{id}/append", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<OrderUploadResponse> append(
+            @PathVariable Long id,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.ok(orderService.appendOrderSource(id, file));
+    }
+
     @PostMapping(value = "/{id}/reupload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<OrderUploadResponse> reupload(
             @PathVariable Long id,

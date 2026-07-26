@@ -1,6 +1,7 @@
 import {
   CheckCircleOutlined,
   InboxOutlined,
+  PlusOutlined,
   PrinterOutlined,
   ReloadOutlined,
   UploadOutlined,
@@ -9,7 +10,7 @@ import { App, Button, Modal, Popover, Select, Space, Table, Tag, Typography, Upl
 import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { reuploadOrderFile, uploadOrderFile } from "../api/orderApi";
+import { appendOrderFile, reuploadOrderFile, uploadOrderFile } from "../api/orderApi";
 import {
   fetchPrintTasks,
   generatePrintTaskPreview,
@@ -51,6 +52,8 @@ interface PrintTaskRow {
   styleNos?: string[];
   totalPairs?: number;
   createdAt?: string;
+  partNo?: number;
+  partCount?: number;
   orderTask?: PrintTask;
   packingTask?: PrintTask;
 }
@@ -136,7 +139,31 @@ function buildPrintTaskRows(tasks: PrintTask[]) {
     const current = groups.get(key) || { key };
     groups.set(key, mergeTaskIntoRow(current, task));
   });
-  return Array.from(groups.values());
+  const rows = Array.from(groups.values());
+  const rowsByOrderNo = new Map<string, PrintTaskRow[]>();
+  rows.forEach((row) => {
+    if (!row.orderNo) {
+      return;
+    }
+    const sameOrderRows = rowsByOrderNo.get(row.orderNo) || [];
+    sameOrderRows.push(row);
+    rowsByOrderNo.set(row.orderNo, sameOrderRows);
+  });
+  rowsByOrderNo.forEach((sameOrderRows) => {
+    sameOrderRows
+      .sort((left, right) => {
+        const createdAtCompare = (left.createdAt || "").localeCompare(right.createdAt || "");
+        if (createdAtCompare !== 0) {
+          return createdAtCompare;
+        }
+        return (left.orderId || 0) - (right.orderId || 0);
+      })
+      .forEach((row, index) => {
+        row.partNo = index + 1;
+        row.partCount = sameOrderRows.length;
+      });
+  });
+  return rows;
 }
 
 function renderPrintFlags(row: PrintTaskRow) {
@@ -171,6 +198,7 @@ export default function PrintTaskListPage() {
   const [tasks, setTasks] = useState<PrintTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [appendingOrderId, setAppendingOrderId] = useState<number | null>(null);
   const [reuploadingOrderId, setReuploadingOrderId] = useState<number | null>(null);
   const [orderNoFilter, setOrderNoFilter] = useState<string>();
   const [activeRow, setActiveRow] = useState<PrintTaskRow | null>(null);
@@ -203,7 +231,7 @@ export default function PrintTaskListPage() {
     accept: ".xlsx,.xls",
     multiple: false,
     showUploadList: false,
-    disabled: uploading || reuploadingOrderId !== null,
+    disabled: uploading || appendingOrderId !== null || reuploadingOrderId !== null,
     beforeUpload(file) {
       if (!isAllowedFile(file)) {
         message.error("请上传 xlsx 或 xls 订单文件");
@@ -235,7 +263,7 @@ export default function PrintTaskListPage() {
       accept: ".xlsx,.xls",
       multiple: false,
       showUploadList: false,
-      disabled: uploading || reuploadingOrderId !== null,
+      disabled: uploading || appendingOrderId !== null || reuploadingOrderId !== null,
       beforeUpload(file) {
         if (!isAllowedFile(file)) {
           message.error("请上传 xlsx 或 xls 订单文件");
@@ -266,7 +294,46 @@ export default function PrintTaskListPage() {
         }
       },
     }),
-    [loadTasks, message, reuploadingOrderId, uploading],
+    [appendingOrderId, loadTasks, message, reuploadingOrderId, uploading],
+  );
+
+  const buildAppendProps = useCallback(
+    (row: PrintTaskRow): UploadProps => ({
+      accept: ".xlsx,.xls",
+      multiple: false,
+      showUploadList: false,
+      disabled: uploading || appendingOrderId !== null || reuploadingOrderId !== null,
+      beforeUpload(file) {
+        if (!isAllowedFile(file)) {
+          message.error("请上传 xlsx 或 xls 订单文件");
+          return Upload.LIST_IGNORE;
+        }
+        return true;
+      },
+      customRequest: async (options) => {
+        if (!row.orderId) {
+          const err = new Error("订单 ID 为空，不能追加");
+          options.onError?.(err);
+          message.error(err.message);
+          return;
+        }
+        setAppendingOrderId(row.orderId);
+        try {
+          const file = options.file as File;
+          const result = await appendOrderFile(row.orderId, file);
+          options.onSuccess?.(result);
+          message.success(`订单 ${result.orderNo || ""} 已追加一份，原订单保持不变`);
+          await loadTasks();
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error("追加失败");
+          options.onError?.(err);
+          message.error(err.message);
+        } finally {
+          setAppendingOrderId(null);
+        }
+      },
+    }),
+    [appendingOrderId, loadTasks, message, reuploadingOrderId, uploading],
   );
 
   const rows = useMemo(() => buildPrintTaskRows(tasks), [tasks]);
@@ -383,7 +450,12 @@ export default function PrintTaskListPage() {
         title: "订单流水号",
         dataIndex: "orderNo",
         width: 150,
-        render: formatEmpty,
+        render: (value, record) => (
+          <Space size={6}>
+            <span>{formatEmpty(value)}</span>
+            {(record.partCount || 0) > 1 ? <Tag color="blue">第{record.partNo}份</Tag> : null}
+          </Space>
+        ),
       },
       {
         title: "开发编号",
@@ -419,7 +491,7 @@ export default function PrintTaskListPage() {
       {
         title: "操作",
         key: "actions",
-        width: 210,
+        width: 330,
         fixed: "right",
         render: (_, record) => (
           <Space size={8}>
@@ -430,11 +502,26 @@ export default function PrintTaskListPage() {
             >
               打印
             </Button>
+            <Upload {...buildAppendProps(record)}>
+              <Button
+                disabled={
+                  !record.orderId ||
+                  uploading ||
+                  reuploadingOrderId !== null ||
+                  (appendingOrderId !== null && appendingOrderId !== record.orderId)
+                }
+                loading={appendingOrderId === record.orderId}
+                icon={<PlusOutlined />}
+              >
+                追加一份
+              </Button>
+            </Upload>
             <Upload {...buildReuploadProps(record)}>
               <Button
                 disabled={
                   !record.orderId ||
                   uploading ||
+                  appendingOrderId !== null ||
                   (reuploadingOrderId !== null && reuploadingOrderId !== record.orderId)
                 }
                 loading={reuploadingOrderId === record.orderId}
@@ -447,7 +534,7 @@ export default function PrintTaskListPage() {
         ),
       },
     ],
-    [buildReuploadProps, reuploadingOrderId, uploading],
+    [appendingOrderId, buildAppendProps, buildReuploadProps, reuploadingOrderId, uploading],
   );
 
   return (
@@ -476,6 +563,7 @@ export default function PrintTaskListPage() {
             <Button
               type="primary"
               loading={uploading}
+              disabled={appendingOrderId !== null || reuploadingOrderId !== null}
               icon={<InboxOutlined />}
             >
               上传订单 Excel
@@ -494,7 +582,7 @@ export default function PrintTaskListPage() {
           columns={columns}
           dataSource={filteredRows}
           pagination={{ pageSize: 20, showSizeChanger: false }}
-          scroll={{ x: 930 }}
+          scroll={{ x: 1050 }}
           className="data-table"
         />
       </div>

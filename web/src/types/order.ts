@@ -122,8 +122,11 @@ export interface OrderStatistics {
   unshippedPairs: number;
   styleCount: number;
   detailCount: number;
+  totalPaymentAmount?: number;
+  unpricedShippedPairs?: number;
   orderCreatedTrend?: StatisticsTimePoint[];
   shippedPairsTrend?: StatisticsTimePoint[];
+  paymentAmountTrend?: StatisticsTimePoint[];
   unshippedInvoiceStatistics?: UnshippedInvoiceStatistic[];
   developmentNoTree: DevelopmentNoStatisticNode[];
   topDevelopmentNos: DevelopmentNoStatisticNode[];
