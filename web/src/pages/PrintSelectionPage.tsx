@@ -138,7 +138,7 @@ const defaultInnerBoxLabel: InnerBoxLabelData = {
 const defaultInnerBoxLabels: InnerBoxLabelData[] = [defaultInnerBoxLabel];
 
 const CARTON_LABEL_COPIES_PER_CARTON = 2;
-const INNER_BOX_LABELS_PER_PAGE = 18;
+const INNER_BOX_LABELS_PER_PAGE = 16;
 const CSS_PX_PER_MM = 96 / 25.4;
 const CARTON_LABEL_VALUE_WIDTH_PX = (138.536 - (14.94 + 7.974 * 4)) * CSS_PX_PER_MM;
 const CARTON_LABEL_INFO_ROW_HEIGHT_PX = 15.31 * CSS_PX_PER_MM;
@@ -586,7 +586,7 @@ function applyPrintPageSize(format: PrintFormatKey) {
   const styleId = "label-print-page-size";
   const pageSize = format === "inner-box-a4" ? "A4 portrait" : "A4 landscape";
   const isInnerBox = format === "inner-box-a4";
-  const pageMargin = isInnerBox ? "10px" : "0";
+  const pageMargin = isInnerBox ? "10px 10px 40px" : "0";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement("style");
