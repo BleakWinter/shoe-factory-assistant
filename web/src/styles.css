@@ -872,7 +872,21 @@ a {
   padding: 14px;
 }
 
-.label-print-root,
+.label-print-root {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  width: auto;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.label-print-root .inner-box-label-a4 {
+  width: calc(210mm - 20px);
+  min-width: 0;
+}
+
 .carton-label-print-root {
   display: none;
 }
@@ -1262,6 +1276,11 @@ a {
 .inner-box-label-colour {
   font-size: 15px;
   text-transform: uppercase;
+}
+
+.inner-box-label-value-adaptive {
+  font-size: var(--inner-box-label-value-font-size, 15px);
+  overflow-wrap: anywhere;
 }
 
 .inner-box-label-size {

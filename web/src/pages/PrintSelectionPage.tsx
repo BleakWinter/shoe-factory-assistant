@@ -146,6 +146,9 @@ const CARTON_LABEL_DEFAULT_VALUE_FONT_SIZE = 24;
 const CARTON_LABEL_WRAPPED_VALUE_MAX_FONT_SIZE = 20;
 const CARTON_LABEL_WRAPPED_VALUE_MIN_FONT_SIZE = 12;
 const CARTON_LABEL_WRAPPED_VALUE_LINE_HEIGHT = 1.05;
+const INNER_BOX_VALUE_MAX_FONT_SIZE = 15;
+const INNER_BOX_VALUE_MIN_FONT_SIZE = 5;
+const INNER_BOX_VALUE_LINE_HEIGHT = 1.05;
 
 function getCartonLabelAdaptiveFontSize(element: HTMLElement, value: string) {
   const text = value.trim();
@@ -242,6 +245,100 @@ function CartonAdaptiveInfoValue({ value }: { value: string }) {
 
   return (
     <div ref={valueRef} className="carton-label-info-value carton-label-info-value-adaptive">
+      {value}
+    </div>
+  );
+}
+
+function getInnerBoxValueAdaptiveFontSize(element: HTMLElement, value: string) {
+  const text = value.trim();
+  if (!text) {
+    return undefined;
+  }
+
+  const computedStyle = window.getComputedStyle(element);
+  const horizontalPadding = Number.parseFloat(computedStyle.paddingLeft) + Number.parseFloat(computedStyle.paddingRight);
+  const verticalPadding = Number.parseFloat(computedStyle.paddingTop) + Number.parseFloat(computedStyle.paddingBottom);
+  const width = element.clientWidth - horizontalPadding;
+  const height = element.clientHeight - verticalPadding;
+  if (width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  const measuringElement = document.createElement("div");
+  measuringElement.textContent = text;
+  measuringElement.style.position = "fixed";
+  measuringElement.style.left = "-9999px";
+  measuringElement.style.top = "0";
+  measuringElement.style.visibility = "hidden";
+  measuringElement.style.pointerEvents = "none";
+  measuringElement.style.boxSizing = "border-box";
+  measuringElement.style.width = `${width}px`;
+  measuringElement.style.fontFamily = computedStyle.fontFamily;
+  measuringElement.style.fontWeight = computedStyle.fontWeight;
+  measuringElement.style.fontStyle = computedStyle.fontStyle;
+  measuringElement.style.letterSpacing = computedStyle.letterSpacing;
+  measuringElement.style.lineHeight = String(INNER_BOX_VALUE_LINE_HEIGHT);
+  measuringElement.style.textAlign = "center";
+  measuringElement.style.textTransform = computedStyle.textTransform;
+  measuringElement.style.whiteSpace = "normal";
+  measuringElement.style.wordBreak = "break-word";
+  measuringElement.style.overflowWrap = "anywhere";
+  document.body.appendChild(measuringElement);
+
+  for (
+    let fontSize = INNER_BOX_VALUE_MAX_FONT_SIZE;
+    fontSize >= INNER_BOX_VALUE_MIN_FONT_SIZE;
+    fontSize -= 0.5
+  ) {
+    measuringElement.style.fontSize = `${fontSize}px`;
+    if (measuringElement.scrollHeight <= height + 0.5 && measuringElement.scrollWidth <= width + 0.5) {
+      measuringElement.remove();
+      return fontSize === INNER_BOX_VALUE_MAX_FONT_SIZE ? undefined : Number(fontSize.toFixed(1));
+    }
+  }
+
+  measuringElement.remove();
+  return INNER_BOX_VALUE_MIN_FONT_SIZE;
+}
+
+function InnerBoxAdaptiveValue({ className, value }: { className: string; value: string }) {
+  const valueRef = useRef<HTMLDivElement>(null);
+
+  const updateFontSize = useCallback(() => {
+    const element = valueRef.current;
+    if (!element) {
+      return;
+    }
+
+    const fontSize = getInnerBoxValueAdaptiveFontSize(element, value);
+    if (fontSize === undefined) {
+      element.style.removeProperty("--inner-box-label-value-font-size");
+    } else {
+      element.style.setProperty("--inner-box-label-value-font-size", `${fontSize}px`);
+    }
+  }, [value]);
+
+  useLayoutEffect(() => {
+    updateFontSize();
+    const animationFrame = window.requestAnimationFrame(updateFontSize);
+    const element = valueRef.current;
+    const resizeObserver = element && "ResizeObserver" in window ? new ResizeObserver(updateFontSize) : null;
+    if (element && resizeObserver) {
+      resizeObserver.observe(element);
+    }
+    window.addEventListener("resize", updateFontSize);
+    window.addEventListener("beforeprint", updateFontSize);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateFontSize);
+      window.removeEventListener("beforeprint", updateFontSize);
+    };
+  }, [updateFontSize]);
+
+  return (
+    <div ref={valueRef} className={`inner-box-label-cell inner-box-label-value-adaptive ${className}`}>
       {value}
     </div>
   );
@@ -1452,10 +1549,10 @@ function InnerBoxLabel({ data }: { data: InnerBoxLabelData }) {
       <div className="inner-box-label-cell inner-box-label-header">MATERIAL</div>
       <div className="inner-box-label-cell inner-box-label-header">COLOUR</div>
       <div className="inner-box-label-cell inner-box-label-header">SIZE</div>
-      <div className="inner-box-label-cell inner-box-label-style">{data.styleName}</div>
-      <div className="inner-box-label-cell inner-box-label-material">{data.material}</div>
-      <div className="inner-box-label-cell inner-box-label-colour">{data.colour}</div>
-      <div className="inner-box-label-cell inner-box-label-size">{data.size}</div>
+      <InnerBoxAdaptiveValue className="inner-box-label-style" value={data.styleName} />
+      <InnerBoxAdaptiveValue className="inner-box-label-material" value={data.material} />
+      <InnerBoxAdaptiveValue className="inner-box-label-colour" value={data.colour} />
+      <InnerBoxAdaptiveValue className="inner-box-label-size" value={data.size} />
     </div>
   );
 }
