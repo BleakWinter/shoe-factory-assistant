@@ -4,6 +4,7 @@ import ComponentOrderPage from "../pages/ComponentOrderPage";
 import CustomerConfigPage from "../pages/CustomerConfigPage";
 import OrderDetailPage from "../pages/OrderDetailPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
+import MonthlyReconciliationPage from "../pages/MonthlyReconciliationPage";
 import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
 import PrintSelectionPage from "../pages/PrintSelectionPage";
 import PrintTaskListPage from "../pages/PrintTaskListPage";
@@ -20,6 +21,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/orders" replace /> },
       { path: "orders", element: <OrderWorkspacePage /> },
       { path: "statistics", element: <ShoeStatisticsPage /> },
+      { path: "monthly-reconciliation", element: <MonthlyReconciliationPage /> },
       { path: "orders/:id/details", element: <OrderDetailPage /> },
       { path: "tasks", element: <Navigate to="/tasks/order" replace /> },
       { path: "tasks/order", element: <PrintTaskListPage /> },

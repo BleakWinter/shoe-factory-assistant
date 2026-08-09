@@ -1942,6 +1942,82 @@ a {
   cursor: pointer;
 }
 
+/* Monthly reconciliation. */
+.reconciliation-toolbar {
+  align-items: flex-end;
+}
+
+.reconciliation-filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.reconciliation-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #596579;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reconciliation-filters .ant-input,
+.reconciliation-filters .ant-select {
+  width: 180px;
+}
+
+.reconciliation-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.reconciliation-metric {
+  min-width: 0;
+  padding: 16px 18px;
+  background: #ffffff;
+  border: 1px solid #dde3eb;
+  border-radius: 4px;
+}
+
+.reconciliation-metric .ant-statistic-title {
+  color: #596579;
+  font-weight: 600;
+}
+
+.reconciliation-metric-total {
+  background: #eef4ff;
+  border-color: #9bb8f7;
+}
+
+.reconciliation-metric-total .ant-statistic-content {
+  color: #1f56bb;
+  font-weight: 700;
+}
+
+.reconciliation-panel {
+  min-width: 0;
+}
+
+.reconciliation-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.reconciliation-panel-heading h4.ant-typography {
+  margin: 0 0 2px;
+  font-size: 16px;
+}
+
+.reconciliation-row-missing-price > td {
+  background: #fff8e8 !important;
+}
+
 /* Mobile layout: keep the same shell but let controls stack cleanly. */
 @media (max-width: 920px) {
   .app-topbar {
@@ -1969,6 +2045,22 @@ a {
   .toolbar-band .ant-upload,
   .toolbar-band button {
     width: 100%;
+  }
+
+  .reconciliation-filters,
+  .reconciliation-filters label,
+  .reconciliation-filters .ant-input,
+  .reconciliation-filters .ant-select {
+    width: 100%;
+  }
+
+  .reconciliation-summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .reconciliation-panel-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .print-order-select {
@@ -2066,6 +2158,10 @@ a {
 }
 
 @media (max-width: 560px) {
+  .reconciliation-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .statistics-chart-legend {
     grid-template-columns: 1fr;
   }

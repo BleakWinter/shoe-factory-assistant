@@ -112,7 +112,7 @@ const printFormatTemplates: Record<
     target: "outer-carton",
     data: {
       ...defaultCartonLabelData,
-      sizeColumns: ["WIDTH", "", "", "", "35", "36", "37", "38", "39", "40", "41", "", "", "", "", "TOTAL"],
+      sizeColumns: ["WIDTH", "", "", "", "35", "36", "37", "38", "39", "40", "41", "42", "", "", "", "TOTAL"],
       sizeValues: ["M", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
     },
   },
@@ -891,16 +891,13 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   }, [detailsMap]);
 
   const selectedDetails = useMemo(() => {
-    const details: OrderRecordDetail[] = [];
-    detailsMap.forEach((orderDetails) => {
-      orderDetails.forEach((detail) => {
-        if (selectedDetailIds.has(detail.id)) {
-          details.push(detail);
-        }
-      });
-    });
-    return details;
-  }, [detailsMap, selectedDetailIds]);
+    if (selectedOrderId === undefined) {
+      return [];
+    }
+    // 同一流水号的任意子订单 ID 都会返回整组明细，打印区只读取当前订单组的缓存。
+    // 否则打印后按子订单刷新状态时，整组明细会被缓存多次并生成重复标签。
+    return (detailsMap.get(selectedOrderId) || []).filter((detail) => selectedDetailIds.has(detail.id));
+  }, [detailsMap, selectedDetailIds, selectedOrderId]);
 
   const selectedOrder = useMemo(
     () => orders.find(order => order.id === selectedOrderId),
@@ -1018,12 +1015,12 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
       await Promise.all(
         Array.from(orderGroups.entries()).map(([oid, ids]) => batchRecordPrintProcess(oid, ids, processType)),
       );
-      await Promise.all(
-        Array.from(orderGroups.keys()).map(async (oid) => {
-          const details = await fetchOrderDetails(oid);
-          setDetailsMap(prev => new Map(prev).set(oid, details));
-        }),
-      );
+      // 明细接口按流水号返回全部追加份数，因此只需刷新当前订单组一次。
+      // 不能按每个子订单 ID 分别缓存同一整组明细，否则打印内容会按份数重复。
+      if (selectedOrderId !== undefined) {
+        const details = await fetchOrderDetails(selectedOrderId);
+        setDetailsMap(prev => new Map(prev).set(selectedOrderId, details));
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : "打印状态记录失败");
       return;

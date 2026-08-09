@@ -1,4 +1,5 @@
 import {
+  AccountBookOutlined,
   BarChartOutlined,
   DollarOutlined,
   FileExcelOutlined,
@@ -30,6 +31,7 @@ interface NavLeafItem {
 const navLeafItems: NavLeafItem[] = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
+  { path: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
   {
     path: "/tasks/order",
     label: "打印订单和装箱单",
@@ -112,6 +114,7 @@ const navLeafItems: NavLeafItem[] = [
 const menuItems: MenuProps["items"] = [
   { key: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { key: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
+  { key: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
   {
     key: "print-center",
     label: "打印中心",
