@@ -48,8 +48,19 @@ function isPackingRangeInsideOrderRange(detail: OrderRecordDetail, packingDetail
   );
 }
 
+function hasConflictingStyleNo(detail: OrderRecordDetail, packingDetail: OrderPackingDetail) {
+  const developmentNo = normalizeMatchText(detail.developmentNo);
+  const companyStyleNo = normalizeMatchText(packingDetail.companyStyleNo);
+
+  // 旧数据可能缺少其中一个款号，此时仍允许通过箱号匹配；两边都有值时必须是同一款。
+  return Boolean(developmentNo && companyStyleNo && developmentNo !== companyStyleNo);
+}
+
 export function isMatchingPackingDetail(detail: OrderRecordDetail, packingDetail: OrderPackingDetail) {
   if (detail.orderId && packingDetail.orderId && detail.orderId !== packingDetail.orderId) {
+    return false;
+  }
+  if (hasConflictingStyleNo(detail, packingDetail)) {
     return false;
   }
   return isPackingRangeInsideOrderRange(detail, packingDetail);

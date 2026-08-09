@@ -15,7 +15,27 @@ public final class PackingDetailMatchUtil {
     }
 
     public static boolean isMatchingPackingDetail(OrderRecordDetail detail, OrderPackingDetail packingDetail) {
+        if (detail == null || packingDetail == null) {
+            return false;
+        }
+        if (detail.getOrderId() != null && packingDetail.getOrderId() != null
+                && !detail.getOrderId().equals(packingDetail.getOrderId())) {
+            return false;
+        }
+        if (hasConflictingStyleNo(detail, packingDetail)) {
+            return false;
+        }
         return isPackingRangeInsideOrderRange(detail, packingDetail);
+    }
+
+    private static boolean hasConflictingStyleNo(OrderRecordDetail detail, OrderPackingDetail packingDetail) {
+        String developmentNo = normalizeMatchText(detail.getDevelopmentNo());
+        String companyStyleNo = normalizeMatchText(packingDetail.getCompanyStyleNo());
+
+        // 兼容缺少款号的旧数据；只要两边都有款号，就必须先确认是同一款。
+        return !developmentNo.isEmpty()
+                && !companyStyleNo.isEmpty()
+                && !developmentNo.equals(companyStyleNo);
     }
 
     private static boolean isPackingRangeInsideOrderRange(OrderRecordDetail detail, OrderPackingDetail packingDetail) {
