@@ -53,7 +53,7 @@ const templatePrintItems: PrintSelectionItem[] = [];
 
 type PrintFormatTarget = "outer-carton" | "inner-box";
 type CartonPrintFormatKey = "outer-carton-a4" | "outer-carton-dual-size";
-type InnerBoxPrintFormatKey = "inner-box-a4";
+type InnerBoxPrintFormatKey = "inner-box-a4" | "inner-box-dual-size";
 type PrintFormatKey = CartonPrintFormatKey | InnerBoxPrintFormatKey;
 type PreviewMode = "print" | "template";
 
@@ -117,7 +117,11 @@ const printFormatTemplates: Record<
     },
   },
   "inner-box-a4": {
-    label: "内盒贴标-通用版",
+    label: "内盒贴标-单码-通用版",
+    target: "inner-box",
+  },
+  "inner-box-dual-size": {
+    label: "内盒贴标-双码-通用版",
     target: "inner-box",
   },
 };
@@ -366,6 +370,10 @@ function getDefaultPrintFormat(title: string): PrintFormatKey {
 
 function isCartonPrintFormat(format: PrintFormatKey): format is CartonPrintFormatKey {
   return printFormatTemplates[format].target === "outer-carton";
+}
+
+function isInnerBoxPrintFormat(format: PrintFormatKey): format is InnerBoxPrintFormatKey {
+  return printFormatTemplates[format].target === "inner-box";
 }
 
 function pickFirstText(...values: unknown[]) {
@@ -631,7 +639,15 @@ function getCartonPageCount(format: CartonPrintFormatKey, printItems: PrintSelec
   return chunkCartonLabelData(buildCartonLabelData(format, printItems)).length;
 }
 
-function buildInnerBoxLabels(items: PrintSelectionItem[]) {
+function formatInnerBoxSize(format: InnerBoxPrintFormatKey, size: string) {
+  const parts = sizeKeyParts(size);
+  if (format === "inner-box-dual-size") {
+    return parts[1] || parts[0] || size.trim();
+  }
+  return parts[0] || size.trim();
+}
+
+function buildInnerBoxLabels(format: InnerBoxPrintFormatKey, items: PrintSelectionItem[]) {
   if (items.length === 0) {
     return defaultInnerBoxLabels;
   }
@@ -649,7 +665,7 @@ function buildInnerBoxLabels(items: PrintSelectionItem[]) {
     return sizeEntries.flatMap(([size, count]) =>
       Array.from({ length: Math.max(1, Math.trunc(count)) }, () => ({
         ...baseLabel,
-        size,
+        size: formatInnerBoxSize(format, size),
       })),
     );
   }));
@@ -665,11 +681,11 @@ function chunkInnerBoxLabels(labels: InnerBoxLabelData[]) {
   return pages.length > 0 ? pages : [defaultInnerBoxLabels];
 }
 
-function getInnerBoxPageCount(printItems: PrintSelectionItem[]) {
+function getInnerBoxPageCount(format: InnerBoxPrintFormatKey, printItems: PrintSelectionItem[]) {
   if (printItems.length === 0) {
     return 1;
   }
-  return chunkInnerBoxLabels(buildInnerBoxLabels(printItems)).length;
+  return chunkInnerBoxLabels(buildInnerBoxLabels(format, printItems)).length;
 }
 
 function fillRightSideIfNeeded(labels: InnerBoxLabelData[]) {
@@ -681,8 +697,8 @@ function fillRightSideIfNeeded(labels: InnerBoxLabelData[]) {
 
 function applyPrintPageSize(format: PrintFormatKey) {
   const styleId = "label-print-page-size";
-  const pageSize = format === "inner-box-a4" ? "A4 portrait" : "A4 landscape";
-  const isInnerBox = format === "inner-box-a4";
+  const isInnerBox = isInnerBoxPrintFormat(format);
+  const pageSize = isInnerBox ? "A4 portrait" : "A4 landscape";
   const pageMargin = isInnerBox ? "10px 10px 40px" : "0";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;
   if (!style) {
@@ -1047,7 +1063,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   }, [previewOpen, selectedPrintFormat]);
 
   const selectedPrintFormatLabel = printFormatTemplates[selectedPrintFormat].label;
-  const selectedPrintFormatIsInnerBox = selectedPrintFormat === "inner-box-a4";
+  const selectedPrintFormatIsInnerBox = isInnerBoxPrintFormat(selectedPrintFormat);
   const previewPrintItems = previewMode === "template" ? templatePrintItems : activePrintItems;
   const selectedPrintFormatIsInnerBoxTemplate = selectedPrintFormatIsInnerBox && previewPrintItems.length === 0;
   const selectedPairCount = printableSelectedGroups.reduce((total, group) => total + Number(group.totalQuantity || 0), 0);
@@ -1055,13 +1071,13 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
   const printableLabelCount = activePrintItems.length === 0
     ? 0
     : selectedPrintFormatIsInnerBox
-      ? buildInnerBoxLabels(activePrintItems).length
+      ? buildInnerBoxLabels(selectedPrintFormat, activePrintItems).length
       : isCartonPrintFormat(selectedPrintFormat)
         ? buildCartonLabelData(selectedPrintFormat, activePrintItems).length
         : 0;
 
   const previewPageCount = useMemo(() => {
-    if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(previewPrintItems);
+    if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(selectedPrintFormat, previewPrintItems);
     if (isCartonPrintFormat(selectedPrintFormat)) return getCartonPageCount(selectedPrintFormat, previewPrintItems);
     return 1;
   }, [previewPrintItems, selectedPrintFormat, selectedPrintFormatIsInnerBox]);
@@ -1069,7 +1085,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     if (activePrintItems.length === 0) {
       return 0;
     }
-    if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(activePrintItems);
+    if (selectedPrintFormatIsInnerBox) return getInnerBoxPageCount(selectedPrintFormat, activePrintItems);
     if (isCartonPrintFormat(selectedPrintFormat)) return getCartonPageCount(selectedPrintFormat, activePrintItems);
     return 0;
   }, [activePrintItems, selectedPrintFormat, selectedPrintFormatIsInnerBox]);
@@ -1411,8 +1427,8 @@ function PrintFormatSheet({
   cartonPageIndex?: number;
   innerBoxPageIndex?: number;
 }) {
-  if (format === "inner-box-a4") {
-    return <InnerBoxLabelA4 printItems={printItems} pageIndex={innerBoxPageIndex} />;
+  if (isInnerBoxPrintFormat(format)) {
+    return <InnerBoxLabelA4 format={format} printItems={printItems} pageIndex={innerBoxPageIndex} />;
   }
   if (isCartonPrintFormat(format)) {
     return <CartonLabelA4 format={format} printItems={printItems} pageIndex={cartonPageIndex} />;
@@ -1502,7 +1518,15 @@ function CartonLabelTemplate({ data }: { data: CartonLabelTemplateData }) {
   );
 }
 
-function InnerBoxLabelA4({ printItems, pageIndex }: { printItems: PrintSelectionItem[]; pageIndex?: number }) {
+function InnerBoxLabelA4({
+  format,
+  printItems,
+  pageIndex,
+}: {
+  format: InnerBoxPrintFormatKey;
+  printItems: PrintSelectionItem[];
+  pageIndex?: number;
+}) {
   if (printItems.length === 0) {
     return (
       <div className="inner-box-label-pages">
@@ -1513,7 +1537,7 @@ function InnerBoxLabelA4({ printItems, pageIndex }: { printItems: PrintSelection
     );
   }
 
-  const pages = chunkInnerBoxLabels(buildInnerBoxLabels(printItems));
+  const pages = chunkInnerBoxLabels(buildInnerBoxLabels(format, printItems));
   const safePageIndex =
     typeof pageIndex === "number" ? Math.min(Math.max(pageIndex, 0), pages.length - 1) : undefined;
   const pageEntries =
