@@ -1,6 +1,6 @@
 import { Column, type ColumnConfig } from "@ant-design/charts";
 import { FileSearchOutlined, ReloadOutlined } from "@ant-design/icons";
-import { App, Button, Empty, Modal, Segmented, Skeleton, Statistic, Table, Typography } from "antd";
+import { App, Button, Empty, Modal, Segmented, Skeleton, Statistic, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOrderStatistics } from "../api/statisticsApi";
@@ -12,7 +12,7 @@ import type {
   StatisticsTimePoint,
   UnpricedShippedStyle,
   UnpricedUnshippedStyle,
-  UnshippedInvoiceStatistic,
+  UnshippedStyleStatistic,
 } from "../types/order";
 
 function formatCount(value?: number) {
@@ -30,15 +30,18 @@ function formatText(value?: string) {
   return value?.trim() || "-";
 }
 
-function parseDate(value?: string) {
+function parseDate(value?: string | Date) {
   if (!value) {
     return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function formatDate(value?: string) {
+function formatDate(value?: string | Date) {
   const date = parseDate(value);
   if (!date) {
     return "-";
@@ -50,27 +53,60 @@ function formatDate(value?: string) {
   }).format(date);
 }
 
-function getPendingDays(value?: string) {
+function addOneCalendarMonth(value?: string) {
+  const date = parseDate(value);
+  if (!date) {
+    return null;
+  }
+  const targetYear = date.getMonth() === 11 ? date.getFullYear() + 1 : date.getFullYear();
+  const targetMonth = (date.getMonth() + 1) % 12;
+  const lastTargetDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(date.getDate(), lastTargetDay));
+}
+
+function getRemainingDays(value?: string | Date) {
   const date = parseDate(value);
   if (!date) {
     return undefined;
   }
-  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const deadline = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  return Math.max(0, Math.floor((today - start) / 86_400_000));
+  return Math.round((deadline - today) / 86_400_000);
 }
 
-function formatPendingDays(value?: number) {
+function formatCountdown(value?: number) {
   if (value === undefined) {
-    return "-";
+    return "日期待确认";
   }
-  return value === 0 ? "今天" : `${formatCount(value)} 天`;
+  if (value < 0) {
+    return `已逾期 ${formatCount(Math.abs(value))} 天`;
+  }
+  if (value === 0) {
+    return "今天出货";
+  }
+  return `还剩 ${formatCount(value)} 天`;
+}
+
+function getCountdownTone(value?: number) {
+  if (value === undefined) {
+    return "unknown";
+  }
+  if (value < 0) {
+    return "overdue";
+  }
+  if (value <= 7) {
+    return "urgent";
+  }
+  if (value <= 15) {
+    return "soon";
+  }
+  return "normal";
 }
 
 type StatisticModalType = "total" | "shipped" | "payment" | "unshipped" | "styles";
 type TimeGranularity = "year" | "month" | "day";
-type UnshippedSortMode = "pending" | "pairs";
+type UnshippedSortMode = "deadline" | "pairs";
 
 interface TrendChartDatum {
   key: string;
@@ -95,10 +131,13 @@ interface StyleRankingRow {
   node: DevelopmentNoStatisticNode;
 }
 
-interface UnshippedInvoiceRow extends UnshippedInvoiceStatistic {
+interface UnshippedStyleRow extends UnshippedStyleStatistic {
   rank: number;
   key: string;
-  pendingDays?: number;
+  countdownDate?: Date;
+  remainingDays?: number;
+  usesDefaultDeliveryDate: boolean;
+  countdownTone: ReturnType<typeof getCountdownTone>;
 }
 
 interface UnpricedShippedStyleRow {
@@ -146,31 +185,45 @@ function buildStyleRankingRows(nodes: DevelopmentNoStatisticNode[]): StyleRankin
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
-function buildUnshippedInvoiceRows(items: UnshippedInvoiceStatistic[]): UnshippedInvoiceRow[] {
+function buildUnshippedStyleRows(items: UnshippedStyleStatistic[]): UnshippedStyleRow[] {
   return items
     .filter((item) => (item.unshippedPairCount || 0) > 0)
-    .map((item, index) => ({
-      ...item,
-      key: [item.orderId || "order", item.invoiceNo || "invoice", index].join("-"),
-      pendingDays: getPendingDays(item.createdAt),
-      rank: index + 1,
-    }));
+    .map((item, index) => {
+      const deliveryDate = parseDate(item.deliveryDate);
+      const countdownDate = deliveryDate || addOneCalendarMonth(item.createdAt) || undefined;
+      const remainingDays = getRemainingDays(countdownDate);
+      return {
+        ...item,
+        key: [item.orderId || "order", item.invoiceNo || "invoice", item.developmentNo || "style", index].join("-"),
+        countdownDate,
+        remainingDays,
+        usesDefaultDeliveryDate: item.defaultDeliveryDate ?? !deliveryDate,
+        countdownTone: getCountdownTone(remainingDays),
+        rank: index + 1,
+      };
+    });
 }
 
-function sortUnshippedInvoiceRows(rows: UnshippedInvoiceRow[], mode: UnshippedSortMode) {
+function sortUnshippedStyleRows(rows: UnshippedStyleRow[], mode: UnshippedSortMode) {
   return [...rows]
     .sort((left, right) => {
-      const pendingDiff = (right.pendingDays || 0) - (left.pendingDays || 0);
+      const deadlineDiff = (left.countdownDate?.getTime() ?? Number.POSITIVE_INFINITY)
+        - (right.countdownDate?.getTime() ?? Number.POSITIVE_INFINITY);
       const unshippedDiff = (right.unshippedPairCount || 0) - (left.unshippedPairCount || 0);
       const leftTime = parseDate(left.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
       const rightTime = parseDate(right.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
       const timeDiff = leftTime - rightTime;
       const invoiceDiff = formatText(left.invoiceNo).localeCompare(formatText(right.invoiceNo), "zh-CN", { numeric: true });
+      const styleDiff = formatText(left.developmentNo).localeCompare(
+        formatText(right.developmentNo),
+        "zh-CN",
+        { numeric: true },
+      );
 
       if (mode === "pairs") {
-        return unshippedDiff || pendingDiff || timeDiff || invoiceDiff;
+        return unshippedDiff || deadlineDiff || timeDiff || invoiceDiff || styleDiff;
       }
-      return pendingDiff || timeDiff || unshippedDiff || invoiceDiff;
+      return deadlineDiff || unshippedDiff || timeDiff || invoiceDiff || styleDiff;
     })
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
@@ -293,7 +346,7 @@ export default function ShoeStatisticsPage() {
   const [loading, setLoading] = useState(false);
   const [activeStatistic, setActiveStatistic] = useState<StatisticModalType | null>(null);
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>("month");
-  const [unshippedSortMode, setUnshippedSortMode] = useState<UnshippedSortMode>("pending");
+  const [unshippedSortMode, setUnshippedSortMode] = useState<UnshippedSortMode>("deadline");
   const [orderReferenceNode, setOrderReferenceNode] = useState<DevelopmentNoStatisticNode | null>(null);
   const [selectedShippedPeriod, setSelectedShippedPeriod] = useState<string | null>(null);
 
@@ -304,7 +357,7 @@ export default function ShoeStatisticsPage() {
       setStatistics(next);
       setActiveStatistic(null);
       setTimeGranularity("month");
-      setUnshippedSortMode("pending");
+      setUnshippedSortMode("deadline");
       setOrderReferenceNode(null);
       setSelectedShippedPeriod(null);
     } catch (error) {
@@ -326,7 +379,7 @@ export default function ShoeStatisticsPage() {
       setTimeGranularity("month");
     }
     if (type === "unshipped") {
-      setUnshippedSortMode("pending");
+      setUnshippedSortMode("deadline");
     }
   }, []);
 
@@ -334,15 +387,15 @@ export default function ShoeStatisticsPage() {
     () => buildStyleRankingRows(statistics?.developmentNoTree || []),
     [statistics?.developmentNoTree],
   );
-  const unshippedInvoiceBaseRows = useMemo(
-    () => buildUnshippedInvoiceRows(statistics?.unshippedInvoiceStatistics || []),
-    [statistics?.unshippedInvoiceStatistics],
+  const unshippedStyleBaseRows = useMemo(
+    () => buildUnshippedStyleRows(statistics?.unshippedStyleStatistics || []),
+    [statistics?.unshippedStyleStatistics],
   );
-  const unshippedInvoiceRows = useMemo(
-    () => sortUnshippedInvoiceRows(unshippedInvoiceBaseRows, unshippedSortMode),
-    [unshippedInvoiceBaseRows, unshippedSortMode],
+  const unshippedStyleRows = useMemo(
+    () => sortUnshippedStyleRows(unshippedStyleBaseRows, unshippedSortMode),
+    [unshippedSortMode, unshippedStyleBaseRows],
   );
-  const unshippedRankingRows = useMemo(() => unshippedInvoiceRows.slice(0, 12), [unshippedInvoiceRows]);
+  const unshippedRankingRows = useMemo(() => unshippedStyleRows.slice(0, 12), [unshippedStyleRows]);
   const unpricedShippedStyleRows = useMemo(
     () => buildUnpricedShippedStyleRows(statistics?.unpricedShippedStyles || [], timeGranularity),
     [statistics?.unpricedShippedStyles, timeGranularity],
@@ -369,14 +422,14 @@ export default function ShoeStatisticsPage() {
     total: "创建订单双数趋势",
     shipped: "出货对数趋势",
     payment: "出货总货款趋势",
-    unshipped: "未出货发票排序",
+    unshipped: "未出货款出货倒计时",
     styles: "款号数量排名",
   };
-  const unshippedSortTitle = unshippedSortMode === "pending"
-    ? "按最久没有出货排序"
+  const unshippedSortTitle = unshippedSortMode === "deadline"
+    ? "按出货倒计时排序"
     : "按未出货双数排序";
-  const unshippedSortNote = unshippedSortMode === "pending"
-    ? "条形长度表示未出货双数，排序优先看等待天数"
+  const unshippedSortNote = unshippedSortMode === "deadline"
+    ? "优先显示已逾期和临近出货的款"
     : "条形长度按最高未出货双数归一";
   const trendSource = activeStatistic === "total"
     ? statistics?.orderCreatedTrend || []
@@ -577,7 +630,7 @@ export default function ShoeStatisticsPage() {
     [],
   );
 
-  const unshippedInvoiceColumns = useMemo<ColumnsType<UnshippedInvoiceRow>>(
+  const unshippedStyleColumns = useMemo<ColumnsType<UnshippedStyleRow>>(
     () => [
       { title: "排名", dataIndex: "rank", key: "rank", width: 72 },
       {
@@ -588,19 +641,34 @@ export default function ShoeStatisticsPage() {
         render: (value?: string) => formatText(value),
       },
       {
-        title: "创建订单时间",
-        dataIndex: "createdAt",
-        key: "createdAt",
-        width: 128,
-        render: (value?: string) => formatDate(value),
+        title: "款号",
+        dataIndex: "developmentNo",
+        key: "developmentNo",
+        width: 150,
+        ellipsis: true,
+        render: (value?: string) => formatText(value),
       },
       {
-        title: "距今",
-        dataIndex: "pendingDays",
-        key: "pendingDays",
-        width: 96,
-        align: "right" as const,
-        render: (value?: number) => formatPendingDays(value),
+        title: "出货日期",
+        key: "deliveryDate",
+        width: 150,
+        render: (_value, row) => (
+          <span className="unshipped-table-delivery-date">
+            {formatDate(row.countdownDate)}
+            {row.usesDefaultDeliveryDate ? <Tag color="default">默认</Tag> : null}
+          </span>
+        ),
+      },
+      {
+        title: "倒计时",
+        dataIndex: "remainingDays",
+        key: "remainingDays",
+        width: 136,
+        render: (value?: number) => (
+          <span className={`shipping-countdown shipping-countdown-${getCountdownTone(value)}`}>
+            {formatCountdown(value)}
+          </span>
+        ),
       },
       {
         title: "未出货",
@@ -846,7 +914,7 @@ export default function ShoeStatisticsPage() {
           </>
         ) : null}
         {activeStatistic === "unshipped" ? (
-          unshippedInvoiceRows.length === 0 ? (
+          unshippedStyleRows.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
           ) : (
             <>
@@ -855,7 +923,10 @@ export default function ShoeStatisticsPage() {
                   <div>
                     <Typography.Text strong>{unshippedSortTitle}</Typography.Text>
                     <Typography.Text type="secondary">
-                      显示前 {unshippedRankingRows.length} 张，共 {unshippedInvoiceRows.length} 张未出货发票
+                      显示前 {unshippedRankingRows.length} 款，共 {unshippedStyleRows.length} 个未出货款
+                    </Typography.Text>
+                    <Typography.Text type="secondary" className="unshipped-default-rule">
+                      未填写出货日期时，按订单创建日期顺延 1 个月计算，并标记为“默认”
                     </Typography.Text>
                   </div>
                   <div className="unshipped-ranking-actions">
@@ -864,7 +935,7 @@ export default function ShoeStatisticsPage() {
                       value={unshippedSortMode}
                       onChange={(value) => setUnshippedSortMode(value as UnshippedSortMode)}
                       options={[
-                        { label: "最久未出货", value: "pending" },
+                        { label: "出货倒计时", value: "deadline" },
                         { label: "未出货双数", value: "pairs" },
                       ]}
                     />
@@ -880,19 +951,32 @@ export default function ShoeStatisticsPage() {
                     const percent = Math.max(4, Math.round((unshippedPairCount / maxUnshippedPairCount) * 100));
 
                     return (
-                      <div className="unshipped-ranking-row" key={row.key}>
+                      <div
+                        className={`unshipped-ranking-row unshipped-ranking-row-${row.countdownTone}`}
+                        key={row.key}
+                      >
                         <span className={`unshipped-ranking-rank ${row.rank <= 3 ? "unshipped-ranking-rank-top" : ""}`}>
                           {row.rank}
                         </span>
 
                         <div className="unshipped-ranking-main">
                           <div className="unshipped-ranking-line">
-                            <Typography.Text strong ellipsis className="unshipped-ranking-invoice">
-                              {formatText(row.invoiceNo)}
-                            </Typography.Text>
-                            <span className="unshipped-ranking-value">
-                              {formatCount(unshippedPairCount)} 双
-                            </span>
+                            <div className="unshipped-ranking-identity">
+                              <Typography.Text strong ellipsis className="unshipped-ranking-invoice">
+                                {formatText(row.invoiceNo)}
+                              </Typography.Text>
+                              <span className="unshipped-ranking-style">
+                                款号：{formatText(row.developmentNo)}
+                              </span>
+                            </div>
+                            <div className="unshipped-ranking-status">
+                              <span className={`shipping-countdown shipping-countdown-${row.countdownTone}`}>
+                                {formatCountdown(row.remainingDays)}
+                              </span>
+                              <span className="unshipped-ranking-value">
+                                {formatCount(unshippedPairCount)} 双
+                              </span>
+                            </div>
                           </div>
 
                           <div className="unshipped-ranking-track">
@@ -900,8 +984,11 @@ export default function ShoeStatisticsPage() {
                           </div>
 
                           <div className="unshipped-ranking-meta">
+                            <span className="unshipped-ranking-delivery-date">
+                              出货日：{formatDate(row.countdownDate)}
+                              {row.usesDefaultDeliveryDate ? <em>默认</em> : null}
+                            </span>
                             <span>创建：{formatDate(row.createdAt)}</span>
-                            <span>距今：{formatPendingDays(row.pendingDays)}</span>
                             <span>已出货：{formatCount(row.shippedPairCount)} 双</span>
                             <span>总双数：{formatCount(row.pairCount)} 双</span>
                           </div>
@@ -913,13 +1000,13 @@ export default function ShoeStatisticsPage() {
               </div>
 
               <Typography.Title level={5} className="unshipped-table-title">
-                全部未出货发票
+                全部未出货款
               </Typography.Title>
-              <Table<UnshippedInvoiceRow>
+              <Table<UnshippedStyleRow>
                 rowKey="key"
-                columns={unshippedInvoiceColumns}
-                dataSource={unshippedInvoiceRows}
-                pagination={unshippedInvoiceRows.length > 10 ? { pageSize: 10, showSizeChanger: false } : false}
+                columns={unshippedStyleColumns}
+                dataSource={unshippedStyleRows}
+                pagination={unshippedStyleRows.length > 10 ? { pageSize: 10, showSizeChanger: false } : false}
                 size="small"
                 className="statistics-order-reference-table"
               />

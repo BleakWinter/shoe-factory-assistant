@@ -23,6 +23,7 @@ public class OrderStatisticsResponse {
     private List<ShippedOrderStatistic> shippedOrderStatistics = new ArrayList<>();
     private List<StatisticsAmountPoint> paymentAmountTrend = new ArrayList<>();
     private List<UnshippedInvoiceStatistic> unshippedInvoiceStatistics = new ArrayList<>();
+    private List<UnshippedStyleStatistic> unshippedStyleStatistics = new ArrayList<>();
     private List<DevelopmentNoStatisticNode> developmentNoTree = new ArrayList<>();
     private List<DevelopmentNoStatisticNode> topDevelopmentNos = new ArrayList<>();
 
@@ -75,6 +76,10 @@ public class OrderStatisticsResponse {
     public List<UnshippedInvoiceStatistic> getUnshippedInvoiceStatistics() { return unshippedInvoiceStatistics; }
     public void setUnshippedInvoiceStatistics(List<UnshippedInvoiceStatistic> unshippedInvoiceStatistics) {
         this.unshippedInvoiceStatistics = unshippedInvoiceStatistics;
+    }
+    public List<UnshippedStyleStatistic> getUnshippedStyleStatistics() { return unshippedStyleStatistics; }
+    public void setUnshippedStyleStatistics(List<UnshippedStyleStatistic> unshippedStyleStatistics) {
+        this.unshippedStyleStatistics = unshippedStyleStatistics;
     }
     public List<DevelopmentNoStatisticNode> getDevelopmentNoTree() { return developmentNoTree; }
     public void setDevelopmentNoTree(List<DevelopmentNoStatisticNode> developmentNoTree) {
@@ -196,6 +201,40 @@ public class OrderStatisticsResponse {
         public void setOrderId(Long orderId) { this.orderId = orderId; }
         public String getInvoiceNo() { return invoiceNo; }
         public void setInvoiceNo(String invoiceNo) { this.invoiceNo = invoiceNo; }
+        public LocalDateTime getCreatedAt() { return createdAt; }
+        public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+        public Integer getPairCount() { return pairCount; }
+        public void setPairCount(Integer pairCount) { this.pairCount = pairCount; }
+        public Integer getShippedPairCount() { return shippedPairCount; }
+        public void setShippedPairCount(Integer shippedPairCount) { this.shippedPairCount = shippedPairCount; }
+        public Integer getUnshippedPairCount() { return unshippedPairCount; }
+        public void setUnshippedPairCount(Integer unshippedPairCount) { this.unshippedPairCount = unshippedPairCount; }
+        public Integer getDetailCount() { return detailCount; }
+        public void setDetailCount(Integer detailCount) { this.detailCount = detailCount; }
+    }
+
+    public static class UnshippedStyleStatistic {
+        private Long orderId;
+        private String invoiceNo;
+        private String developmentNo;
+        private LocalDate deliveryDate;
+        private Boolean defaultDeliveryDate;
+        private LocalDateTime createdAt;
+        private Integer pairCount;
+        private Integer shippedPairCount;
+        private Integer unshippedPairCount;
+        private Integer detailCount;
+
+        public Long getOrderId() { return orderId; }
+        public void setOrderId(Long orderId) { this.orderId = orderId; }
+        public String getInvoiceNo() { return invoiceNo; }
+        public void setInvoiceNo(String invoiceNo) { this.invoiceNo = invoiceNo; }
+        public String getDevelopmentNo() { return developmentNo; }
+        public void setDevelopmentNo(String developmentNo) { this.developmentNo = developmentNo; }
+        public LocalDate getDeliveryDate() { return deliveryDate; }
+        public void setDeliveryDate(LocalDate deliveryDate) { this.deliveryDate = deliveryDate; }
+        public Boolean getDefaultDeliveryDate() { return defaultDeliveryDate; }
+        public void setDefaultDeliveryDate(Boolean defaultDeliveryDate) { this.defaultDeliveryDate = defaultDeliveryDate; }
         public LocalDateTime getCreatedAt() { return createdAt; }
         public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
         public Integer getPairCount() { return pairCount; }

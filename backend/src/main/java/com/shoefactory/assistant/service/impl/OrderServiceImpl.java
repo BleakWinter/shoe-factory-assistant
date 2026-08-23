@@ -18,6 +18,7 @@ import com.shoefactory.assistant.dto.OrderStatisticsResponse.StatisticsTimePoint
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnpricedShippedStyle;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnpricedUnshippedStyle;
 import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnshippedInvoiceStatistic;
+import com.shoefactory.assistant.dto.OrderStatisticsResponse.UnshippedStyleStatistic;
 import com.shoefactory.assistant.dto.OrderUploadResponse;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.entity.OrderDetailProcess;
@@ -479,6 +480,7 @@ public class OrderServiceImpl implements OrderService {
         response.setUnpricedUnshippedPairs(unpricedUnshippedStatistics.totalPairs());
         response.setUnpricedUnshippedStyles(unpricedUnshippedStatistics.styles());
         response.setUnshippedInvoiceStatistics(buildUnshippedInvoiceStatistics(details, ordersById, shippedPairsByDetailId));
+        response.setUnshippedStyleStatistics(buildUnshippedStyleStatistics(details, ordersById, shippedPairsByDetailId));
         response.setDevelopmentNoTree(buildDevelopmentNoStatisticsTree(buckets.values()));
         response.setTopDevelopmentNos(buildTopDevelopmentNoStatistics(buckets.values()));
         return response;
@@ -884,6 +886,78 @@ public class OrderServiceImpl implements OrderService {
         statistic.setUnshippedPairCount(0);
         statistic.setDetailCount(0);
         return statistic;
+    }
+
+    private List<UnshippedStyleStatistic> buildUnshippedStyleStatistics(
+            List<OrderRecordDetail> details,
+            Map<Long, OrderRecord> ordersById,
+            Map<Long, Integer> shippedPairsByDetailId
+    ) {
+        Map<String, UnshippedStyleStatistic> statisticsByStyle = new LinkedHashMap<>();
+        for (OrderRecordDetail detail : details) {
+            int pairCount = detailPairCount(detail);
+            int shippedPairCount = detail.getId() == null ? 0 : nullToZero(shippedPairsByDetailId.get(detail.getId()));
+            int unshippedPairCount = Math.max(0, pairCount - shippedPairCount);
+            OrderRecord order = ordersById.get(detail.getOrderId());
+            String developmentNo = normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo());
+            String orderKey = detail.getOrderId() != null
+                    ? "order-" + detail.getOrderId()
+                    : "detail-" + (detail.getId() == null ? "unknown" : detail.getId());
+            String key = orderKey + "::" + developmentNo;
+            UnshippedStyleStatistic statistic = statisticsByStyle.computeIfAbsent(key, ignored ->
+                    buildUnshippedStyleStatistic(detail, order, developmentNo));
+            statistic.setPairCount(nullToZero(statistic.getPairCount()) + pairCount);
+            statistic.setShippedPairCount(nullToZero(statistic.getShippedPairCount()) + shippedPairCount);
+            statistic.setUnshippedPairCount(nullToZero(statistic.getUnshippedPairCount()) + unshippedPairCount);
+            statistic.setDetailCount(nullToZero(statistic.getDetailCount()) + 1);
+
+            LocalDate detailDeliveryDate = effectiveDeliveryDate(detail, order);
+            if (detailDeliveryDate != null
+                    && (statistic.getDeliveryDate() == null || detailDeliveryDate.isBefore(statistic.getDeliveryDate()))) {
+                statistic.setDeliveryDate(detailDeliveryDate);
+                statistic.setDefaultDeliveryDate(detail.getDeliveryDate() == null);
+            }
+        }
+        return statisticsByStyle.values()
+                .stream()
+                .filter(statistic -> nullToZero(statistic.getUnshippedPairCount()) > 0)
+                .sorted(Comparator
+                        .comparing(UnshippedStyleStatistic::getDeliveryDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(UnshippedStyleStatistic::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(statistic -> statistic.getInvoiceNo() == null ? "" : statistic.getInvoiceNo())
+                        .thenComparing(statistic -> statistic.getDevelopmentNo() == null ? "" : statistic.getDevelopmentNo()))
+                .toList();
+    }
+
+    private UnshippedStyleStatistic buildUnshippedStyleStatistic(
+            OrderRecordDetail detail,
+            OrderRecord order,
+            String developmentNo
+    ) {
+        UnshippedStyleStatistic statistic = new UnshippedStyleStatistic();
+        statistic.setOrderId(detail.getOrderId());
+        statistic.setInvoiceNo(cleanStatisticText(order == null ? null : order.getOrderNo()));
+        statistic.setDevelopmentNo(developmentNo);
+        statistic.setCreatedAt(order != null && order.getCreatedAt() != null
+                ? order.getCreatedAt()
+                : detail.getCreatedAt());
+        statistic.setDeliveryDate(effectiveDeliveryDate(detail, order));
+        statistic.setDefaultDeliveryDate(detail.getDeliveryDate() == null);
+        statistic.setPairCount(0);
+        statistic.setShippedPairCount(0);
+        statistic.setUnshippedPairCount(0);
+        statistic.setDetailCount(0);
+        return statistic;
+    }
+
+    private LocalDate effectiveDeliveryDate(OrderRecordDetail detail, OrderRecord order) {
+        if (detail.getDeliveryDate() != null) {
+            return detail.getDeliveryDate();
+        }
+        LocalDateTime createdAt = order != null && order.getCreatedAt() != null
+                ? order.getCreatedAt()
+                : detail.getCreatedAt();
+        return createdAt == null ? null : createdAt.toLocalDate().plusMonths(1);
     }
 
     private Map<Long, Integer> loadShippedPairsByDetailId(Map<Long, Integer> detailPairsById) {
