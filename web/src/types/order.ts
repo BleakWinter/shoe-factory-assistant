@@ -337,6 +337,12 @@ export interface ShippingNoteCreatePayload {
   items: ShippingNoteItem[];
 }
 
+export interface ShippingNoteUpdatePayload {
+  recipientName?: string;
+  shippingDate?: string;
+  items?: ShippingNoteItem[];
+}
+
 export interface ShippingNoteQueryParams {
   orderNo?: string;
   developmentNo?: string;

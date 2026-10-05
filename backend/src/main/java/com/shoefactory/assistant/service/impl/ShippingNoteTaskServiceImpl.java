@@ -76,15 +76,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
     @Override
     @Transactional
     public ShippingNoteTaskResponse createShippingNoteTask(ShippingNoteCreateRequest request) {
-        List<ShippingNoteItemRequest> items = sanitizeItems(request.getItems());
-        if (items.isEmpty()) {
-            throw new BusinessException("出货单明细不能为空");
-        }
-
-        Map<Long, OrderRecordDetail> orderDetailMap = loadOrderDetailsByRequestItems(items);
-        List<OrderRecordDetail> selectedOrderDetails = items.stream()
-                .map(item -> orderDetailMap.get(item.getSourceDetailId()))
-                .toList();
+        List<OrderRecordDetail> selectedOrderDetails = resolveSelectedOrderDetails(request.getItems());
         Map<Long, OrderRecord> orderMap = loadOrdersByOrderDetails(selectedOrderDetails);
         Long customerId = resolveCustomerId(orderMap);
         Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderDetails(selectedOrderDetails);
@@ -98,11 +90,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         task.setRecipientName(firstText(request.getRecipientName(),
                 customerId == null ? "达为鞋业" : customers.require(customerId).getRecipientName()));
         task.setShippingDate(request.getShippingDate() == null ? LocalDate.now() : request.getShippingDate());
-        task.setInvoiceNos(joinInvoiceNos(selectedOrderDetails, orderMap));
-        task.setDevelopmentNos(joinDevelopmentNos(selectedOrderDetails));
-        task.setItemCount(selectedOrderDetails.size());
-        task.setTotalPairs(sumOrderPairs(selectedOrderDetails));
-        task.setTotalCartonCount(sumOrderCartons(selectedOrderDetails));
+        updateTaskSummary(task, selectedOrderDetails, orderMap);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         shippingNoteTaskMapper.insert(task);
@@ -217,11 +205,57 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
             task.setShippingDate(request.getShippingDate());
             changed = true;
         }
+        if (request.getItems() != null) {
+            List<OrderRecordDetail> selectedOrderDetails = resolveSelectedOrderDetails(request.getItems());
+            Map<Long, OrderRecord> orderMap = loadOrdersByOrderDetails(selectedOrderDetails);
+            Long customerId = resolveCustomerId(orderMap);
+            Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderDetails(selectedOrderDetails);
+            ensureOrderDetailsHaveMatchingPackingDetails(selectedOrderDetails, packingDetailsByOrderId);
+
+            task.setCustomerId(customerId);
+            updateTaskSummary(task, selectedOrderDetails, orderMap);
+            shippingNoteTaskItemMapper.delete(new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                    .eq(ShippingNoteTaskItem::getTaskId, id));
+            LocalDateTime now = LocalDateTime.now();
+            for (int index = 0; index < selectedOrderDetails.size(); index++) {
+                shippingNoteTaskItemMapper.insert(buildTaskItem(id, index + 1, selectedOrderDetails.get(index), now));
+            }
+            changed = true;
+        }
         if (changed) {
             task.setUpdatedAt(LocalDateTime.now());
             shippingNoteTaskMapper.updateById(task);
         }
         return buildFullResponse(task);
+    }
+
+    private List<OrderRecordDetail> resolveSelectedOrderDetails(List<ShippingNoteItemRequest> requestedItems) {
+        List<ShippingNoteItemRequest> items = sanitizeItems(requestedItems);
+        if (items.isEmpty()) {
+            throw new BusinessException("出货单明细不能为空");
+        }
+        if (items.size() != requestedItems.size()) {
+            throw new BusinessException("出货单明细缺少订单明细ID");
+        }
+        if (items.stream().map(ShippingNoteItemRequest::getSourceDetailId).distinct().count() != items.size()) {
+            throw new BusinessException("出货单不能重复选择同一条订单明细");
+        }
+        Map<Long, OrderRecordDetail> orderDetailMap = loadOrderDetailsByRequestItems(items);
+        return items.stream()
+                .map(item -> orderDetailMap.get(item.getSourceDetailId()))
+                .toList();
+    }
+
+    private void updateTaskSummary(
+            ShippingNoteTask task,
+            List<OrderRecordDetail> selectedOrderDetails,
+            Map<Long, OrderRecord> orderMap
+    ) {
+        task.setInvoiceNos(joinInvoiceNos(selectedOrderDetails, orderMap));
+        task.setDevelopmentNos(joinDevelopmentNos(selectedOrderDetails));
+        task.setItemCount(selectedOrderDetails.size());
+        task.setTotalPairs(sumOrderPairs(selectedOrderDetails));
+        task.setTotalCartonCount(sumOrderCartons(selectedOrderDetails));
     }
 
     private ShippingNoteTaskResponse buildFullResponse(ShippingNoteTask task) {
@@ -422,7 +456,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                 .limit(5)
                 .toList();
         if (!missingDetails.isEmpty()) {
-            throw new BusinessException("订单明细没有对应的装箱单，不能创建出货单: " + String.join("、", missingDetails));
+            throw new BusinessException("订单明细没有对应的装箱单，不能保存出货单: " + String.join("、", missingDetails));
         }
     }
 
