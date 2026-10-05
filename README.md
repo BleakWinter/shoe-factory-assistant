@@ -66,7 +66,7 @@ D:\清化资料\pdf\年份\月份\订单号
 - `/tasks/order`：上传订单 Excel，打印订单和装箱单。
 - `/tasks/outer-carton-label`：打印外箱贴标。
 - `/tasks/inner-box-label`：打印内盒贴标。
-- `/tasks/shipping-note`：出货单打印任务列表，可新建、编辑收货信息及增删出货明细、查看明细和预览打印。
+- `/tasks/shipping-note`：出货单打印任务列表，可新建、查看明细和预览打印。
 - `/component-orders/packing`：订包装。
 - `/component-orders/outsole`：订大底。
 - `/component-orders/insole`：订中底。
@@ -241,10 +241,7 @@ PATCH /api/print-tasks/{taskId}/status
 POST /api/shipping-note-tasks
 GET /api/shipping-note-tasks
 GET /api/shipping-note-tasks/{id}
-PUT /api/shipping-note-tasks/{id}
 ```
-
-编辑出货单时，`PUT` 可提交 `recipientName`、`shippingDate` 和 `items`（每项包含 `sourceDetailId`）。提交 `items` 会替换该出货单的明细，按提交顺序保存，并重新计算发票编号、开发编号、明细行数、双数和件数；保留原出货单编号及创建时间。明细至少保留一条，且必须有匹配的装箱单。省略 `items` 时只更新收货信息。
 
 更多接口见 [docs/接口文档.md](docs/接口文档.md)。
 

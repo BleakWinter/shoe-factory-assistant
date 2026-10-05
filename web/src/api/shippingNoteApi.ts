@@ -6,7 +6,6 @@ import type {
   ShippingNoteQueryParams,
   ShippingNoteTask,
   ShippingNoteTaskQueryParams,
-  ShippingNoteUpdatePayload,
 } from "../types/order";
 
 function normalizePage<T>(
@@ -56,7 +55,7 @@ export async function fetchShippingNoteGeneratedSummary(orderIds: number[]) {
   };
 }
 
-export async function updateShippingNoteTask(id: number, payload: ShippingNoteUpdatePayload) {
+export async function updateShippingNoteTask(id: number, payload: { recipientName?: string; shippingDate?: string }) {
   const { data } = await request.put<ShippingNoteTask>(`/shipping-note-tasks/${id}`, payload);
   return data;
 }
