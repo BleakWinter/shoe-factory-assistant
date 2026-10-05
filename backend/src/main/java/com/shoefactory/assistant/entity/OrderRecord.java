@@ -12,6 +12,8 @@ public class OrderRecord {
     // 订单主表：一份 Excel 对应一条主记录，只放列表和打印入口需要的汇总字段。
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long customerId;
+    private java.time.LocalDate orderDate;
     private String orderNo;
     private String customerName;
     private String boxImageUrl;
@@ -32,6 +34,11 @@ public class OrderRecord {
     public Long getId() {
         return id;
     }
+
+    public Long getCustomerId() { return customerId; }
+    public void setCustomerId(Long value) { customerId = value; }
+    public java.time.LocalDate getOrderDate() { return orderDate; }
+    public void setOrderDate(java.time.LocalDate value) { orderDate = value; }
 
     public void setId(Long id) {
         this.id = id;

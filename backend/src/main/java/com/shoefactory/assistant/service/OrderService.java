@@ -28,6 +28,8 @@ public interface OrderService {
             String developmentNos,
             String recognitionStatus,
             Integer unfinishedProcessType,
+            Long customerId,
+            Integer sourceType,
             long page,
             long size
     );
@@ -35,6 +37,8 @@ public interface OrderService {
     List<DevelopmentNoOptionResponse> listDevelopmentNoOptions();
 
     OrderStatisticsResponse getOrderStatistics();
+    OrderRecordResponse getOrder(Long id);
+    OrderStatisticsResponse getOrderStatistics(Long customerId);
 
     OrderRecordResponse recognizeOrder(Long orderId);
 

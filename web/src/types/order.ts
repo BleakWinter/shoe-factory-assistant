@@ -39,6 +39,8 @@ export interface OrderUploadResult {
 }
 
 export interface OrderRecord {
+  customerId?: number;
+  orderDate?: string;
   // 对应 order_record 主表，订单列表和打印列表都展示它。
   id: number;
   orderNo?: string;
@@ -64,6 +66,8 @@ export interface OrderRecord {
 }
 
 export interface OrderRecordQueryParams {
+  sourceType?: number;
+  customerId?: number;
   // 订单主表筛选参数，字段名和后端 /api/orders 对齐。
   orderNo?: string;
   developmentNos?: string;

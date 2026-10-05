@@ -2,7 +2,8 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "../App";
 import ComponentOrderPage from "../pages/ComponentOrderPage";
 import CustomerConfigPage from "../pages/CustomerConfigPage";
-import OrderDetailPage from "../pages/OrderDetailPage";
+import OrderDetailsRoute from "../pages/OrderDetailsRoute";
+import ManualOrderPage from "../pages/ManualOrderPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
 import MonthlyReconciliationPage from "../pages/MonthlyReconciliationPage";
 import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
@@ -22,7 +23,8 @@ export const router = createBrowserRouter([
       { path: "orders", element: <OrderWorkspacePage /> },
       { path: "statistics", element: <ShoeStatisticsPage /> },
       { path: "monthly-reconciliation", element: <MonthlyReconciliationPage /> },
-      { path: "orders/:id/details", element: <OrderDetailPage /> },
+      { path: "orders/:id/details", element: <OrderDetailsRoute /> },
+      { path: "orders/:id/manual", element: <ManualOrderPage /> },
       { path: "tasks", element: <Navigate to="/tasks/order" replace /> },
       { path: "tasks/order", element: <PrintTaskListPage /> },
       { path: "tasks/outer-carton-label", element: <PrintSelectionPage key="outer-carton-label" title="打印外箱贴标" /> },

@@ -1,9 +1,9 @@
 import request from "../utils/request";
 import type { MonthlyReconciliation } from "../types/reconciliation";
 
-export async function fetchMonthlyReconciliation(month: string, customerName: string) {
+export async function fetchMonthlyReconciliation(month: string, customerId: number) {
   const { data } = await request.get<MonthlyReconciliation>("/monthly-reconciliations", {
-    params: { month, customerName },
+    params: { month, customerId },
   });
   return data;
 }

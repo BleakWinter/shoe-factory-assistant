@@ -12,6 +12,9 @@ public class ShippingNoteTask {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long customerId;
+    private Integer sourceType;
+    private String requestId;
     private String taskNo;
     private String recipientName;
     private LocalDate shippingDate;
@@ -24,6 +27,12 @@ public class ShippingNoteTask {
     private LocalDateTime updatedAt;
 
     public Long getId() { return id; }
+    public Long getCustomerId() { return customerId; }
+    public void setCustomerId(Long value) { customerId = value; }
+    public Integer getSourceType() { return sourceType; }
+    public void setSourceType(Integer value) { sourceType = value; }
+    public String getRequestId() { return requestId; }
+    public void setRequestId(String value) { requestId = value; }
     public void setId(Long id) { this.id = id; }
     public String getTaskNo() { return taskNo; }
     public void setTaskNo(String taskNo) { this.taskNo = taskNo; }

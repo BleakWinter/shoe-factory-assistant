@@ -1,20 +1,20 @@
 import { ReloadOutlined } from "@ant-design/icons";
 import { Alert, App, Button, Input, Select, Statistic, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   fetchMonthlyReconciliation,
-  fetchReconciliationCustomers,
 } from "../api/reconciliationApi";
+import { useCustomers } from "../hooks/useCustomers";
+import { localToday } from "../api/manualOrderApi";
 import type {
   MonthlyReconciliation,
   MonthlyReconciliationDetail,
 } from "../types/reconciliation";
 
 function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return localToday().slice(0,7);
 }
 
 function formatAmount(value?: number) {
@@ -36,41 +36,32 @@ export default function MonthlyReconciliationPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [month, setMonth] = useState(currentMonth());
-  const [customerName, setCustomerName] = useState("");
-  const [customers, setCustomers] = useState<string[]>([]);
-  const [reconciliation, setReconciliation] = useState<MonthlyReconciliation>();
-  const [loading, setLoading] = useState(false);
-
-  const loadCustomers = useCallback(async () => {
-    try {
-      const values = await fetchReconciliationCustomers();
-      const nextCustomers = values.length > 0 ? values : ["达为鞋业"];
-      setCustomers(nextCustomers);
-      setCustomerName((current) =>
-        current && nextCustomers.includes(current) ? current : nextCustomers[0],
-      );
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "客户加载失败");
-    }
-  }, [message]);
+  const [customerId,setCustomerId]=useState<number>();
+  const customers=useCustomers();
+  const [reconciliation,setReconciliation]=useState<MonthlyReconciliation>();
+  const [loading,setLoading]=useState(false);
+  const requestSequence=useRef(0);
+  useEffect(()=>{
+    if(customers.length) setCustomerId(current=>current ?? customers[0].id);
+  },[customers]);
 
   const loadReconciliation = useCallback(async () => {
-    if (!month || !customerName) {
+    if (!month || !customerId) {
       return;
     }
     setLoading(true);
+    const sequence=++requestSequence.current;
+    setReconciliation(undefined);
     try {
-      setReconciliation(await fetchMonthlyReconciliation(month, customerName));
+      const result=await fetchMonthlyReconciliation(month, customerId);
+      if(sequence===requestSequence.current)setReconciliation(result);
     } catch (error) {
+      if(sequence!==requestSequence.current)return;
       message.error(error instanceof Error ? error.message : "月度对账加载失败");
     } finally {
-      setLoading(false);
+      if(sequence===requestSequence.current)setLoading(false);
     }
-  }, [customerName, message, month]);
-
-  useEffect(() => {
-    void loadCustomers();
-  }, [loadCustomers]);
+  }, [customerId, message, month]);
 
   useEffect(() => {
     void loadReconciliation();
@@ -187,9 +178,9 @@ export default function MonthlyReconciliationPage() {
             <span>客户</span>
             <Select
               showSearch
-              value={customerName || undefined}
-              options={customers.map((value) => ({ label: value, value }))}
-              onChange={setCustomerName}
+              value={customerId}
+              options={customers.map(c=>({label:c.recipientName,value:c.id}))}
+              onChange={setCustomerId}
             />
           </label>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadReconciliation()}>
@@ -201,7 +192,7 @@ export default function MonthlyReconciliationPage() {
       <Alert
         type="info"
         showIcon
-        message="本页只读取现有出货单和价格配置，不会创建对账记录，也不会修改数据库中的业务数据。"
+        message="按实际出货日期归入月份，出货数量取对应订单明细的全部数量；价格按当前客户配置计算，修改价格后历史对账同步更新。"
       />
 
       <div className="reconciliation-summary-grid">

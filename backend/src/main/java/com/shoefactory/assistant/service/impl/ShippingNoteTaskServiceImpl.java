@@ -55,19 +55,22 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderRecordMapper orderRecordMapper;
+    private final com.shoefactory.assistant.service.CustomerConfigService customers;
 
     public ShippingNoteTaskServiceImpl(
             ShippingNoteTaskMapper shippingNoteTaskMapper,
             ShippingNoteTaskItemMapper shippingNoteTaskItemMapper,
             OrderRecordDetailMapper orderRecordDetailMapper,
             OrderPackingDetailMapper orderPackingDetailMapper,
-            OrderRecordMapper orderRecordMapper
+            OrderRecordMapper orderRecordMapper,
+            com.shoefactory.assistant.service.CustomerConfigService customers
     ) {
         this.shippingNoteTaskMapper = shippingNoteTaskMapper;
         this.shippingNoteTaskItemMapper = shippingNoteTaskItemMapper;
         this.orderRecordDetailMapper = orderRecordDetailMapper;
         this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderRecordMapper = orderRecordMapper;
+        this.customers = customers;
     }
 
     @Override
@@ -83,13 +86,17 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                 .map(item -> orderDetailMap.get(item.getSourceDetailId()))
                 .toList();
         Map<Long, OrderRecord> orderMap = loadOrdersByOrderDetails(selectedOrderDetails);
+        Long customerId = resolveCustomerId(orderMap);
         Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderDetails(selectedOrderDetails);
         ensureOrderDetailsHaveMatchingPackingDetails(selectedOrderDetails, packingDetailsByOrderId);
 
         LocalDateTime now = LocalDateTime.now();
         ShippingNoteTask task = new ShippingNoteTask();
         task.setTaskNo(FileStorageUtil.newBusinessNo("SH"));
-        task.setRecipientName(firstText(request.getRecipientName(), "达为鞋业"));
+        task.setCustomerId(customerId);
+        task.setSourceType(1);
+        task.setRecipientName(firstText(request.getRecipientName(),
+                customerId == null ? "达为鞋业" : customers.require(customerId).getRecipientName()));
         task.setShippingDate(request.getShippingDate() == null ? LocalDate.now() : request.getShippingDate());
         task.setInvoiceNos(joinInvoiceNos(selectedOrderDetails, orderMap));
         task.setDevelopmentNos(joinDevelopmentNos(selectedOrderDetails));
@@ -122,6 +129,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         }
         Page<ShippingNoteTask> pageRequest = new Page<>(Math.max(1, page), Math.min(Math.max(1, size), 100));
         LambdaQueryWrapper<ShippingNoteTask> wrapper = new LambdaQueryWrapper<ShippingNoteTask>()
+                .ne(ShippingNoteTask::getSourceType, 3)
                 .like(hasText(orderNo), ShippingNoteTask::getInvoiceNos, orderNo)
                 .like(hasText(developmentNo), ShippingNoteTask::getDevelopmentNos, developmentNo)
                 .ge(startDate != null, ShippingNoteTask::getShippingDate, startDate)
@@ -188,6 +196,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         if (task == null) {
             throw new BusinessException("出货单任务不存在: " + id);
         }
+        if (Integer.valueOf(3).equals(task.getSourceType())) throw new BusinessException("手工出货记录请从订单查看");
         return buildFullResponse(task);
     }
 
@@ -198,6 +207,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         if (task == null) {
             throw new BusinessException("出货单任务不存在: " + id);
         }
+        if (Integer.valueOf(3).equals(task.getSourceType())) throw new BusinessException("手工出货记录不能从打印任务修改");
         boolean changed = false;
         if (hasText(request.getRecipientName()) && !request.getRecipientName().equals(task.getRecipientName())) {
             task.setRecipientName(request.getRecipientName().trim());
@@ -268,7 +278,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         Long orderId = orderDetail.getOrderId() == null ? taskItem.getOrderId() : orderDetail.getOrderId();
         OrderRecord order = orderId == null ? null : orderMap.get(orderId);
         Map<String, Integer> sizeQuantities = parseSizeQuantities(orderDetail.getSizeQuantitiesJson());
-        int pairCount = getOrderPairCount(orderDetail, sizeQuantities);
+        int pairCount = com.shoefactory.assistant.service.LedgerDataService.quantity(orderDetail);
         List<ShippingNoteItemRequest> packingItems = getMatchingPackingDetails(orderDetail, packingDetailsByOrderId)
                 .stream()
                 .map(packingDetail -> toPackingItemResponse(packingDetail, order, orderDetail))
@@ -333,6 +343,16 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
                 .distinct()
                 .toList();
         return loadOrderDetailsByIds(sourceDetailIds);
+    }
+
+    private Long resolveCustomerId(Map<Long, OrderRecord> orders) {
+        if (orders.values().stream().anyMatch(order -> Integer.valueOf(3).equals(order.getSourceType()))) {
+            throw new BusinessException("手工订单请在订单列表确认出货");
+        }
+        Set<Long> ids = orders.values().stream().map(OrderRecord::getCustomerId)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (ids.size() > 1) throw new BusinessException("同一出货单不能混合不同客户的订单");
+        return ids.isEmpty() ? null : ids.iterator().next();
     }
 
     private Map<Long, OrderRecordDetail> loadOrderDetailsByTaskItems(List<ShippingNoteTaskItem> items) {
@@ -470,7 +490,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
     private int sumOrderPairs(List<OrderRecordDetail> items) {
         int total = 0;
         for (OrderRecordDetail item : items) {
-            total += getOrderPairCount(item, parseSizeQuantities(item.getSizeQuantitiesJson()));
+            total += com.shoefactory.assistant.service.LedgerDataService.quantity(item);
         }
         return total;
     }
@@ -481,13 +501,6 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
             total += nullToZero(item.getCartonCount());
         }
         return total;
-    }
-
-    private int getOrderPairCount(OrderRecordDetail item, Map<String, Integer> sizeQuantities) {
-        if (item.getQuantity() != null && item.getQuantity() > 0) {
-            return item.getQuantity();
-        }
-        return sumSizeQuantities(sizeQuantities);
     }
 
     private int getPackingTotalPairs(OrderPackingDetail item, int sizeTotal) {

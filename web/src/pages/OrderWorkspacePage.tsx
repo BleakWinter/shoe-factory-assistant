@@ -39,8 +39,11 @@ import type {
 } from "../types/order";
 import { formatDateTime, formatEmpty } from "../utils/format";
 import { getPackingTotalPairs } from "../utils/packingTotals";
+import ManualOrderEditor from "../components/ManualOrderEditor";
+import { useCustomers } from "../hooks/useCustomers";
 
 interface FilterValues {
+  customerId?: number;
   orderNo?: string;
   developmentNoPaths?: string[][];
   recognitionStatuses?: string[];
@@ -116,6 +119,7 @@ function getRecognitionStatusColor(statusText?: string, errorMessage?: string) {
 }
 
 function renderRecognitionFlags(record: OrderRecord) {
+  if (record.sourceType===3) return <Tag color="green">手工录入</Tag>;
   const orderStatusText = record.orderRecognitionStatusText || "待识别";
   const packingStatusText = record.packingRecognitionStatusText || "待识别";
   return (
@@ -187,6 +191,8 @@ function renderProcesses(processes?: OrderDetailProcess[]) {
 }
 
 export default function OrderWorkspacePage() {
+  const customers=useCustomers();
+  const [manualEditorOpen,setManualEditorOpen]=useState(false);
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [form] = Form.useForm<FilterValues>();
@@ -234,6 +240,7 @@ export default function OrderWorkspacePage() {
       .filter(Boolean)
       .join(",");
     setQuery({
+      customerId: values.customerId,
       orderNo: values.orderNo,
       developmentNos,
       recognitionStatus: values.recognitionStatuses?.join(","),
@@ -354,6 +361,7 @@ export default function OrderWorkspacePage() {
         ),
       },
       { title: "开发编号", dataIndex: "developmentNoList", width: 170, render: renderDevelopmentNos },
+      { title:"客户",dataIndex:"customerId",width:100,render:value=>customers.find(c=>c.id===value)?.name||"-" },
       { title: "订单总双数", dataIndex: "totalQuantity", width: 120, align: "right", render: formatEmpty },
       { title: "总箱数", dataIndex: "totalCartonCount", width: 100, align: "right", render: formatEmpty },
       {
@@ -362,13 +370,16 @@ export default function OrderWorkspacePage() {
         width: 220,
         render: (_, record) => renderRecognitionFlags(record),
       },
-      { title: "上传时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
+      { title:"订单日期",dataIndex:"orderDate",width:110,render:formatEmpty },
+      { title: "录入时间", dataIndex: "createdAt", width: 170, render: formatDateTime },
       {
         title: "操作",
         key: "actions",
         width: 240,
         fixed: "right",
         render: (_, record) => {
+          if (record.sourceType===3) return <Button icon={<EyeOutlined/>}
+            onClick={()=>navigate(`/orders/${record.id}/manual`)}>查看 / 确认出货</Button>;
           const recognitionLoading =
             recognizingKey === `${record.id}-ORDER` || recognizingKey === `${record.id}-PACKING`;
           const recognitionDisabled = Boolean(recognizingKey) && !recognitionLoading;
@@ -396,7 +407,7 @@ export default function OrderWorkspacePage() {
         },
       },
     ],
-    [openDetails, recognizingKey, runRecognition],
+    [openDetails, recognizingKey, runRecognition, navigate,customers],
   );
 
   const detailColumns = useMemo<ColumnsType<OrderRecordDetail>>(
@@ -501,10 +512,13 @@ export default function OrderWorkspacePage() {
             同一流水号的追加文件合并为一条订单显示，识别时会处理全部份数。
           </Typography.Text>
         </div>
+        <Button type="primary" onClick={()=>setManualEditorOpen(true)}>新增手工订单</Button>
       </div>
 
       <div className="page-panel">
         <Form form={form} layout="inline" className="filter-form" onFinish={submitFilters}>
+          <Form.Item name="customerId" label="客户"><Select allowClear placeholder="全部客户" style={{width:160}}
+            options={customers.map(c=>({label:c.name,value:c.id}))}/></Form.Item>
           <Form.Item name="orderNo" label="订单流水号">
             <Input allowClear placeholder="订单流水号" />
           </Form.Item>
@@ -617,6 +631,8 @@ export default function OrderWorkspacePage() {
           ]}
         />
       </Modal>
+      <ManualOrderEditor open={manualEditorOpen} onClose={()=>setManualEditorOpen(false)}
+        onSaved={view=>{setManualEditorOpen(false);navigate(`/orders/${view.order.id}/manual`);}}/>
     </div>
   );
 }

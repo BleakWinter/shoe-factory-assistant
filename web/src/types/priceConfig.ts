@@ -2,16 +2,19 @@ import type { PageResponse } from "./order";
 
 export interface ShoePriceConfig {
   id: number;
+  customerId: number;
+  customerName: string;
   developmentNo: string;
   imageUrl?: string;
   upperMaterial?: string;
-  shoePrice?: number;
+  shoePrice?: number | null;
   complete?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface ShoePriceConfigQueryParams {
+  customerId?: number;
   developmentNos?: string;
   incompleteOnly?: boolean;
   page?: number;
@@ -19,7 +22,8 @@ export interface ShoePriceConfigQueryParams {
 }
 
 export interface ShoePriceConfigSavePayload {
-  developmentNo?: string;
+  customerId: number;
+  developmentNo: string;
   shoePrice?: number | null;
 }
 

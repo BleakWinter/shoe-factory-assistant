@@ -49,6 +49,8 @@ import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
 import com.shoefactory.assistant.service.OrderExcelImportService;
 import com.shoefactory.assistant.service.OrderImportResult;
 import com.shoefactory.assistant.service.OrderService;
+import com.shoefactory.assistant.service.LedgerDataService;
+import com.shoefactory.assistant.service.CustomerConfigService;
 import com.shoefactory.assistant.service.StyleConfigService;
 import com.shoefactory.assistant.util.DevelopmentNoUtil;
 import com.shoefactory.assistant.util.FileStorageUtil;
@@ -107,6 +109,9 @@ public class OrderServiceImpl implements OrderService {
     private final FileStorageUtil fileStorageUtil;
     private final OrderExcelImportService orderExcelImportService;
     private final StyleConfigService styleConfigService;
+    private final LedgerDataService ledger;
+    private final CustomerConfigService customers;
+    private final com.shoefactory.assistant.service.CustomerPriceService customerPrices;
 
     public OrderServiceImpl(
             OrderRecordMapper orderRecordMapper,
@@ -121,7 +126,10 @@ public class OrderServiceImpl implements OrderService {
             ShippingNoteTaskItemMapper shippingNoteTaskItemMapper,
             FileStorageUtil fileStorageUtil,
             OrderExcelImportService orderExcelImportService,
-            StyleConfigService styleConfigService
+            StyleConfigService styleConfigService,
+            LedgerDataService ledger,
+            CustomerConfigService customers,
+            com.shoefactory.assistant.service.CustomerPriceService customerPrices
     ) {
         this.orderRecordMapper = orderRecordMapper;
         this.orderSheetPrintTaskMapper = orderSheetPrintTaskMapper;
@@ -136,6 +144,9 @@ public class OrderServiceImpl implements OrderService {
         this.fileStorageUtil = fileStorageUtil;
         this.orderExcelImportService = orderExcelImportService;
         this.styleConfigService = styleConfigService;
+        this.ledger = ledger;
+        this.customers = customers;
+        this.customerPrices=customerPrices;
     }
 
     @Override
@@ -157,6 +168,7 @@ public class OrderServiceImpl implements OrderService {
             orderRecordMapper.insert(orderRecord);
             List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(orderRecord, storedFile);
             styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(orderRecord.getDevelopmentNos()));
+            customerPrices.ensure(orderRecord.getCustomerId(),splitDevelopmentNos(orderRecord.getDevelopmentNos()));
             uploaded = true;
             return buildUploadResponse(orderRecord, firstTaskId(printTasks), 0);
         } finally {
@@ -170,6 +182,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderUploadResponse appendOrderSource(Long orderId, MultipartFile file) {
         OrderRecord existingOrder = getRequiredOrder(orderId);
+        requireExcelOrder(existingOrder);
         String extension = fileStorageUtil.extractExtension(file == null ? null : file.getOriginalFilename());
         FileType fileType = toFileType(extension);
         if (fileType != FileType.EXCEL) {
@@ -189,6 +202,7 @@ public class OrderServiceImpl implements OrderService {
             orderRecordMapper.insert(appendedOrder);
             List<OrderSheetPrintTask> printTasks = createSheetPrintTasks(appendedOrder, storedFile);
             styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(appendedOrder.getDevelopmentNos()));
+            customerPrices.ensure(appendedOrder.getCustomerId(),splitDevelopmentNos(appendedOrder.getDevelopmentNos()));
             appended = true;
             return buildUploadResponse(appendedOrder, firstTaskId(printTasks), 0);
         } finally {
@@ -202,6 +216,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderUploadResponse reuploadOrderSource(Long orderId, MultipartFile file) {
         OrderRecord existingOrder = getRequiredOrder(orderId);
+        requireExcelOrder(existingOrder);
         String extension = fileStorageUtil.extractExtension(file == null ? null : file.getOriginalFilename());
         FileType fileType = toFileType(extension);
         if (fileType != FileType.EXCEL) {
@@ -219,6 +234,7 @@ public class OrderServiceImpl implements OrderService {
             applyReuploadSummary(existingOrder, parsedOrder);
             updateReuploadedOrder(existingOrder);
             styleConfigService.ensureConfigsForDevelopmentNos(splitDevelopmentNos(existingOrder.getDevelopmentNos()));
+            customerPrices.ensure(existingOrder.getCustomerId(),splitDevelopmentNos(existingOrder.getDevelopmentNos()));
 
             List<OrderSheetPrintTask> printTasks = replaceSheetPrintTaskFiles(orderId, storedFile);
             replacedTaskFiles = true;
@@ -237,6 +253,8 @@ public class OrderServiceImpl implements OrderService {
             String developmentNos,
             String recognitionStatus,
             Integer unfinishedProcessType,
+            Long customerId,
+            Integer sourceType,
             long page,
             long size
     ) {
@@ -245,7 +263,9 @@ public class OrderServiceImpl implements OrderService {
         List<RecognitionFilter> parsedRecognitionFilters = parseRecognitionFilters(recognitionStatus);
         List<String> parsedDevelopmentNos = splitDevelopmentNos(developmentNos);
         List<OrderRecord> allOrders = orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
-                .like(hasText(orderNo), OrderRecord::getOrderNo, orderNo));
+                .like(hasText(orderNo), OrderRecord::getOrderNo, orderNo)
+                .eq(customerId != null, OrderRecord::getCustomerId, customerId)
+                .eq(sourceType != null, OrderRecord::getSourceType, sourceType));
         Map<Long, List<OrderRecordDetail>> detailsByOrderId = loadDetailsByOrderId(allOrders);
         Map<Long, List<OrderPackingDetail>> packingDetailsByOrderId = loadPackingDetailsByOrderId(allOrders);
         Set<Long> completedDetailIds = loadCompletedDetailIds(allOrders, unfinishedProcessType);
@@ -289,7 +309,7 @@ public class OrderServiceImpl implements OrderService {
         for (OrderRecord order : orders) {
             String normalizedOrderNo = normalizeOrderNo(order.getOrderNo()).toUpperCase(Locale.ROOT);
             String key = hasText(normalizedOrderNo)
-                    ? "ORDER-" + normalizedOrderNo
+                    ? "CUSTOMER-" + order.getCustomerId() + "-ORDER-" + normalizedOrderNo
                     : "ID-" + order.getId();
             grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(order);
         }
@@ -420,26 +440,19 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderStatisticsResponse getOrderStatistics() {
-        List<OrderRecordDetail> details = orderRecordDetailMapper.selectList(new LambdaQueryWrapper<OrderRecordDetail>()
-                .select(
-                        OrderRecordDetail::getId,
-                        OrderRecordDetail::getDevelopmentNo,
-                        OrderRecordDetail::getOrderId,
-                        OrderRecordDetail::getCustomerOrderNo,
-                        OrderRecordDetail::getQuantity,
-                        OrderRecordDetail::getSizeQuantitiesJson
-                ));
-        Map<Long, OrderRecord> ordersById = loadStatisticsOrdersById(details);
-        Map<Long, Integer> detailPairsById = details.stream()
-                .filter(detail -> detail.getId() != null)
-                .collect(Collectors.toMap(
-                        OrderRecordDetail::getId,
-                        this::detailPairCount,
-                        (left, right) -> left,
-                        LinkedHashMap::new
-                ));
-        Map<Long, Integer> shippedPairsByDetailId = loadShippedPairsByDetailId(detailPairsById);
+    public OrderStatisticsResponse getOrderStatistics() { return getOrderStatistics(null); }
+
+    @Override
+    public OrderRecordResponse getOrder(Long id) {
+        return OrderRecordResponse.from(getRequiredOrder(id));
+    }
+
+    @Override
+    public OrderStatisticsResponse getOrderStatistics(Long customerId) {
+        LedgerDataService.Data data = ledger.load(customerId);
+        List<OrderRecordDetail> details = data.details();
+        Map<Long, OrderRecord> ordersById = data.ordersById();
+        Map<Long, Integer> shippedPairsByDetailId = loadShippedPairsByDetailId(data);
         Map<String, DevelopmentNoBucket> buckets = new LinkedHashMap<>();
         int totalPairs = 0;
         int shippedPairs = 0;
@@ -467,16 +480,16 @@ public class OrderServiceImpl implements OrderService {
         response.setUnshippedPairs(Math.max(0, totalPairs - shippedPairs));
         response.setStyleCount(buckets.size());
         response.setDetailCount(details.size());
-        response.setOrderCreatedTrend(buildOrderCreatedTrend());
-        response.setShippedPairsTrend(buildShippedPairsTrend());
-        response.setShippedOrderStatistics(buildShippedOrderStatistics(details, ordersById));
-        PaymentStatistics paymentStatistics = buildPaymentStatistics();
+        response.setOrderCreatedTrend(buildOrderCreatedTrend(data));
+        response.setShippedPairsTrend(buildShippedPairsTrend(data));
+        response.setShippedOrderStatistics(buildShippedOrderStatistics(data));
+        PaymentStatistics paymentStatistics = buildPaymentStatistics(data);
         response.setTotalPaymentAmount(paymentStatistics.totalAmount());
         response.setUnpricedShippedPairs(paymentStatistics.unpricedShippedPairs());
         response.setUnpricedShippedStyles(paymentStatistics.unpricedShippedStyles());
         response.setPaymentAmountTrend(paymentStatistics.trend());
         UnpricedUnshippedStatistics unpricedUnshippedStatistics =
-                buildUnpricedUnshippedStatistics(details, shippedPairsByDetailId);
+                buildUnpricedUnshippedStatistics(details, shippedPairsByDetailId, data.pricesByDetailId());
         response.setUnpricedUnshippedPairs(unpricedUnshippedStatistics.totalPairs());
         response.setUnpricedUnshippedStyles(unpricedUnshippedStatistics.styles());
         response.setUnshippedInvoiceStatistics(buildUnshippedInvoiceStatistics(details, ordersById, shippedPairsByDetailId));
@@ -486,237 +499,78 @@ public class OrderServiceImpl implements OrderService {
         return response;
     }
 
-    private List<StatisticsTimePoint> buildOrderCreatedTrend() {
-        List<OrderRecord> orders = orderRecordMapper.selectList(new LambdaQueryWrapper<OrderRecord>()
-                .select(OrderRecord::getCreatedAt, OrderRecord::getTotalQuantity));
-        Map<LocalDate, Integer> valuesByDate = new LinkedHashMap<>();
-        for (OrderRecord order : orders) {
-            if (order.getCreatedAt() == null) {
-                continue;
-            }
-            valuesByDate.merge(order.getCreatedAt().toLocalDate(), nullToZero(order.getTotalQuantity()), Integer::sum);
+    private List<StatisticsTimePoint> buildOrderCreatedTrend(LedgerDataService.Data data) {
+        Map<LocalDate, Integer> values = new LinkedHashMap<>();
+        for (OrderRecord order : data.orders()) {
+            LocalDate date = order.getOrderDate() != null ? order.getOrderDate() :
+                    order.getCreatedAt() == null ? null : order.getCreatedAt().toLocalDate();
+            if (date != null) values.merge(date, nullToZero(order.getTotalQuantity()), Integer::sum);
         }
-        return buildTimePoints(valuesByDate);
+        return buildTimePoints(values);
     }
 
-    private List<StatisticsTimePoint> buildShippedPairsTrend() {
-        List<ShippingNoteTask> tasks = shippingNoteTaskMapper.selectList(new LambdaQueryWrapper<ShippingNoteTask>()
-                .select(
-                        ShippingNoteTask::getShippingDate,
-                        ShippingNoteTask::getTotalPairs,
-                        ShippingNoteTask::getCreatedAt
-                ));
-        Map<LocalDate, Integer> valuesByDate = new LinkedHashMap<>();
-        for (ShippingNoteTask task : tasks) {
-            LocalDate date = task.getShippingDate();
-            if (date == null && task.getCreatedAt() != null) {
-                date = task.getCreatedAt().toLocalDate();
-            }
-            if (date == null) {
-                continue;
-            }
-            valuesByDate.merge(date, nullToZero(task.getTotalPairs()), Integer::sum);
+    private List<StatisticsTimePoint> buildShippedPairsTrend(LedgerDataService.Data data) {
+        Map<LocalDate, Integer> values = new LinkedHashMap<>();
+        Map<Long, ShippingNoteTask> tasks = data.tasksById();
+        Map<Long, OrderRecordDetail> details = data.detailsById();
+        for (ShippingNoteTaskItem item : data.items()) {
+            ShippingNoteTask task = tasks.get(item.getTaskId());
+            OrderRecordDetail detail = details.get(item.getSourceDetailId());
+            if (task == null || detail == null) continue;
+            LocalDate date = LedgerDataService.shippingDate(task);
+            if (date != null) values.merge(date, LedgerDataService.quantity(detail), Integer::sum);
         }
-        return buildTimePoints(valuesByDate);
+        return buildTimePoints(values);
     }
 
-    private List<ShippedOrderStatistic> buildShippedOrderStatistics(
-            List<OrderRecordDetail> details,
-            Map<Long, OrderRecord> ordersById
-    ) {
-        List<ShippingNoteTask> tasks = shippingNoteTaskMapper.selectList(new LambdaQueryWrapper<ShippingNoteTask>()
-                .select(
-                        ShippingNoteTask::getId,
-                        ShippingNoteTask::getShippingDate,
-                        ShippingNoteTask::getCreatedAt
-                ));
-        Map<Long, LocalDate> shippingDateByTaskId = new LinkedHashMap<>();
-        for (ShippingNoteTask task : tasks) {
-            LocalDate shippingDate = task.getShippingDate();
-            if (shippingDate == null && task.getCreatedAt() != null) {
-                shippingDate = task.getCreatedAt().toLocalDate();
-            }
-            if (task.getId() != null && shippingDate != null) {
-                shippingDateByTaskId.put(task.getId(), shippingDate);
-            }
+    private List<ShippedOrderStatistic> buildShippedOrderStatistics(LedgerDataService.Data data) {
+        Map<Long, ShippingNoteTask> tasks = data.tasksById();
+        Map<Long, OrderRecordDetail> details = data.detailsById();
+        Map<Long, OrderRecord> orders = data.ordersById();
+        Map<ShippedOrderStatisticKey,Integer> values = new LinkedHashMap<>();
+        for (ShippingNoteTaskItem item : data.items()) {
+            ShippingNoteTask task = tasks.get(item.getTaskId());
+            OrderRecordDetail detail = details.get(item.getSourceDetailId());
+            if (task == null || detail == null || LedgerDataService.shippingDate(task) == null) continue;
+            OrderRecord order = orders.get(detail.getOrderId());
+            values.merge(new ShippedOrderStatisticKey(LedgerDataService.shippingDate(task),
+                    order == null ? detail.getCustomerOrderNo() : order.getOrderNo(),
+                    normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo())),
+                    LedgerDataService.quantity(detail), Integer::sum);
         }
-        if (shippingDateByTaskId.isEmpty()) {
-            return List.of();
-        }
-
-        Map<Long, OrderRecordDetail> detailById = details.stream()
-                .filter(detail -> detail.getId() != null)
-                .collect(Collectors.toMap(
-                        OrderRecordDetail::getId,
-                        detail -> detail,
-                        (left, right) -> left,
-                        LinkedHashMap::new
-                ));
-        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
-                new LambdaQueryWrapper<ShippingNoteTaskItem>()
-                        .select(
-                                ShippingNoteTaskItem::getTaskId,
-                                ShippingNoteTaskItem::getOrderId,
-                                ShippingNoteTaskItem::getSourceDetailId
-                        )
-                        .in(ShippingNoteTaskItem::getTaskId, shippingDateByTaskId.keySet())
-        );
-        Map<ShippedOrderStatisticKey, Integer> pairsByOrder = new LinkedHashMap<>();
-        for (ShippingNoteTaskItem taskItem : taskItems) {
-            LocalDate shippingDate = shippingDateByTaskId.get(taskItem.getTaskId());
-            OrderRecordDetail detail = detailById.get(taskItem.getSourceDetailId());
-            if (shippingDate == null || detail == null) {
-                continue;
-            }
-            int pairCount = detailPairCount(detail);
-            if (pairCount <= 0) {
-                continue;
-            }
-            Long orderId = detail.getOrderId() == null ? taskItem.getOrderId() : detail.getOrderId();
-            OrderRecord order = orderId == null ? null : ordersById.get(orderId);
-            String orderNo = cleanStatisticText(order == null ? null : order.getOrderNo());
-            if (!hasText(orderNo)) {
-                orderNo = cleanStatisticText(detail.getCustomerOrderNo());
-            }
-            pairsByOrder.merge(
-                    new ShippedOrderStatisticKey(
-                            shippingDate,
-                            orderNo,
-                            normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo())
-                    ),
-                    pairCount,
-                    Integer::sum
-            );
-        }
-        return pairsByOrder.entrySet()
-                .stream()
-                .map(entry -> {
-                    ShippedOrderStatistic statistic = new ShippedOrderStatistic();
-                    statistic.setShippingDate(entry.getKey().shippingDate());
-                    statistic.setOrderNo(entry.getKey().orderNo());
-                    statistic.setDevelopmentNo(entry.getKey().developmentNo());
-                    statistic.setShippedPairs(entry.getValue());
-                    return statistic;
-                })
-                .sorted(Comparator.comparing(
-                                ShippedOrderStatistic::getShippingDate,
-                                Comparator.reverseOrder())
-                        .thenComparing(
-                                ShippedOrderStatistic::getOrderNo,
-                                Comparator.nullsLast(String::compareTo))
-                        .thenComparing(
-                                ShippedOrderStatistic::getDevelopmentNo,
-                                Comparator.nullsLast(String::compareTo)))
-                .toList();
+        return values.entrySet().stream().map(entry -> {
+            ShippedOrderStatistic row = new ShippedOrderStatistic();
+            row.setShippingDate(entry.getKey().shippingDate()); row.setOrderNo(entry.getKey().orderNo());
+            row.setDevelopmentNo(entry.getKey().developmentNo()); row.setShippedPairs(entry.getValue());
+            return row;
+        }).sorted(Comparator.comparing(ShippedOrderStatistic::getShippingDate).reversed()).toList();
     }
 
-    private record ShippedOrderStatisticKey(
-            LocalDate shippingDate,
-            String orderNo,
-            String developmentNo
-    ) {
-    }
+    private record ShippedOrderStatisticKey(LocalDate shippingDate, String orderNo, String developmentNo) {}
 
-    private PaymentStatistics buildPaymentStatistics() {
-        List<ShippingNoteTask> tasks = shippingNoteTaskMapper.selectList(new LambdaQueryWrapper<ShippingNoteTask>()
-                .select(
-                        ShippingNoteTask::getId,
-                        ShippingNoteTask::getShippingDate,
-                        ShippingNoteTask::getCreatedAt
-                ));
-        Map<Long, LocalDate> shippingDateByTaskId = new LinkedHashMap<>();
-        Map<LocalDate, BigDecimal> amountByDate = new LinkedHashMap<>();
-        for (ShippingNoteTask task : tasks) {
-            LocalDate shippingDate = task.getShippingDate();
-            if (shippingDate == null && task.getCreatedAt() != null) {
-                shippingDate = task.getCreatedAt().toLocalDate();
-            }
-            if (task.getId() == null || shippingDate == null) {
-                continue;
-            }
-            shippingDateByTaskId.put(task.getId(), shippingDate);
-            amountByDate.putIfAbsent(shippingDate, BigDecimal.ZERO);
+    private PaymentStatistics buildPaymentStatistics(LedgerDataService.Data data) {
+        Map<Long, ShippingNoteTask> tasks = data.tasksById();
+        Map<Long, OrderRecordDetail> details = data.detailsById();
+        Map<LocalDate, BigDecimal> amounts = new LinkedHashMap<>();
+        Map<UnpricedShippedStyleDateKey,Integer> unpriced = new LinkedHashMap<>();
+        int unpricedPairs = 0;
+        for (ShippingNoteTaskItem item : data.items()) {
+            ShippingNoteTask task = tasks.get(item.getTaskId());
+            OrderRecordDetail detail = details.get(item.getSourceDetailId());
+            if (task == null || detail == null) continue;
+            LocalDate date = LedgerDataService.shippingDate(task);
+            if (date == null) continue;
+            int quantity = LedgerDataService.quantity(detail);
+            BigDecimal price = data.pricesByDetailId().get(detail.getId());
+            amounts.putIfAbsent(date,BigDecimal.ZERO);
+            if (price == null) {
+                unpricedPairs += quantity;
+                unpriced.merge(new UnpricedShippedStyleDateKey(normalizeStatisticsDevelopmentNo(detail.getDevelopmentNo()),date),
+                        quantity,Integer::sum);
+            } else amounts.merge(date,price.multiply(BigDecimal.valueOf(quantity)),BigDecimal::add);
         }
-        if (shippingDateByTaskId.isEmpty()) {
-            return PaymentStatistics.empty();
-        }
-
-        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
-                new LambdaQueryWrapper<ShippingNoteTaskItem>()
-                        .select(
-                                ShippingNoteTaskItem::getTaskId,
-                                ShippingNoteTaskItem::getSourceDetailId
-                        )
-                        .in(ShippingNoteTaskItem::getTaskId, shippingDateByTaskId.keySet())
-        );
-        List<Long> detailIds = taskItems.stream()
-                .map(ShippingNoteTaskItem::getSourceDetailId)
-                .filter(id -> id != null)
-                .distinct()
-                .toList();
-        if (detailIds.isEmpty()) {
-            return new PaymentStatistics(BigDecimal.ZERO, 0, List.of(), buildAmountTimePoints(amountByDate));
-        }
-
-        Map<Long, OrderRecordDetail> detailById = orderRecordDetailMapper.selectList(
-                        new LambdaQueryWrapper<OrderRecordDetail>()
-                                .select(
-                                        OrderRecordDetail::getId,
-                                        OrderRecordDetail::getDevelopmentNo,
-                                        OrderRecordDetail::getQuantity,
-                                        OrderRecordDetail::getSizeQuantitiesJson
-                                )
-                                .in(OrderRecordDetail::getId, detailIds))
-                .stream()
-                .filter(detail -> detail.getId() != null)
-                .collect(Collectors.toMap(
-                        OrderRecordDetail::getId,
-                        detail -> detail,
-                        (left, right) -> left,
-                        LinkedHashMap::new
-                ));
-        Map<String, BigDecimal> priceByDevelopmentNo = loadShoePrices(detailById.values());
-
-        int unpricedShippedPairs = 0;
-        Map<UnpricedShippedStyleDateKey, Integer> unpricedPairsByStyleAndDate = new LinkedHashMap<>();
-        for (ShippingNoteTaskItem taskItem : taskItems) {
-            LocalDate shippingDate = shippingDateByTaskId.get(taskItem.getTaskId());
-            OrderRecordDetail detail = detailById.get(taskItem.getSourceDetailId());
-            if (shippingDate == null || detail == null) {
-                continue;
-            }
-            int pairCount = detailPairCount(detail);
-            if (pairCount <= 0) {
-                continue;
-            }
-            BigDecimal shoePrice = priceByDevelopmentNo.get(
-                    normalizePaymentDevelopmentNo(detail.getDevelopmentNo()));
-            if (shoePrice == null) {
-                unpricedShippedPairs += pairCount;
-                String developmentNo = normalizePaymentDevelopmentNo(detail.getDevelopmentNo());
-                unpricedPairsByStyleAndDate.merge(
-                        new UnpricedShippedStyleDateKey(
-                                hasText(developmentNo) ? developmentNo : "未填开发编号",
-                                shippingDate
-                        ),
-                        pairCount,
-                        Integer::sum
-                );
-                continue;
-            }
-            BigDecimal detailAmount = shoePrice.multiply(BigDecimal.valueOf(pairCount));
-            amountByDate.merge(shippingDate, detailAmount, BigDecimal::add);
-        }
-
-        BigDecimal totalAmount = amountByDate.values()
-                .stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new PaymentStatistics(
-                totalAmount,
-                unpricedShippedPairs,
-                buildUnpricedShippedStyles(unpricedPairsByStyleAndDate),
-                buildAmountTimePoints(amountByDate)
-        );
+        return new PaymentStatistics(amounts.values().stream().reduce(BigDecimal.ZERO,BigDecimal::add),
+                unpricedPairs,buildUnpricedShippedStyles(unpriced),buildAmountTimePoints(amounts));
     }
 
     private List<UnpricedShippedStyle> buildUnpricedShippedStyles(
@@ -749,13 +603,13 @@ public class OrderServiceImpl implements OrderService {
 
     private UnpricedUnshippedStatistics buildUnpricedUnshippedStatistics(
             List<OrderRecordDetail> details,
-            Map<Long, Integer> shippedPairsByDetailId
+            Map<Long, Integer> shippedPairsByDetailId,
+            Map<Long, BigDecimal> pricesByDetailId
     ) {
-        Map<String, BigDecimal> priceByDevelopmentNo = loadShoePrices(details);
         Map<String, Integer> unpricedPairsByDevelopmentNo = new LinkedHashMap<>();
         for (OrderRecordDetail detail : details) {
             String developmentNo = normalizePaymentDevelopmentNo(detail.getDevelopmentNo());
-            if (priceByDevelopmentNo.containsKey(developmentNo)) {
+            if (pricesByDetailId.containsKey(detail.getId())) {
                 continue;
             }
             int totalPairs = detailPairCount(detail);
@@ -791,32 +645,8 @@ public class OrderServiceImpl implements OrderService {
         return new UnpricedUnshippedStatistics(totalPairs, styles);
     }
 
-    private Map<String, BigDecimal> loadShoePrices(Collection<OrderRecordDetail> details) {
-        List<String> developmentNos = details.stream()
-                .map(OrderRecordDetail::getDevelopmentNo)
-                .map(DevelopmentNoUtil::normalize)
-                .filter(this::hasText)
-                .distinct()
-                .toList();
-        if (developmentNos.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        return shoeStyleConfigMapper.selectList(new LambdaQueryWrapper<ShoeStyleConfig>()
-                        .select(ShoeStyleConfig::getDevelopmentNo, ShoeStyleConfig::getShoePrice)
-                        .in(ShoeStyleConfig::getDevelopmentNo, developmentNos))
-                .stream()
-                .filter(config -> hasText(config.getDevelopmentNo()))
-                .filter(config -> config.getShoePrice() != null)
-                .collect(Collectors.toMap(
-                        config -> normalizePaymentDevelopmentNo(config.getDevelopmentNo()),
-                        ShoeStyleConfig::getShoePrice,
-                        (left, right) -> left,
-                        LinkedHashMap::new
-                ));
-    }
-
     private String normalizePaymentDevelopmentNo(String value) {
-        String developmentNo = DevelopmentNoUtil.normalize(value);
+        String developmentNo = com.shoefactory.assistant.service.CustomerPriceService.normalize(value);
         return hasText(developmentNo) ? developmentNo.toUpperCase(Locale.ROOT) : "";
     }
 
@@ -911,12 +741,7 @@ public class OrderServiceImpl implements OrderService {
             statistic.setUnshippedPairCount(nullToZero(statistic.getUnshippedPairCount()) + unshippedPairCount);
             statistic.setDetailCount(nullToZero(statistic.getDetailCount()) + 1);
 
-            LocalDate detailDeliveryDate = effectiveDeliveryDate(detail, order);
-            if (detailDeliveryDate != null
-                    && (statistic.getDeliveryDate() == null || detailDeliveryDate.isBefore(statistic.getDeliveryDate()))) {
-                statistic.setDeliveryDate(detailDeliveryDate);
-                statistic.setDefaultDeliveryDate(detail.getDeliveryDate() == null);
-            }
+            mergeStyleDeliveryDate(statistic, detail, order);
         }
         return statisticsByStyle.values()
                 .stream()
@@ -941,13 +766,43 @@ public class OrderServiceImpl implements OrderService {
         statistic.setCreatedAt(order != null && order.getCreatedAt() != null
                 ? order.getCreatedAt()
                 : detail.getCreatedAt());
-        statistic.setDeliveryDate(effectiveDeliveryDate(detail, order));
-        statistic.setDefaultDeliveryDate(detail.getDeliveryDate() == null);
+        statistic.setDefaultDeliveryDate(false);
         statistic.setPairCount(0);
         statistic.setShippedPairCount(0);
         statistic.setUnshippedPairCount(0);
         statistic.setDetailCount(0);
         return statistic;
+    }
+
+    void mergeStyleDeliveryDate(
+            UnshippedStyleStatistic statistic,
+            OrderRecordDetail detail,
+            OrderRecord order
+    ) {
+        LocalDate explicitDeliveryDate = detail.getDeliveryDate();
+        if (explicitDeliveryDate != null) {
+            boolean currentDateIsDefault = Boolean.TRUE.equals(statistic.getDefaultDeliveryDate());
+            if (statistic.getDeliveryDate() == null
+                    || currentDateIsDefault
+                    || explicitDeliveryDate.isBefore(statistic.getDeliveryDate())) {
+                statistic.setDeliveryDate(explicitDeliveryDate);
+                statistic.setDefaultDeliveryDate(false);
+            }
+            return;
+        }
+
+        boolean alreadyHasExplicitDate = statistic.getDeliveryDate() != null
+                && !Boolean.TRUE.equals(statistic.getDefaultDeliveryDate());
+        if (alreadyHasExplicitDate) {
+            return;
+        }
+        LocalDate defaultDeliveryDate = effectiveDeliveryDate(detail, order);
+        if (defaultDeliveryDate != null
+                && (statistic.getDeliveryDate() == null
+                || defaultDeliveryDate.isBefore(statistic.getDeliveryDate()))) {
+            statistic.setDeliveryDate(defaultDeliveryDate);
+            statistic.setDefaultDeliveryDate(true);
+        }
     }
 
     private LocalDate effectiveDeliveryDate(OrderRecordDetail detail, OrderRecord order) {
@@ -957,30 +812,18 @@ public class OrderServiceImpl implements OrderService {
         LocalDateTime createdAt = order != null && order.getCreatedAt() != null
                 ? order.getCreatedAt()
                 : detail.getCreatedAt();
+        if (order != null && order.getOrderDate()!=null) return order.getOrderDate().plusMonths(1);
         return createdAt == null ? null : createdAt.toLocalDate().plusMonths(1);
     }
 
-    private Map<Long, Integer> loadShippedPairsByDetailId(Map<Long, Integer> detailPairsById) {
-        if (detailPairsById.isEmpty()) {
-            return Collections.emptyMap();
+    private Map<Long, Integer> loadShippedPairsByDetailId(LedgerDataService.Data data) {
+        Map<Long,OrderRecordDetail> details = data.detailsById();
+        Map<Long,Integer> result = new LinkedHashMap<>();
+        for (ShippingNoteTaskItem item : data.items()) {
+            OrderRecordDetail detail = details.get(item.getSourceDetailId());
+            if (detail != null) result.merge(detail.getId(), LedgerDataService.quantity(detail),Integer::sum);
         }
-        List<ShippingNoteTaskItem> taskItems = shippingNoteTaskItemMapper.selectList(
-                new LambdaQueryWrapper<ShippingNoteTaskItem>()
-                        .select(ShippingNoteTaskItem::getSourceDetailId)
-                        .in(ShippingNoteTaskItem::getSourceDetailId, detailPairsById.keySet())
-        );
-        if (taskItems.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        Map<Long, Integer> shippedPairsByDetailId = new LinkedHashMap<>();
-        for (ShippingNoteTaskItem taskItem : taskItems) {
-            Long detailId = taskItem.getSourceDetailId();
-            int pairCount = nullToZero(detailPairsById.get(detailId));
-            if (detailId != null && pairCount > 0) {
-                shippedPairsByDetailId.merge(detailId, pairCount, Integer::sum);
-            }
-        }
-        return shippedPairsByDetailId;
+        return result;
     }
 
     private List<DevelopmentNoStatisticNode> buildDevelopmentNoStatisticsTree(
@@ -1148,7 +991,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private String normalizeStatisticsDevelopmentNo(String value) {
-        String developmentNo = DevelopmentNoUtil.normalize(value);
+        String developmentNo = com.shoefactory.assistant.service.CustomerPriceService.normalize(value);
         return hasText(developmentNo) ? developmentNo : "未填款号";
     }
 
@@ -1226,6 +1069,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderRecordResponse recognizeOrder(Long orderId) {
         List<OrderRecord> orderGroup = loadOrderGroup(orderId);
+        orderGroup.forEach(this::requireExcelOrder);
         orderGroup.forEach(this::recognizeSingleOrder);
         return buildOrderGroupResponse(orderGroup);
     }
@@ -1260,6 +1104,8 @@ public class OrderServiceImpl implements OrderService {
                 .map(OrderRecordDetail::getDevelopmentNo)
                 .toList());
         fillTotalsFromDetails(order, importResult.getDetails());
+        customerPrices.ensure(order.getCustomerId(),importResult.getDetails().stream()
+                .map(OrderRecordDetail::getDevelopmentNo).toList());
         fillTotalsFromPackingDetails(order, loadPackingDetails(orderId));
         order.setOrderRecognitionStatus(OrderRecognitionStatus.RECOGNIZED.getCode());
         order.setOrderErrorMessage(null);
@@ -1272,6 +1118,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderRecordResponse recognizePacking(Long orderId) {
         List<OrderRecord> orderGroup = loadOrderGroup(orderId);
+        orderGroup.forEach(this::requireExcelOrder);
         orderGroup.forEach(this::recognizeSinglePacking);
         return buildOrderGroupResponse(orderGroup);
     }
@@ -1402,6 +1249,10 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Long orderId = detail.getOrderId();
+        OrderRecord sourceOrder = orderRecordMapper.selectForUpdate(orderId);
+        if (sourceOrder != null && Integer.valueOf(3).equals(sourceOrder.getSourceType())) {
+            throw new BusinessException("手工订单请通过订单编辑维护明细，已出货订单不能删除明细");
+        }
         orderDetailProcessMapper.delete(new LambdaQueryWrapper<OrderDetailProcess>()
                 .eq(OrderDetailProcess::getOrderDetailId, id));
 
@@ -1442,6 +1293,11 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void initializeRecognitionFields(OrderRecord order) {
+        var customer = customers.excelCustomer();
+        if (!Boolean.TRUE.equals(customer.getEnabled())) throw new BusinessException("达为已停用，不能上传新订单");
+        order.setCustomerId(customer.getId());
+        order.setOrderDate(LocalDate.now());
+
         if (!hasText(order.getOrderNo())) {
             order.setOrderNo(FileStorageUtil.newBusinessNo("SF"));
         }
@@ -1489,6 +1345,7 @@ public class OrderServiceImpl implements OrderService {
         }
         OrderRecord existing = orderRecordMapper.selectOne(new LambdaQueryWrapper<OrderRecord>()
                 .eq(OrderRecord::getOrderNo, orderNo)
+                .eq(OrderRecord::getCustomerId, customers.excelCustomer().getId())
                 .last("LIMIT 1"));
         if (existing != null) {
             throw new BusinessException("订单流水号 " + orderNo
@@ -1683,6 +1540,8 @@ public class OrderServiceImpl implements OrderService {
         List<OrderRecord> orderGroup = new ArrayList<>(orderRecordMapper.selectList(
                 new LambdaQueryWrapper<OrderRecord>()
                         .eq(OrderRecord::getOrderNo, selectedOrder.getOrderNo())
+                        .eq(selectedOrder.getCustomerId()!=null, OrderRecord::getCustomerId, selectedOrder.getCustomerId())
+                        .isNull(selectedOrder.getCustomerId()==null, OrderRecord::getCustomerId)
         ));
         if (orderGroup.isEmpty()) {
             return List.of(selectedOrder);
@@ -2047,13 +1906,17 @@ public class OrderServiceImpl implements OrderService {
             return List.of();
         }
         return Arrays.stream(value.split(","))
-                .map(DevelopmentNoUtil::normalizeSearchTerm)
+                .map(String::trim)
                 .filter(this::hasText)
                 .toList();
     }
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private void requireExcelOrder(OrderRecord order) {
+        if (Integer.valueOf(3).equals(order.getSourceType())) throw new BusinessException("手工订单不需要 Excel 上传或识别");
     }
 
     private int nullToZero(Integer value) {
@@ -2349,17 +2212,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private int resolveOrderDetailQuantity(OrderRecordDetail detail) {
-        if (detail == null) {
-            return 0;
-        }
-        if (detail.getQuantity() != null && detail.getQuantity() > 0) {
-            return detail.getQuantity();
-        }
-        int perCartonPairs = sumSizeQuantities(detail.getSizeQuantitiesJson());
-        if (perCartonPairs > 0 && detail.getCartonCount() != null && detail.getCartonCount() > 0) {
-            return perCartonPairs * detail.getCartonCount();
-        }
-        return perCartonPairs;
+        return LedgerDataService.quantity(detail);
     }
 
     private int resolvePackingDetailQuantity(OrderPackingDetail detail) {

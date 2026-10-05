@@ -23,9 +23,12 @@ public class MonthlyReconciliationController {
     @GetMapping
     public ApiResponse<MonthlyReconciliationResponse> getMonthlyReconciliation(
             @RequestParam String month,
-            @RequestParam String customerName
+            @RequestParam(required=false) String customerName,
+            @RequestParam(required=false) Long customerId
     ) {
-        return ApiResponse.ok(monthlyReconciliationService.getMonthlyReconciliation(month, customerName));
+        return ApiResponse.ok(customerId == null ?
+                monthlyReconciliationService.getMonthlyReconciliation(month, customerName) :
+                monthlyReconciliationService.getMonthlyReconciliation(month, customerId));
     }
 
     @GetMapping("/customers")

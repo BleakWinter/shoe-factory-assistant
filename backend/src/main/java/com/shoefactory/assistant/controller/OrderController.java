@@ -62,6 +62,8 @@ public class OrderController {
             @RequestParam(required = false) String developmentNos,
             @RequestParam(required = false) String recognitionStatus,
             @RequestParam(required = false) Integer unfinishedProcessType,
+            @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) Integer sourceType,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size
     ) {
@@ -71,6 +73,8 @@ public class OrderController {
                 developmentNos,
                 recognitionStatus,
                 unfinishedProcessType,
+                customerId,
+                sourceType,
                 page,
                 size
         ));
@@ -82,8 +86,13 @@ public class OrderController {
     }
 
     @GetMapping("/statistics")
-    public ApiResponse<OrderStatisticsResponse> getOrderStatistics() {
-        return ApiResponse.ok(orderService.getOrderStatistics());
+    public ApiResponse<OrderStatisticsResponse> getOrderStatistics(@RequestParam(required=false) Long customerId) {
+        return ApiResponse.ok(orderService.getOrderStatistics(customerId));
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<OrderRecordResponse> getOrder(@PathVariable Long id) {
+        return ApiResponse.ok(orderService.getOrder(id));
     }
 
     @PostMapping("/{id}/recognize-order")

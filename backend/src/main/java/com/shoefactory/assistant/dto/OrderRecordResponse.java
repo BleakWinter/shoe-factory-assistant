@@ -12,6 +12,8 @@ public class OrderRecordResponse {
 
     // 订单主表响应，对应页面上的订单列表和打印列表。
     private Long id;
+    private Long customerId;
+    private java.time.LocalDate orderDate;
     private String orderNo;
     private String customerName;
     private String boxImageUrl;
@@ -36,6 +38,8 @@ public class OrderRecordResponse {
     public static OrderRecordResponse from(OrderRecord order) {
         OrderRecordResponse response = new OrderRecordResponse();
         response.setId(order.getId());
+        response.setCustomerId(order.getCustomerId());
+        response.setOrderDate(order.getOrderDate());
         response.setOrderNo(order.getOrderNo());
         response.setCustomerName(order.getCustomerName());
         response.setBoxImageUrl(order.getBoxImageUrl());
@@ -222,6 +226,11 @@ public class OrderRecordResponse {
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
+
+    public Long getCustomerId() { return customerId; }
+    public void setCustomerId(Long value) { customerId = value; }
+    public java.time.LocalDate getOrderDate() { return orderDate; }
+    public void setOrderDate(java.time.LocalDate value) { orderDate = value; }
 
     public Integer getPartCount() {
         return partCount;

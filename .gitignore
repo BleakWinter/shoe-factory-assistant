@@ -8,3 +8,4 @@ print-agent/target/
 node_modules/
 web/dist/
 web/build/
+/outputs/database-backups/

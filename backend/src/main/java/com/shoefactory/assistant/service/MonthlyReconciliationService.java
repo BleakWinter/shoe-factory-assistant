@@ -7,6 +7,7 @@ import java.util.List;
 public interface MonthlyReconciliationService {
 
     MonthlyReconciliationResponse getMonthlyReconciliation(String month, String customerName);
+    MonthlyReconciliationResponse getMonthlyReconciliation(String month, Long customerId);
 
     List<String> listCustomers();
 }

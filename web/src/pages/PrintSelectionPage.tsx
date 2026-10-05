@@ -733,6 +733,7 @@ export default function PrintSelectionPage({ title }: PrintSelectionPageProps) {
     setOrderLoading(true);
     try {
       const page = await fetchOrders({
+        sourceType: 1,
         page: 1,
         size: 100,
         unfinishedProcessType: hideFinishedOrders ? processType : undefined,

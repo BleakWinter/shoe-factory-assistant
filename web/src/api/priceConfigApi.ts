@@ -31,13 +31,13 @@ export async function fetchShoePriceConfigs(params: ShoePriceConfigQueryParams) 
   return normalizePage<ShoePriceConfig>(data, params.page, params.size);
 }
 
-export async function fetchUnpricedDevelopmentNos() {
-  const { data } = await request.get<string[]>("/price-configs/unconfigured-development-nos");
+export async function fetchUnpricedDevelopmentNos(customerId?: number) {
+  const { data } = await request.get<string[]>("/price-configs/unconfigured-development-nos", { params: { customerId } });
   return data || [];
 }
 
-export async function fetchShoePriceConfigDevelopmentNoOptions() {
-  const { data } = await request.get<DevelopmentNoOption[]>("/price-configs/development-options");
+export async function fetchShoePriceConfigDevelopmentNoOptions(customerId?: number) {
+  const { data } = await request.get<DevelopmentNoOption[]>("/price-configs/development-options", { params: { customerId } });
   return data || [];
 }
 

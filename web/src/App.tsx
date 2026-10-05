@@ -168,7 +168,7 @@ export default function App() {
     navLeafItems.find(
       (item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`),
     ) || navLeafItems[0];
-  const isOrderDetailPage = /^\/orders\/[^/]+\/details/.test(location.pathname);
+  const isOrderDetailPage = /^\/orders\/[^/]+\/(details|manual)/.test(location.pathname);
   const routeState = location.state as { order?: { orderNo?: string; id?: number } } | null;
   const pageTitle = isOrderDetailPage ? "订单明细" : currentItem.label;
   const currentTab = useMemo<WorkspaceTab>(() => {

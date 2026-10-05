@@ -1,70 +1,34 @@
 package com.shoefactory.assistant.controller;
-
 import com.shoefactory.assistant.common.ApiResponse;
-import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
-import com.shoefactory.assistant.dto.PageResponse;
-import com.shoefactory.assistant.dto.ShoePriceConfigResponse;
-import com.shoefactory.assistant.dto.ShoePriceConfigSaveRequest;
-import com.shoefactory.assistant.service.StyleConfigService;
+import com.shoefactory.assistant.dto.*;
+import com.shoefactory.assistant.service.CustomerPriceService;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-
+import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/price-configs")
 public class ShoePriceConfigController {
-
-    private final StyleConfigService styleConfigService;
-
-    public ShoePriceConfigController(StyleConfigService styleConfigService) {
-        this.styleConfigService = styleConfigService;
+    private final CustomerPriceService service;
+    public ShoePriceConfigController(CustomerPriceService service) { this.service=service; }
+    @GetMapping public ApiResponse<PageResponse<CustomerPriceService.PriceResponse>> list(
+            @RequestParam(required=false) Long customerId,
+            @RequestParam(required=false) String developmentNos,
+            @RequestParam(required=false) Boolean incompleteOnly,
+            @RequestParam(defaultValue="1") long page, @RequestParam(defaultValue="20") long size) {
+        return ApiResponse.ok(service.list(customerId,developmentNos,incompleteOnly,page,size));
     }
-
-    @GetMapping
-    public ApiResponse<PageResponse<ShoePriceConfigResponse>> listShoePriceConfigs(
-            @RequestParam(required = false) String developmentNos,
-            @RequestParam(required = false) Boolean incompleteOnly,
-            @RequestParam(defaultValue = "1") long page,
-            @RequestParam(defaultValue = "20") long size
-    ) {
-        return ApiResponse.ok(styleConfigService.listShoePriceConfigs(
-                developmentNos,
-                incompleteOnly,
-                page,
-                size
-        ));
+    @PostMapping public ApiResponse<CustomerPriceService.PriceResponse> create(@Valid @RequestBody CustomerPriceSaveRequest request) {
+        return ApiResponse.ok(service.save(null,request));
     }
-
-    @PostMapping
-    public ApiResponse<ShoePriceConfigResponse> createShoePriceConfig(
-            @Valid @RequestBody ShoePriceConfigSaveRequest request
-    ) {
-        return ApiResponse.ok(styleConfigService.createShoePriceConfig(request));
+    @PutMapping("/{id}") public ApiResponse<CustomerPriceService.PriceResponse> update(
+            @PathVariable Long id,@Valid @RequestBody CustomerPriceSaveRequest request) {
+        return ApiResponse.ok(service.save(id,request));
     }
-
-    @PutMapping("/{id}")
-    public ApiResponse<ShoePriceConfigResponse> updateShoePriceConfig(
-            @PathVariable Long id,
-            @Valid @RequestBody ShoePriceConfigSaveRequest request
-    ) {
-        return ApiResponse.ok(styleConfigService.updateShoePriceConfig(id, request));
+    @GetMapping("/unconfigured-development-nos") public ApiResponse<java.util.List<String>> unpriced(
+            @RequestParam(required=false) Long customerId) {
+        return ApiResponse.ok(service.unpricedStyles(customerId));
     }
-
-    @GetMapping("/unconfigured-development-nos")
-    public ApiResponse<List<String>> listUnpricedDevelopmentNos() {
-        return ApiResponse.ok(styleConfigService.listUnpricedDevelopmentNos());
-    }
-
-    @GetMapping("/development-options")
-    public ApiResponse<List<DevelopmentNoOptionResponse>> listDevelopmentNoOptions() {
-        return ApiResponse.ok(styleConfigService.listDevelopmentNoOptions());
+    @GetMapping("/development-options") public ApiResponse<java.util.List<DevelopmentNoOptionResponse>> options(
+            @RequestParam(required=false) Long customerId) {
+        return ApiResponse.ok(service.developmentOptions(customerId));
     }
 }

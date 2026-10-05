@@ -2483,3 +2483,26 @@ a {
     page-break-after: auto;
   }
 }
+.manual-order-basics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.manual-order-line {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 1fr 1.5fr 32px;
+  gap: 8px;
+  margin-top: 12px;
+}
+.manual-order-line .ant-input-number { width: 100%; }
+.manual-order-line .ant-form-item { margin-bottom: 8px; }
+.manual-line-header { margin-top: 16px; font-weight: 600; }
+.manual-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 16px;
+}
+@media (max-width: 760px) {
+  .manual-order-basics, .manual-order-line { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .manual-summary-grid { grid-template-columns: 1fr; }
+}

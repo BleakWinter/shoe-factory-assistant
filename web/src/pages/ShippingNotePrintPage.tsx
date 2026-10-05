@@ -380,7 +380,7 @@ export default function ShippingNotePrintPage() {
   const loadOrders = useCallback(async () => {
     setOrderLoading(true);
     try {
-      const result = await fetchOrders({ page: 1, size: 100 });
+      const result = await fetchOrders({ page: 1, size: 100, sourceType: 1 });
       setOrders(result.records);
     } catch (error) {
       setOrders([]);

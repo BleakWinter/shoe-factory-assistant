@@ -174,7 +174,7 @@ export default function ComponentOrderPage({ title, processType }: ComponentOrde
   const loadOrders = useCallback(async () => {
     setOrderLoading(true);
     try {
-      const page = await fetchOrders({ page: 1, size: 100 });
+      const page = await fetchOrders({ page: 1, size: 100, sourceType: 1 });
       setOrders(page.records);
       setSelectedOrderId((current) => current || page.records[0]?.id);
     } catch (error) {

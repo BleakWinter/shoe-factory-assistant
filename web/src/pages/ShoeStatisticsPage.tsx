@@ -1,8 +1,9 @@
 import { Column, type ColumnConfig } from "@ant-design/charts";
 import { FileSearchOutlined, ReloadOutlined } from "@ant-design/icons";
-import { App, Button, Empty, Modal, Segmented, Skeleton, Statistic, Table, Tag, Typography } from "antd";
+import { App, Button, Empty, Modal, Segmented, Select, Skeleton, Space, Statistic, Table, Tag, Typography } from "antd";
+import { useCustomers } from "../hooks/useCustomers";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchOrderStatistics } from "../api/statisticsApi";
 import type {
   DevelopmentNoOrderReference,
@@ -341,6 +342,9 @@ function buildShippedOrderStatisticRows(
 }
 
 export default function ShoeStatisticsPage() {
+  const customers=useCustomers();
+  const [customerId,setCustomerId]=useState<number>();
+  const requestSequence=useRef(0);
   const { message } = App.useApp();
   const [statistics, setStatistics] = useState<OrderStatistics | null>(null);
   const [loading, setLoading] = useState(false);
@@ -351,9 +355,12 @@ export default function ShoeStatisticsPage() {
   const [selectedShippedPeriod, setSelectedShippedPeriod] = useState<string | null>(null);
 
   const loadStatistics = useCallback(async () => {
+    const sequence=++requestSequence.current;
     setLoading(true);
+    setStatistics(null);
     try {
-      const next = await fetchOrderStatistics();
+      const next = await fetchOrderStatistics(customerId);
+      if(sequence!==requestSequence.current)return;
       setStatistics(next);
       setActiveStatistic(null);
       setTimeGranularity("month");
@@ -361,12 +368,13 @@ export default function ShoeStatisticsPage() {
       setOrderReferenceNode(null);
       setSelectedShippedPeriod(null);
     } catch (error) {
+      if(sequence!==requestSequence.current)return;
       setStatistics(null);
       message.error(error instanceof Error ? error.message : "统计数据加载失败");
     } finally {
-      setLoading(false);
+      if(sequence===requestSequence.current)setLoading(false);
     }
-  }, [message]);
+  }, [message,customerId]);
 
   useEffect(() => {
     void loadStatistics();
@@ -765,9 +773,11 @@ export default function ShoeStatisticsPage() {
           <Typography.Title level={3}>数据统计</Typography.Title>
           <Typography.Text type="secondary">按订单明细汇总鞋子双数、款号和出货货款。</Typography.Text>
         </div>
+        <Space><Select allowClear placeholder="全部客户" value={customerId} onChange={setCustomerId}
+          options={customers.map(c=>({label:c.name,value:c.id}))} style={{width:180}}/>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadStatistics()}>
           刷新
-        </Button>
+        </Button></Space>
       </div>
 
       {loading && !statistics ? (

@@ -1,4 +1,6 @@
 CREATE TABLE IF NOT EXISTS `order_record` (
+  `customer_id` bigint DEFAULT NULL COMMENT '工厂客户ID',
+  `order_date` date DEFAULT NULL COMMENT '订单日期',
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
 
   `order_no` varchar(128) DEFAULT NULL COMMENT '订单流水号',
@@ -219,6 +221,9 @@ CREATE TABLE IF NOT EXISTS `shoe_style_config` (
 
 
 CREATE TABLE IF NOT EXISTS `shipping_note_task` (
+  `customer_id` bigint DEFAULT NULL COMMENT '工厂客户ID',
+  `source_type` tinyint NOT NULL DEFAULT 1 COMMENT '1 Excel出货单，3 手工确认出货',
+  `request_id` varchar(64) DEFAULT NULL COMMENT '手工出货幂等编号',
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `task_no` varchar(64) NOT NULL COMMENT '出货单任务编号',
   `recipient_name` varchar(128) DEFAULT NULL COMMENT '收货单位',
@@ -233,6 +238,7 @@ CREATE TABLE IF NOT EXISTS `shipping_note_task` (
 
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_shipping_note_task_no` (`task_no`),
+  UNIQUE KEY `uk_shipment_request` (`request_id`),
   KEY `idx_shipping_note_task_invoice_nos` (`invoice_nos`(191)),
   KEY `idx_shipping_note_task_development_nos` (`development_nos`(191)),
   KEY `idx_shipping_note_task_created_at` (`created_at`)
