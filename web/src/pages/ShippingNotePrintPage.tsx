@@ -289,7 +289,8 @@ export default function ShippingNotePrintPage() {
   const [size, setSize] = useState(20);
   const [total, setTotal] = useState(0);
 
-  const [createOpen, setCreateOpen] = useState(false);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [editTask, setEditTask] = useState<ShippingNoteTask | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [details, setDetails] = useState<OrderRecordDetail[]>([]);
@@ -318,11 +319,6 @@ export default function ShippingNotePrintPage() {
   } | null>(null);
   const [taskActionLoadingId, setTaskActionLoadingId] = useState<number>();
 
-  const [editTask, setEditTask] = useState<ShippingNoteTask | null>(null);
-  const [editRecipientName, setEditRecipientName] = useState("");
-  const [editShippingDate, setEditShippingDate] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-
   const selectedOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId),
     [orders, selectedOrderId],
@@ -335,15 +331,24 @@ export default function ShippingNotePrintPage() {
     () => new Set(generatedSummary.fullyGeneratedOrderIds || []),
     [generatedSummary.fullyGeneratedOrderIds],
   );
+  const originalDetailIdSet = useMemo(
+    () => new Set((editTask?.items || []).map((item) => item.sourceDetailId)),
+    [editTask],
+  );
+  const originalOrderIdSet = useMemo(
+    () => new Set((editTask?.items || []).map((item) => item.orderId)),
+    [editTask],
+  );
   const visibleOrders = useMemo(() => {
     if (!hideGeneratedShippingNotes) {
       return orders;
     }
     return orders.filter((order) => {
       const partOrderIds = order.partOrderIds?.length ? order.partOrderIds : [order.id];
-      return !partOrderIds.every((orderId) => fullyGeneratedOrderIdSet.has(orderId));
+      return partOrderIds.some((orderId) => originalOrderIdSet.has(orderId))
+        || !partOrderIds.every((orderId) => fullyGeneratedOrderIdSet.has(orderId));
     });
-  }, [fullyGeneratedOrderIdSet, hideGeneratedShippingNotes, orders]);
+  }, [fullyGeneratedOrderIdSet, hideGeneratedShippingNotes, orders, originalOrderIdSet]);
   const previewItems = useMemo(() => getTaskPackingItems(previewTask), [previewTask]);
   const previewTotalPairs = useMemo(() => sumShippingNotePairs(previewItems), [previewItems]);
   const previewTotalCartonCount = useMemo(() => sumShippingNoteCartons(previewItems), [previewItems]);
@@ -377,11 +382,17 @@ export default function ShippingNotePrintPage() {
     void loadTasks(1, size);
   }, []);
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (initialOrderId?: number) => {
     setOrderLoading(true);
     try {
       const result = await fetchOrders({ page: 1, size: 100 });
       setOrders(result.records);
+      if (initialOrderId) {
+        const initialOrder = result.records.find((order) =>
+          order.id === initialOrderId || order.partOrderIds?.includes(initialOrderId),
+        );
+        setSelectedOrderId(initialOrder?.id);
+      }
     } catch (error) {
       setOrders([]);
       message.error(error instanceof Error ? error.message : "订单加载失败");
@@ -420,14 +431,14 @@ export default function ShippingNotePrintPage() {
   );
 
   useEffect(() => {
-    if (!createOpen) {
+    if (!taskEditorOpen) {
       return;
     }
     void loadGeneratedSummary();
-  }, [createOpen, hideGeneratedShippingNotes, loadGeneratedSummary, orders]);
+  }, [taskEditorOpen, hideGeneratedShippingNotes, loadGeneratedSummary, orders]);
 
   useEffect(() => {
-    if (!createOpen || generatedSummaryLoading) {
+    if (!taskEditorOpen || generatedSummaryLoading) {
       return;
     }
     setSelectedOrderId((current) => {
@@ -436,10 +447,10 @@ export default function ShippingNotePrintPage() {
       }
       return visibleOrders[0]?.id;
     });
-  }, [createOpen, generatedSummaryLoading, visibleOrders]);
+  }, [taskEditorOpen, generatedSummaryLoading, visibleOrders]);
 
   const loadDetails = useCallback(async () => {
-    if (!createOpen || !selectedOrderId) {
+    if (!taskEditorOpen || !selectedOrderId) {
       setDetails([]);
       setPackingDetails([]);
       return;
@@ -462,27 +473,40 @@ export default function ShippingNotePrintPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, [createOpen, message, selectedOrderId]);
+  }, [taskEditorOpen, message, selectedOrderId]);
 
   useEffect(() => {
     void loadDetails();
   }, [loadDetails]);
 
-  const openCreateModal = () => {
-    setRecipientName(defaultRecipient);
-    setShippingDate(todayText());
+  const openTaskEditor = (task: ShippingNoteTask | null = null) => {
+    setEditTask(task);
+    setRecipientName(task?.recipientName || defaultRecipient);
+    setShippingDate(task?.shippingDate || todayText());
+    setOrders([]);
+    setSelectedOrderId(undefined);
+    setDetails([]);
+    setPackingDetails([]);
     setSelectedDetailIds([]);
     setSelectedPrintIds([]);
-    setPrintItems([]);
+    setPrintItems(task?.items || []);
     setDevelopmentNoPaths([]);
     setHideGeneratedShippingNotes(true);
     setGeneratedSummary(emptyGeneratedSummary);
-    setCreateOpen(true);
-    void loadOrders();
+    setTaskEditorOpen(true);
+    void loadOrders(task?.items[0]?.orderId);
   };
 
-  const closeCreateModal = () => {
-    setCreateOpen(false);
+  const closeTaskEditor = () => {
+    if (saving) {
+      return;
+    }
+    resetTaskEditor();
+  };
+
+  const resetTaskEditor = () => {
+    setTaskEditorOpen(false);
+    setEditTask(null);
     setSelectedDetailIds([]);
     setSelectedPrintIds([]);
     setPrintItems([]);
@@ -508,7 +532,7 @@ export default function ShippingNotePrintPage() {
 
   const filteredDetails = useMemo(() => {
     const baseDetails = hideGeneratedShippingNotes
-      ? details.filter((item) => !generatedDetailIdSet.has(item.id))
+      ? details.filter((item) => originalDetailIdSet.has(item.id) || !generatedDetailIdSet.has(item.id))
       : details;
     if (selectedDevelopmentNos.size === 0) {
       return baseDetails;
@@ -518,7 +542,7 @@ export default function ShippingNotePrintPage() {
         includesKeyword(item.developmentNo, developmentNo),
       ),
     );
-  }, [details, generatedDetailIdSet, hideGeneratedShippingNotes, selectedDevelopmentNos]);
+  }, [details, generatedDetailIdSet, hideGeneratedShippingNotes, originalDetailIdSet, selectedDevelopmentNos]);
 
   useEffect(() => {
     const visibleDetailIdSet = new Set(filteredDetails.map((item) => item.id));
@@ -579,17 +603,22 @@ export default function ShippingNotePrintPage() {
     }
     setSaving(true);
     try {
-      await createShippingNoteTask({
+      const payload = {
         recipientName,
         shippingDate,
         items: printItems.map((item) => ({
           sourceDetailId: item.sourceDetailId,
           orderId: item.orderId,
         })),
-      });
-      message.success("出货单任务已保存");
-      closeCreateModal();
-      await loadTasks(1, size);
+      };
+      if (editTask) {
+        await updateShippingNoteTask(editTask.id, payload);
+      } else {
+        await createShippingNoteTask(payload);
+      }
+      message.success(editTask ? "出货单已更新" : "出货单任务已保存");
+      resetTaskEditor();
+      await loadTasks(editTask ? page : 1, size);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "出货单任务保存失败");
     } finally {
@@ -609,37 +638,14 @@ export default function ShippingNotePrintPage() {
     }
   };
 
-  const openEditModal = (task: ShippingNoteTask) => {
-    setEditTask(task);
-    setEditRecipientName(task.recipientName || "");
-    setEditShippingDate(task.shippingDate || "");
-  };
-
-  const closeEditModal = () => {
-    setEditTask(null);
-    setEditRecipientName("");
-    setEditShippingDate("");
-    setEditSaving(false);
-  };
-
-  const saveEditTask = async () => {
-    if (!editTask) {
+  const openEditModal = async (task: ShippingNoteTask) => {
+    const fullTask = await loadTaskDetail(task);
+    if (!fullTask) {
       return;
     }
-    setEditSaving(true);
-    try {
-      await updateShippingNoteTask(editTask.id, {
-        recipientName: editRecipientName,
-        shippingDate: editShippingDate || undefined,
-      });
-      message.success("出货单已更新");
-      closeEditModal();
-      await loadTasks(page, size);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "出货单更新失败");
-    } finally {
-      setEditSaving(false);
-    }
+    setDetailTask(null);
+    setPreviewTask(null);
+    openTaskEditor(fullTask);
   };
 
   const ensureShippingItemsCanPrint = (items: ShippingNoteItem[]) => {
@@ -805,7 +811,8 @@ export default function ShippingNotePrintPage() {
           <Space size={8}>
             <Button
               icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
+              loading={taskActionLoadingId === record.id}
+              onClick={() => void openEditModal(record)}
             >
               编辑
             </Button>
@@ -875,11 +882,11 @@ export default function ShippingNotePrintPage() {
         <div>
           <Typography.Title level={3}>打印出货单</Typography.Title>
           <Typography.Text type="secondary">
-            保存每次出货单打印任务，可查看明细并按任务快照预览打印。
+            保存每次出货单打印任务，可编辑出货明细并预览打印。
           </Typography.Text>
         </div>
         <Space wrap>
-          <Button type="primary" icon={<FileAddOutlined />} onClick={openCreateModal}>
+          <Button type="primary" icon={<FileAddOutlined />} onClick={() => openTaskEditor()}>
             新建出货单
           </Button>
           <Button icon={<ReloadOutlined />} onClick={() => void loadTasks(1, size)}>
@@ -932,16 +939,18 @@ export default function ShippingNotePrintPage() {
       </div>
 
       <Modal
-        open={createOpen}
-        title="新建出货单"
-        onCancel={closeCreateModal}
+        open={taskEditorOpen}
+        title={editTask ? `编辑出货单：${editTask.taskNo || editTask.printNo}` : "新建出货单"}
+        onCancel={closeTaskEditor}
+        closable={!saving}
+        maskClosable={!saving}
         width={1500}
         footer={[
-          <Button key="close" onClick={closeCreateModal}>
+          <Button key="close" disabled={saving} onClick={closeTaskEditor}>
             取消
           </Button>,
           <Button key="save" type="primary" loading={saving} disabled={!printItems.length} onClick={() => void saveTask()}>
-            保存任务
+            {editTask ? "保存修改" : "保存任务"}
           </Button>,
         ]}
         destroyOnClose
@@ -1044,7 +1053,7 @@ export default function ShippingNotePrintPage() {
           <div className="page-panel print-transfer-panel">
             <div className="print-transfer-heading">
               <div className="print-transfer-heading-main">
-                <Typography.Title level={4}>待保存出货单</Typography.Title>
+                <Typography.Title level={4}>{editTask ? "本次出货明细" : "待保存出货单"}</Typography.Title>
               </div>
               <Typography.Text type="secondary">
                 {countShippingNoteRows(printItems)} 行，{sumShippingNoteCartons(printItems)} 件，{sumShippingNotePairs(printItems)} 双
@@ -1074,6 +1083,14 @@ export default function ShippingNotePrintPage() {
         footer={[
           <Button key="close" onClick={() => setDetailTask(null)}>
             关闭
+          </Button>,
+          <Button
+            key="edit"
+            icon={<EditOutlined />}
+            loading={taskActionLoadingId === detailTask?.id}
+            onClick={() => detailTask && void openEditModal(detailTask)}
+          >
+            编辑出货单
           </Button>,
         ]}
         destroyOnClose
@@ -1112,38 +1129,6 @@ export default function ShippingNotePrintPage() {
       </Modal>
 
       <Modal
-        open={Boolean(editTask)}
-        title={editTask ? `编辑出货单：${editTask.taskNo || editTask.printNo}` : "编辑出货单"}
-        onCancel={closeEditModal}
-        width={520}
-        footer={[
-          <Button key="cancel" onClick={closeEditModal}>
-            取消
-          </Button>,
-          <Button key="save" type="primary" loading={editSaving} onClick={() => void saveEditTask()}>
-            保存
-          </Button>,
-        ]}
-        destroyOnClose
-      >
-        <Form layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item label="收货单位">
-            <Input
-              value={editRecipientName}
-              onChange={(event) => setEditRecipientName(event.target.value)}
-            />
-          </Form.Item>
-          <Form.Item label="出货日期">
-            <Input
-              type="date"
-              value={editShippingDate}
-              onChange={(event) => setEditShippingDate(event.target.value)}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
         open={Boolean(previewTask)}
         title={previewTask ? `出货单预览：${previewTask.taskNo || previewTask.printNo}` : "出货单预览"}
         onCancel={() => setPreviewTask(null)}
@@ -1151,6 +1136,14 @@ export default function ShippingNotePrintPage() {
         footer={[
           <Button key="close" onClick={() => setPreviewTask(null)}>
             关闭
+          </Button>,
+          <Button
+            key="edit"
+            icon={<EditOutlined />}
+            loading={taskActionLoadingId === previewTask?.id}
+            onClick={() => previewTask && void openEditModal(previewTask)}
+          >
+            编辑出货单
           </Button>,
           <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => void printPreviewTask()}>
             打印
