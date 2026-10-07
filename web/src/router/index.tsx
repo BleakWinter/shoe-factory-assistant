@@ -11,6 +11,8 @@ import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
 import PrintSelectionPage from "../pages/PrintSelectionPage";
 import PrintTaskListPage from "../pages/PrintTaskListPage";
 import ShoePriceConfigPage from "../pages/ShoePriceConfigPage";
+import QuotationListPage from "../pages/QuotationListPage";
+import QuotationEditorPage from "../pages/QuotationEditorPage";
 import ShoeStatisticsPage from "../pages/ShoeStatisticsPage";
 import StyleConfigPage from "../pages/StyleConfigPage";
 import InnerBoxTypeConfigPage from "../pages/InnerBoxTypeConfigPage";
@@ -42,6 +44,9 @@ export const router = createBrowserRouter([
       { path: "style-configs", element: <StyleConfigPage /> },
       { path: "inner-box-types", element: <InnerBoxTypeConfigPage /> },
       { path: "price-configs", element: <ShoePriceConfigPage /> },
+      { path: "price-configs/quotations", element: <QuotationListPage /> },
+      { path: "price-configs/quotations/new", element: <QuotationEditorPage /> },
+      { path: "price-configs/quotations/:id", element: <QuotationEditorPage /> },
       { path: "*", element: <Navigate to="/orders" replace /> },
     ],
   },

@@ -178,8 +178,11 @@ export default function App() {
     ) || navLeafItems[0];
   const isOrderDetailPage = /^\/orders\/[^/]+\/(details|manual)/.test(location.pathname);
   const routeState = location.state as { order?: { orderNo?: string; id?: number } } | null;
-  const pageTitle = isOrderDetailPage ? "订单明细" : currentItem.label;
+  const pageTitle = isOrderDetailPage ? "订单明细" : location.pathname.startsWith("/price-configs/quotations") ? "鞋款报价" : currentItem.label;
   const currentTab = useMemo<WorkspaceTab>(() => {
+    if (location.pathname.startsWith("/price-configs/quotations")) {
+      return { key: "/price-configs/quotations", path: location.pathname, label: "鞋款报价", icon: <FileExcelOutlined />, state: location.state };
+    }
     if (isOrderDetailPage) {
       const orderLabel = routeState?.order?.orderNo || routeState?.order?.id;
       return {

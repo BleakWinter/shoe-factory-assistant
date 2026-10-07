@@ -2597,3 +2597,107 @@ a {
   .manual-summary-grid { grid-template-columns: 1fr; }
   .packing-editor-fields { grid-template-columns: 1fr; }
 }
+/* 鞋款报价：一页编辑，材料与费用保持可见，右侧实时核算。 */
+.quotation-workspace { --quote-blue: #1677ff; }
+.quotation-toolbar .ant-typography { margin: 0; }
+.quotation-toolbar-help { margin-top: 7px; color: #7b8798; font-size: 13px; }
+.quotation-basics { display: grid; grid-template-columns: 225px minmax(0, 1fr); gap: 28px; padding: 22px; }
+.quotation-photo { min-width: 0; text-align: center; padding-right: 22px; border-right: 1px solid #edf0f4; }
+.quotation-photo > .ant-image { display: block; margin: 0 auto 12px; }
+.quotation-photo-empty { height: 138px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #f6f8fb; border: 1px dashed #d6deea; color: #8a97a8; border-radius: 6px; margin-bottom: 12px; }
+.quotation-photo-empty .anticon { font-size: 28px; }
+.quotation-fields { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px 20px; align-content: center; }
+.quotation-fields label, .quotation-rounding, .quotation-note label { display: flex; flex-direction: column; gap: 7px; }
+.quotation-fields label > span, .quotation-note label > span { color: #637084; font-size: 13px; }
+.quotation-field-wide { grid-column: span 2; }
+.quotation-version-empty { padding: 5px 0; color: #99a2af; }
+.quotation-editor-grid { display: grid; grid-template-columns: minmax(0,1fr) 286px; gap: 16px; align-items: start; }
+.quotation-editor-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.quotation-section { padding: 0; overflow: hidden; }
+.quotation-section-heading { padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid #eef1f5; }
+.quotation-section-heading h3, .quotation-summary h3, .quotation-labor h3 { margin: 0 0 4px; font-size: 16px; color: #253247; }
+.quotation-section-heading > div > span, .quotation-labor > div > span, .quotation-outsole-toggle > span { color: #8a95a5; font-size: 12px; }
+.quotation-subtotal { font-size: 12px; color: #8a95a5; white-space: nowrap; }
+.quotation-subtotal strong { color: #34455b; font-size: 15px; margin: 0 4px; font-variant-numeric: tabular-nums; }
+.quotation-table-scroll { overflow-x: auto; }
+.quotation-edit-table { width: 100%; min-width: 830px; table-layout: fixed; border-collapse: collapse; }
+.quotation-edit-table th { padding: 9px 12px; text-align: left; font-size: 12px; font-weight: 500; background: #f8fafc; color: #778499; }
+.quotation-edit-table td { padding: 9px 6px; border-top: 1px solid #f0f2f6; }
+.quotation-edit-table th:nth-child(1) { width: 115px; }
+.quotation-edit-table th:nth-child(2) { width: 180px; }
+.quotation-edit-table th:nth-child(3), .quotation-edit-table th:nth-child(5) { width: 108px; }
+.quotation-edit-table th:nth-child(4) { width: 65px; }
+.quotation-edit-table th:nth-child(6) { width: 115px; }
+.quotation-edit-table th:nth-child(8) { width: 42px; }
+.quotation-edit-table td:first-child { padding-left: 12px; }
+.quotation-edit-table .ant-input-number { width: 100%; }
+.quotation-amount { color: #33445e; font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.quotation-labor { display: flex; justify-content: space-between; align-items: center; padding: 18px; gap: 12px; }
+.quotation-labor .ant-input-number { width: 145px; }
+.quotation-outsole-toggle { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 16px 18px; }
+.quotation-note { padding: 18px; }
+.quotation-summary { position: sticky; top: 14px; padding: 22px; border-top: 3px solid #1677ff; }
+.quotation-summary h3 { margin-bottom: 22px; }
+.quotation-summary dl { margin: 0; }
+.quotation-summary dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-bottom: 14px; }
+.quotation-summary dt { color: #8994a5; font-size: 13px; }
+.quotation-summary dd { margin: 0; font-variant-numeric: tabular-nums; color: #34435b; overflow-wrap: anywhere; text-align: right; }
+.quotation-summary .quotation-calculated { padding-top: 15px; border-top: 1px solid #e9edf3; }
+.quotation-calculated dd { font-weight: 600; }
+.quotation-rounding { margin-top: 10px; color: #687589; font-size: 12px; }
+.quotation-final { background: #eef5ff; border: 1px solid #dce9fc; padding: 18px; margin: 20px 0 14px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; }
+.quotation-final > span { font-size: 12px; color: #6984a8; }
+.quotation-final strong { color: #1768dc; font-size: 36px; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.quotation-final .ant-input-number { width: 100%; }
+.quotation-final .ant-input-number-input { font-size: 24px; font-weight: 600; color: #1768dc; }
+.quotation-current-price { margin-top: 24px; padding-top: 17px; border-top: 1px solid #e9edf3; display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.quotation-current-price > span { color: #8994a5; }
+.quotation-save-hint, .quotation-adopted { font-size: 12px; line-height: 1.8; color: #919cac; margin: 16px 0 0; }
+.quotation-adopted { color: #38936a; }
+.quotation-footer { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 15px 20px; box-shadow: 0 -4px 20px rgba(32,54,89,.05); }
+.quotation-footer > span { font-size: 13px; color: #8994a5; }
+.quotation-loading { display: flex; align-items: center; justify-content: center; min-height: 300px; }
+.quotation-adopt-confirm strong { color: #1677ff; }
+.quotation-paper { padding: 24px; color: #202b3b; background: white; }
+.quotation-paper h1 { text-align: center; font-size: 24px; margin: 0 0 26px; }
+.quotation-paper-header { display: flex; justify-content: space-between; gap: 25px; margin-bottom: 20px; }
+.quotation-paper-header dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 25px; flex: 1; margin: 0; }
+.quotation-paper-header dl > div { display: flex; gap: 10px; }
+.quotation-paper dt { color: #8791a0; flex-shrink: 0; }
+.quotation-paper dd { margin: 0; overflow-wrap: anywhere; }
+.quotation-paper-header img { width: 150px; height: 120px; object-fit: contain; }
+.quotation-paper table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.quotation-paper th, .quotation-paper td { border: 1px solid #cbd2db; padding: 9px 8px; overflow-wrap: anywhere; }
+.quotation-paper th { background: #f3f5f8; font-weight: 500; text-align: left; }
+.quotation-paper td:nth-child(3), .quotation-paper td:nth-child(5), .quotation-paper td:nth-child(6) { font-variant-numeric: tabular-nums; }
+.quotation-paper .quotation-paper-final { font-size: 17px; font-weight: 600; }
+.quotation-paper-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.quotation-paper-caption { font-size: 11px; color: #8791a0; margin-top: 18px; }
+.quotation-print-root { display: none; }
+@media (max-width: 1200px) {
+  .quotation-editor-grid { grid-template-columns: minmax(0,1fr); }
+  .quotation-summary { position: static; }
+  .quotation-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .quotation-field-wide { grid-column: auto; }
+}
+@media (max-width: 680px) {
+  .quotation-basics { grid-template-columns: 1fr; padding: 16px; gap: 18px; }
+  .quotation-photo { border: 0; padding-right: 0; }
+  .quotation-fields { gap: 14px; }
+  .quotation-section-heading, .quotation-footer { flex-wrap: wrap; }
+  .quotation-labor { flex-direction: column; align-items: flex-start; }
+  .quotation-footer { position: static; }
+  .quotation-paper { padding: 5px; overflow-x: auto; }
+  .quotation-paper table { min-width: 620px; }
+  .quotation-paper-header { flex-wrap: wrap; }
+}
+@media print {
+  @page quotation-page { size: A4 portrait; margin: 12mm; }
+  body.quotation-printing #root, body.quotation-printing .ant-modal-root { display: none !important; }
+  body.quotation-printing .quotation-print-root { display: block; page: quotation-page; }
+  body.quotation-printing .quotation-print-root, body.quotation-printing .quotation-print-root * { visibility: visible; }
+  body.quotation-printing .quotation-paper { padding: 0; overflow: visible; }
+  body.quotation-printing .quotation-paper table { min-width: 0; }
+  body.quotation-printing .quotation-paper tr { break-inside: avoid; }
+  body.quotation-printing .quotation-paper thead { display: table-header-group; }
+}

@@ -2,6 +2,7 @@ import { EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { App, Button, Checkbox, Form, Image, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { toAssetUrl } from "../api/orderApi";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { createShoePriceConfig, fetchShoePriceConfigs, updateShoePriceConfig } from "../api/priceConfigApi";
 import { useCustomers } from "../hooks/useCustomers";
 import type { ShoePriceConfig } from "../types/priceConfig";
@@ -10,6 +11,7 @@ type Price = ShoePriceConfig;
 interface Values { customerId:number; developmentNo:string; shoePrice?:number|null }
 export default function ShoePriceConfigPage() {
   const {message}=App.useApp();
+  const navigate=useNavigate();
   const customers=useCustomers();
   const [customerId,setCustomerId]=useState<number>();
   const [keyword,setKeyword]=useState("");
@@ -51,7 +53,7 @@ export default function ShoePriceConfigPage() {
   return <div className="workspace">
     <div className="toolbar-band">
       <div><Typography.Title level={3}>价格配置</Typography.Title><Typography.Text type="secondary">同一款号按客户分别定价；修改配置价格后，该客户历史统计和月度对账同步更新。</Typography.Text></div>
-      <Space><Button icon={<ReloadOutlined/>} loading={loading} onClick={()=>void load()}>刷新</Button>
+      <Space wrap><Button onClick={()=>navigate("/price-configs/quotations")}>报价管理</Button><Button onClick={()=>navigate("/price-configs/quotations/new")}>新建报价</Button><Button icon={<ReloadOutlined/>} loading={loading} onClick={()=>void load()}>刷新</Button>
         <Button type="primary" icon={<PlusOutlined/>} onClick={()=>edit()}>新增价格</Button></Space>
     </div>
     <div className="page-panel">
@@ -69,7 +71,7 @@ export default function ShoePriceConfigPage() {
           {title:"单价",dataIndex:"shoePrice",render:value=>value==null?"-":`¥ ${Number(value).toFixed(2)}`},
           {title:"状态",dataIndex:"complete",render:value=><Tag color={value?"green":"gold"}>{value?"已配置":"待配置"}</Tag>},
           {title:"更新时间",dataIndex:"updatedAt",render:formatDateTime},
-          {title:"操作",render:(_,row)=><Button icon={<EditOutlined/>} onClick={()=>edit(row)}>编辑</Button>},
+          {title:"操作",render:(_,row)=><Space><Button icon={<EditOutlined/>} onClick={()=>edit(row)}>编辑</Button><Button onClick={()=>navigate(`/price-configs/quotations/new?customerId=${row.customerId}&developmentNo=${encodeURIComponent(row.developmentNo)}`)}>做报价</Button></Space>},
         ]}/>
     </div>
     <Modal open={open} title={editing?"编辑价格":"新增客户款号价格"} okText="保存" cancelText="取消"

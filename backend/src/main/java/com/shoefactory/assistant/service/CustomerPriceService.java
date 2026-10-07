@@ -42,6 +42,23 @@ public class CustomerPriceService {
         return result;
     }
     public static String key(Long customerId, String style) { return customerId + ":" + normalize(style); }
+    public BigDecimal currentPrice(Long customerId, String style) {
+        if (customerId == null || normalize(style).isBlank()) return null;
+        CustomerPriceConfig price = mapper.selectOne(new LambdaQueryWrapper<CustomerPriceConfig>()
+                .eq(CustomerPriceConfig::getCustomerId,customerId)
+                .eq(CustomerPriceConfig::getDevelopmentNo,normalize(style)));
+        return price == null ? null : price.getShoePrice();
+    }
+    @Transactional
+    public void adoptQuotationPrice(Long customerId, String style, BigDecimal price) {
+        customers.require(customerId);
+        String normalized = normalize(style);
+        if (normalized.isBlank() || price == null || price.signum() < 0) throw new BusinessException("客户、款号和最终报价必须完整");
+        mapper.ensurePendingPrice(customerId,normalized);
+        mapper.update(null,new LambdaUpdateWrapper<CustomerPriceConfig>()
+                .eq(CustomerPriceConfig::getCustomerId,customerId).eq(CustomerPriceConfig::getDevelopmentNo,normalized)
+                .set(CustomerPriceConfig::getShoePrice,price).set(CustomerPriceConfig::getUpdatedAt,LocalDateTime.now()));
+    }
     public List<String> unpricedStyles(Long customerId) {
         return mapper.selectList(new LambdaQueryWrapper<CustomerPriceConfig>()
                 .eq(customerId!=null,CustomerPriceConfig::getCustomerId,customerId)

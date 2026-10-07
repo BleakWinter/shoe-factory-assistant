@@ -75,6 +75,7 @@ D:\清化资料\pdf\年份\月份\订单号
 订包装的装箱容量汇总规则见 [`docs/订包装业务规则.md`](docs/订包装业务规则.md)。
 - `/style-configs`：盒规、净重、毛重配置。
 - `/price-configs`：鞋价配置。
+- `/price-configs/quotations`：鞋款报价列表；在系统内编辑材料、加工费、保存版本、预览及导出，确认后采用为客户单价。使用和升级说明见 [鞋款报价](docs/鞋款报价.md)。
 
 ### 5. PDF 预览
 
@@ -155,7 +156,9 @@ sql/print_table.sql
 - `order_packing_detail`：装箱单明细。
 - `order_detail_process`：订包装、订大底、订中底等处理状态。
 - `order_sheet_print_task`：订单/装箱单整单级打印任务，保存原稿文件名、本地路径、PDF 路径和打印状态。
-- `shoe_style_config`：盒规、净重、毛重、鞋价配置。
+- `shoe_style_config`：盒规、净重、毛重配置（保留旧鞋价字段）。
+- `customer_price_config`：当前客户 / 款号单价。
+- `shoe_quotation`、`shoe_quotation_item`：鞋款报价版本与成本项目，启用前执行 `sql/add_shoe_quotation.sql`。
 - `shipping_note_task`：出货单打印任务主表。
 - `shipping_note_task_item`：出货单打印任务明细快照。
 - `packing_order_task`：订包装专用主表。
