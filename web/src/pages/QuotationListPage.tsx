@@ -1,4 +1,4 @@
-import { CopyOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CopyOutlined } from "@ant-design/icons";
 import { App, Button, Image, Input, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -7,6 +7,7 @@ import { useCustomers } from "../hooks/useCustomers";
 import type { Quotation } from "../types/quotation";
 import { formatDateTime } from "../utils/format";
 import { priceText, quotationDraft, today } from "../utils/quotation";
+import PriceConfigToolbar from "../components/PriceConfigToolbar";
 
 export default function QuotationListPage() {
   const { message } = App.useApp(), customers = useCustomers(), navigate = useNavigate();
@@ -28,9 +29,8 @@ export default function QuotationListPage() {
     finally { setCopying(undefined); }
   }
   return <div className="workspace quotation-workspace">
-    <div className="toolbar-band"><div><Typography.Title level={3}>鞋款报价</Typography.Title><Typography.Text type="secondary">在系统里算成本、保存报价；每次修改保留独立版本。</Typography.Text></div>
-      <Space wrap><Button onClick={() => navigate("/price-configs")}>客户单价</Button><Button icon={<ReloadOutlined/>} loading={loading} onClick={() => void load()}>刷新</Button>
-        <Button type="primary" icon={<PlusOutlined/>} onClick={() => navigate("/price-configs/quotations/new")}>新建报价</Button></Space></div>
+    <PriceConfigToolbar activeTab="quotations" loading={loading} onRefresh={() => void load()}
+      onCreate={() => navigate("/price-configs/quotations/new")}/>
     <div className="page-panel"><Space wrap style={{ marginBottom: 16 }}>
       <Select allowClear placeholder="全部客户" value={customerId} style={{ width: 180 }} options={customers.map(c => ({ label: c.name, value: c.id }))} onChange={value => { setCustomerId(value); setPage(1); }}/>
       <Input.Search allowClear placeholder="搜索款号" onSearch={value => { setKeyword(value); setPage(1); }}/>

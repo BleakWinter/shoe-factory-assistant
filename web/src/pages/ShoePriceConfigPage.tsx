@@ -1,5 +1,5 @@
-import { EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { App, Button, Checkbox, Form, Image, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { EditOutlined } from "@ant-design/icons";
+import { App, Button, Checkbox, Form, Image, Input, InputNumber, Modal, Select, Space, Table, Tag } from "antd";
 import { toAssetUrl } from "../api/orderApi";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -7,6 +7,7 @@ import { createShoePriceConfig, fetchShoePriceConfigs, updateShoePriceConfig } f
 import { useCustomers } from "../hooks/useCustomers";
 import type { ShoePriceConfig } from "../types/priceConfig";
 import { formatDateTime } from "../utils/format";
+import PriceConfigToolbar from "../components/PriceConfigToolbar";
 type Price = ShoePriceConfig;
 interface Values { customerId:number; developmentNo:string; shoePrice?:number|null }
 export default function ShoePriceConfigPage() {
@@ -51,11 +52,7 @@ export default function ShoePriceConfigPage() {
     finally {setSaving(false);}
   }
   return <div className="workspace">
-    <div className="toolbar-band">
-      <div><Typography.Title level={3}>价格配置</Typography.Title><Typography.Text type="secondary">同一款号按客户分别定价；修改配置价格后，该客户历史统计和月度对账同步更新。</Typography.Text></div>
-      <Space wrap><Button onClick={()=>navigate("/price-configs/quotations")}>报价管理</Button><Button onClick={()=>navigate("/price-configs/quotations/new")}>新建报价</Button><Button icon={<ReloadOutlined/>} loading={loading} onClick={()=>void load()}>刷新</Button>
-        <Button type="primary" icon={<PlusOutlined/>} onClick={()=>edit()}>新增价格</Button></Space>
-    </div>
+    <PriceConfigToolbar activeTab="prices" loading={loading} onRefresh={()=>void load()} onCreate={()=>edit()}/>
     <div className="page-panel">
       <Space wrap style={{marginBottom:16}}>
         <Select allowClear placeholder="全部客户" value={customerId} style={{width:180}}
@@ -74,7 +71,7 @@ export default function ShoePriceConfigPage() {
           {title:"操作",render:(_,row)=><Space><Button icon={<EditOutlined/>} onClick={()=>edit(row)}>编辑</Button><Button onClick={()=>navigate(`/price-configs/quotations/new?customerId=${row.customerId}&developmentNo=${encodeURIComponent(row.developmentNo)}`)}>做报价</Button></Space>},
         ]}/>
     </div>
-    <Modal open={open} title={editing?"编辑价格":"新增客户款号价格"} okText="保存" cancelText="取消"
+    <Modal open={open} title={editing?"编辑价格":"新建客户款号价格"} okText="保存" cancelText="取消"
       confirmLoading={saving} onCancel={()=>setOpen(false)} onOk={()=>void save()} forceRender>
       <Form name="customer-price-editor" form={form} layout="vertical">
         <Form.Item name="customerId" label="客户" rules={[{required:true,message:"请选择客户"}]}>

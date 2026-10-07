@@ -178,9 +178,10 @@ export default function App() {
     ) || navLeafItems[0];
   const isOrderDetailPage = /^\/orders\/[^/]+\/(details|manual)/.test(location.pathname);
   const routeState = location.state as { order?: { orderNo?: string; id?: number } } | null;
-  const pageTitle = isOrderDetailPage ? "订单明细" : location.pathname.startsWith("/price-configs/quotations") ? "鞋款报价" : currentItem.label;
+  const isQuotationEditor = location.pathname.startsWith("/price-configs/quotations/");
+  const pageTitle = isOrderDetailPage ? "订单明细" : isQuotationEditor ? "鞋款报价" : currentItem.label;
   const currentTab = useMemo<WorkspaceTab>(() => {
-    if (location.pathname.startsWith("/price-configs/quotations")) {
+    if (isQuotationEditor) {
       return { key: "/price-configs/quotations", path: location.pathname, label: "鞋款报价", icon: <FileExcelOutlined />, state: location.state };
     }
     if (isOrderDetailPage) {
@@ -195,11 +196,11 @@ export default function App() {
     }
     return {
       key: currentItem.path,
-      path: currentItem.path,
+      path: currentItem.path === "/price-configs" ? location.pathname : currentItem.path,
       label: currentItem.label,
       icon: currentItem.icon,
     };
-  }, [currentItem.icon, currentItem.label, currentItem.path, isOrderDetailPage, location.pathname, location.state, routeState?.order?.id, routeState?.order?.orderNo]);
+  }, [currentItem.icon, currentItem.label, currentItem.path, isOrderDetailPage, isQuotationEditor, location.pathname, location.state, routeState?.order?.id, routeState?.order?.orderNo]);
 
   useEffect(() => {
     setWorkspaceTabs((prev) => {

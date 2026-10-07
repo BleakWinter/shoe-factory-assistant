@@ -2597,6 +2597,38 @@ a {
   .manual-summary-grid { grid-template-columns: 1fr; }
   .packing-editor-fields { grid-template-columns: 1fr; }
 }
+/* 价格配置：客户标价与报价管理共用页签，操作随当前页签切换。 */
+.price-config-toolbar {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.price-config-heading { min-width: 0; }
+.price-config-heading > .ant-typography:last-child { display: block; line-height: 1.6; }
+
+.price-config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.price-config-tabs { flex: 1; min-width: 200px; }
+.price-config-tabs > .ant-tabs-nav { margin: 0; }
+.price-config-action-group { display: flex; align-items: center; gap: 8px; }
+.price-config-toolbar button { width: auto; white-space: nowrap; }
+
+@media (max-width: 560px) {
+  .price-config-tabs { flex-basis: 100%; min-width: 0; }
+  .price-config-action-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .price-config-toolbar button { width: 100%; padding-inline: 10px; }
+}
+
 /* 鞋款报价：一页编辑，材料与费用保持可见，右侧实时核算。 */
 .quotation-workspace { --quote-blue: #1677ff; }
 .quotation-toolbar .ant-typography { margin: 0; }
