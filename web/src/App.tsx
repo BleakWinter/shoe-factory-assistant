@@ -27,11 +27,24 @@ interface NavLeafItem {
   parentLabel?: string;
 }
 
-// 左侧导航固定常用工作台、打印中心和配置中心入口。
+// 左侧导航按财务、打印、下单和基础配置分组。
 const navLeafItems: NavLeafItem[] = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
-  { path: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
+  {
+    path: "/monthly-reconciliation",
+    label: "月度对账",
+    icon: <AccountBookOutlined />,
+    parentKey: "finance-center",
+    parentLabel: "财务管理",
+  },
+  {
+    path: "/price-configs",
+    label: "价格配置",
+    icon: <DollarOutlined />,
+    parentKey: "finance-center",
+    parentLabel: "财务管理",
+  },
   {
     path: "/tasks/order",
     label: "打印订单和装箱单",
@@ -103,13 +116,6 @@ const navLeafItems: NavLeafItem[] = [
     parentLabel: "配置中心",
   },
   {
-    path: "/price-configs",
-    label: "价格配置",
-    icon: <DollarOutlined />,
-    parentKey: "config-center",
-    parentLabel: "配置中心",
-  },
-  {
     path: "/inner-box-types",
     label: "内盒类型",
     icon: <SettingOutlined />,
@@ -121,7 +127,15 @@ const navLeafItems: NavLeafItem[] = [
 const menuItems: MenuProps["items"] = [
   { key: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { key: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
-  { key: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
+  {
+    key: "finance-center",
+    label: "财务管理",
+    icon: <AccountBookOutlined />,
+    children: [
+      { key: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
+      { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
+    ],
+  },
   {
     key: "print-center",
     label: "打印中心",
@@ -152,7 +166,6 @@ const menuItems: MenuProps["items"] = [
       { key: "/customer-configs", label: "客户配置", icon: <TeamOutlined /> },
       { key: "/style-configs", label: "盒规配置", icon: <SettingOutlined /> },
       { key: "/inner-box-types", label: "内盒类型", icon: <SettingOutlined /> },
-      { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
     ],
   },
 ];
@@ -171,6 +184,7 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([]);
   const [openMenuKeys, setOpenMenuKeys] = useState<string[]>([]);
+  const [popupMenuKeys, setPopupMenuKeys] = useState<string[]>([]);
 
   const currentItem =
     navLeafItems.find(
@@ -298,14 +312,14 @@ export default function App() {
           theme="dark"
           mode="inline"
           selectedKeys={[currentItem.path]}
-          openKeys={collapsed ? [] : openMenuKeys}
+          openKeys={collapsed ? popupMenuKeys : openMenuKeys}
           items={menuItems}
           onClick={({ key }) => {
             if (typeof key === "string" && key.startsWith("/")) {
               navigate(key);
             }
           }}
-          onOpenChange={setOpenMenuKeys}
+          onOpenChange={collapsed ? setPopupMenuKeys : setOpenMenuKeys}
         />
       </Sider>
 
