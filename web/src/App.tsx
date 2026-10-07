@@ -109,6 +109,13 @@ const navLeafItems: NavLeafItem[] = [
     parentKey: "config-center",
     parentLabel: "配置中心",
   },
+  {
+    path: "/inner-box-types",
+    label: "内盒类型",
+    icon: <SettingOutlined />,
+    parentKey: "config-center",
+    parentLabel: "配置中心",
+  },
 ];
 
 const menuItems: MenuProps["items"] = [
@@ -144,6 +151,7 @@ const menuItems: MenuProps["items"] = [
     children: [
       { key: "/customer-configs", label: "客户配置", icon: <TeamOutlined /> },
       { key: "/style-configs", label: "盒规配置", icon: <SettingOutlined /> },
+      { key: "/inner-box-types", label: "内盒类型", icon: <SettingOutlined /> },
       { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
     ],
   },

@@ -158,7 +158,9 @@ sql/print_table.sql
 - `shoe_style_config`：盒规、净重、毛重、鞋价配置。
 - `shipping_note_task`：出货单打印任务主表。
 - `shipping_note_task_item`：出货单打印任务明细快照。
-- `component_order_task`：订包装、订大底等配件下单任务主表。
+- `packing_order_task`：订包装专用主表。
+- `packing_order_task_item`：按订单与款号汇总的包装规格、装法箱数及来源引用。
+- `component_order_task`：现有配件模块的通用任务主表。
 - `component_order_task_item`：配件下单任务明细。
 
 旧库升级可参考：
@@ -168,7 +170,11 @@ sql/add_order_sheet_print_task.sql
 sql/move_original_file_to_sheet_print_task.sql
 sql/add_shipping_note_task.sql
 sql/add_component_order_task.sql
+sql/add_packing_order_task.sql
+sql/add_inner_box_type.sql
 ```
+
+订包装启用前，在实际使用的业务数据库依次执行 `sql/add_packing_order_task.sql` 和 `sql/add_inner_box_type.sql`，创建订包装专用表及内盒类型目录，并补齐款号默认类型与历史类型名称字段。配置中心的“内盒类型”按版本维护名称、备注与启用状态；盒规配置可为每个款号选择默认类型。脚本可重复执行，不删除或覆盖已有记录。包装页面使用独立接口与表结构，规格、备注和装箱汇总按保存时的值保留；同一订单同款的来源明细合并，装箱行去重计算。其他三个配件模块本次不扩展。
 
 ## 主要接口
 

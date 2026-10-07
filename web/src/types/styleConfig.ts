@@ -5,6 +5,8 @@ export interface StyleConfig {
   developmentNo: string;
   imageUrl?: string;
   boxSpec?: string;
+  innerBoxTypeId?: number;
+  innerBoxTypeName?: string;
   netWeightPerPair?: number;
   grossWeightPerPair?: number;
   shoePrice?: number;
@@ -23,6 +25,7 @@ export interface StyleConfigQueryParams {
 export interface StyleConfigSavePayload {
   developmentNo?: string;
   boxSpec?: string | null;
+  innerBoxTypeId?: number | null;
   netWeightPerPair?: number | null;
   grossWeightPerPair?: number | null;
 }

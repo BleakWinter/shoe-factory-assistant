@@ -11,6 +11,8 @@ public class StyleConfigResponse {
     private String developmentNo;
     private String imageUrl;
     private String boxSpec;
+    private Long innerBoxTypeId;
+    private String innerBoxTypeName;
     private BigDecimal netWeightPerPair;
     private BigDecimal grossWeightPerPair;
     private BigDecimal shoePrice;
@@ -23,6 +25,7 @@ public class StyleConfigResponse {
         response.setId(config.getId());
         response.setDevelopmentNo(config.getDevelopmentNo());
         response.setBoxSpec(config.getBoxSpec());
+        response.setInnerBoxTypeId(config.getInnerBoxTypeId());
         response.setNetWeightPerPair(config.getNetWeightPerPair());
         response.setGrossWeightPerPair(config.getGrossWeightPerPair());
         response.setShoePrice(config.getShoePrice());
@@ -62,6 +65,14 @@ public class StyleConfigResponse {
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }
+
+    public Long getInnerBoxTypeId() { return innerBoxTypeId; }
+
+    public void setInnerBoxTypeId(Long innerBoxTypeId) { this.innerBoxTypeId = innerBoxTypeId; }
+
+    public String getInnerBoxTypeName() { return innerBoxTypeName; }
+
+    public void setInnerBoxTypeName(String innerBoxTypeName) { this.innerBoxTypeName = innerBoxTypeName; }
 
     public String getBoxSpec() {
         return boxSpec;

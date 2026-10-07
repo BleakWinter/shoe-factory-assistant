@@ -48,6 +48,52 @@ class PackingDetailMatchUtilTest {
         assertThat(PackingDetailMatchUtil.isMatchingPackingDetail(orderDetail, packingDetail)).isFalse();
     }
 
+    @Test
+    void countsMergedCartonsUsingTheExplicitRowCount() {
+        OrderPackingDetail detail = packingDetail(1L, "STYLE-A", "1", "10");
+        detail.setCartonCount(4);
+        assertThat(PackingDetailMatchUtil.getPackingCartonCount(detail)).isEqualTo(4);
+    }
+
+    @Test
+    void infersMissingCountsFromPrefixedCartonRanges() {
+        OrderPackingDetail detail = packingDetail(1L, "STYLE-A", "A001", "A010");
+        assertThat(PackingDetailMatchUtil.getPackingCartonCount(detail)).isEqualTo(10);
+        detail.setCartonCount(0);
+        assertThat(PackingDetailMatchUtil.getPackingCartonCount(detail)).isEqualTo(10);
+    }
+
+    @Test
+    void unparseableLegacyRangeFallsBackToOneCarton() {
+        OrderPackingDetail detail = packingDetail(1L, "STYLE-A", null, null);
+        assertThat(PackingDetailMatchUtil.getPackingCartonCount(detail)).isEqualTo(1);
+    }
+
+    @Test
+    void oversizedCartonNumberDoesNotCrashMatching() {
+        OrderRecordDetail orderDetail = orderDetail(1L, "STYLE-A", "1", "20");
+        OrderPackingDetail packingDetail = packingDetail(1L, "STYLE-A", "999999999999999", null);
+        assertThat(PackingDetailMatchUtil.isMatchingPackingDetail(orderDetail, packingDetail)).isFalse();
+    }
+
+    @Test
+    void matchesACombinedPackingRangeCoveredByContinuousSourceRanges() {
+        var first = orderDetail(1L, "STYLE-A", "1", "5");
+        var second = orderDetail(1L, "STYLE-A", "6", "10");
+        var packing = packingDetail(1L, "STYLE-A", "1", "10");
+        assertThat(PackingDetailMatchUtil.isMatchingPackingDetails(java.util.List.of(first, second), packing)).isTrue();
+    }
+
+    @Test
+    void cannotBridgeAGapOrUseAnotherStylesRange() {
+        var first = orderDetail(1L, "STYLE-A", "1", "4");
+        var second = orderDetail(1L, "STYLE-A", "6", "10");
+        var packing = packingDetail(1L, "STYLE-A", "1", "10");
+        assertThat(PackingDetailMatchUtil.isMatchingPackingDetails(java.util.List.of(first, second), packing)).isFalse();
+        first.setCartonEnd("5"); second.setDevelopmentNo("STYLE-B");
+        assertThat(PackingDetailMatchUtil.isMatchingPackingDetails(java.util.List.of(first, second), packing)).isFalse();
+    }
+
     private OrderRecordDetail orderDetail(Long orderId, String developmentNo, String cartonStart, String cartonEnd) {
         OrderRecordDetail detail = new OrderRecordDetail();
         detail.setOrderId(orderId);

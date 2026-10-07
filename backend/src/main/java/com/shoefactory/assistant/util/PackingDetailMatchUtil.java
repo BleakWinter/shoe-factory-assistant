@@ -4,6 +4,8 @@ import com.shoefactory.assistant.entity.OrderPackingDetail;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 
 import java.util.Locale;
+import java.util.Comparator;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,6 +28,34 @@ public final class PackingDetailMatchUtil {
             return false;
         }
         return isPackingRangeInsideOrderRange(detail, packingDetail);
+    }
+
+    public static int getPackingCartonCount(OrderPackingDetail packingDetail) {
+        if (packingDetail.getCartonCount() != null && packingDetail.getCartonCount() > 0) {
+            return packingDetail.getCartonCount();
+        }
+        CartonRange range = getCartonRange(packingDetail.getCartonStart(), packingDetail.getCartonEnd());
+        return range == null ? 1 : Math.addExact(Math.subtractExact(range.end(), range.start()), 1);
+    }
+
+    // 同订单同款可能分成多行，装箱行可跨越这些连续的箱号范围。
+    public static boolean isMatchingPackingDetails(List<OrderRecordDetail> details, OrderPackingDetail packingDetail) {
+        CartonRange packingRange = getCartonRange(packingDetail.getCartonStart(), packingDetail.getCartonEnd());
+        if (packingRange == null) return false;
+        List<CartonRange> ranges = details.stream()
+                .filter(detail -> detail.getOrderId() != null && detail.getOrderId().equals(packingDetail.getOrderId()))
+                .filter(detail -> !hasConflictingStyleNo(detail, packingDetail))
+                .map(detail -> getCartonRange(detail.getCartonStart(), detail.getCartonEnd()))
+                .filter(range -> range != null && range.prefix().equals(packingRange.prefix()) && range.suffix().equals(packingRange.suffix()))
+                .sorted(Comparator.comparingInt(CartonRange::start)).toList();
+        long next = packingRange.start();
+        for (CartonRange range : ranges) {
+            if (range.end() < next) continue;
+            if (range.start() > next) return false;
+            if (range.end() >= packingRange.end()) return true;
+            next = (long) range.end() + 1;
+        }
+        return false;
     }
 
     private static boolean hasConflictingStyleNo(OrderRecordDetail detail, OrderPackingDetail packingDetail) {
@@ -75,9 +105,15 @@ public final class PackingDetailMatchUtil {
         if (!matcher.matches()) {
             return null;
         }
+        int number;
+        try {
+            number = Integer.parseInt(matcher.group(2));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
         return new ParsedCarton(
                 normalizeMatchText(matcher.group(1)),
-                Integer.parseInt(matcher.group(2)),
+                number,
                 normalizeMatchText(matcher.group(3))
         );
     }

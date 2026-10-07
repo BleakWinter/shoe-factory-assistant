@@ -30,6 +30,8 @@ import {
   updateStyleConfig,
 } from "../api/styleConfigApi";
 import { toAssetUrl } from "../api/orderApi";
+import { fetchInnerBoxTypes } from "../api/innerBoxTypeApi";
+import type { InnerBoxType } from "../types/innerBoxType";
 import type { DevelopmentNoOption } from "../types/order";
 import type {
   StyleConfig,
@@ -37,6 +39,8 @@ import type {
   StyleConfigSavePayload,
 } from "../types/styleConfig";
 import { formatDateTime, formatEmpty } from "../utils/format";
+import BoxSpecInput from "../components/BoxSpecInput";
+import { isCompleteBoxSpec } from "../utils/boxSpec";
 
 interface FilterValues {
   developmentNoPaths?: string[][];
@@ -46,6 +50,7 @@ interface FilterValues {
 interface EditorValues {
   developmentNo?: string;
   boxSpec?: string;
+  innerBoxTypeId?: number | null;
   netWeightPerPair?: number | null;
   grossWeightPerPair?: number | null;
 }
@@ -62,6 +67,7 @@ function buildPayload(values: EditorValues): StyleConfigSavePayload {
   return {
     developmentNo: values.developmentNo,
     boxSpec: values.boxSpec?.trim() || null,
+    innerBoxTypeId: values.innerBoxTypeId ?? null,
     netWeightPerPair: normalizeWeight(values.netWeightPerPair),
     grossWeightPerPair: normalizeWeight(values.grossWeightPerPair),
   };
@@ -81,6 +87,12 @@ export default function StyleConfigPage() {
   const [developmentNoOptions, setDevelopmentNoOptions] = useState<DevelopmentNoOption[]>([]);
   const [unconfiguredDevelopmentNos, setUnconfiguredDevelopmentNos] = useState<string[]>([]);
   const [optionLoading, setOptionLoading] = useState(false);
+  const [boxTypes, setBoxTypes] = useState<InnerBoxType[]>([]);
+  const loadBoxTypes = useCallback(async () => {
+    try { setBoxTypes(await fetchInnerBoxTypes()); }
+    catch (error) { message.error(error instanceof Error ? error.message : "内盒类型加载失败"); }
+  }, [message]);
+  useEffect(() => { if (editorOpen) void loadBoxTypes(); }, [editorOpen, loadBoxTypes]);
 
   const loadConfigs = useCallback(async (params: StyleConfigQueryParams) => {
     setLoading(true);
@@ -150,6 +162,7 @@ export default function StyleConfigPage() {
     editorForm.setFieldsValue({
       developmentNo: record.developmentNo,
       boxSpec: record.boxSpec,
+      innerBoxTypeId: record.innerBoxTypeId,
       netWeightPerPair: record.netWeightPerPair,
       grossWeightPerPair: record.grossWeightPerPair,
     });
@@ -204,6 +217,7 @@ export default function StyleConfigPage() {
       },
       { title: "开发编号", dataIndex: "developmentNo", width: 190, fixed: "left", render: formatEmpty },
       { title: "盒规", dataIndex: "boxSpec", minWidth: 180, render: formatEmpty },
+      { title: "内盒类型", dataIndex: "innerBoxTypeName", width: 190, render: formatEmpty },
       {
         title: "净重/双 kg",
         dataIndex: "netWeightPerPair",
@@ -249,7 +263,7 @@ export default function StyleConfigPage() {
         <div>
           <Typography.Title level={3}>盒规配置</Typography.Title>
           <Typography.Text type="secondary">
-            按开发编号维护盒规、净重/双、毛重/双；订单上传和识别会自动补待完善配置。
+            按开发编号维护内盒规格、内盒类型和重量，订包装会自动带出对应规格与类型。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -296,7 +310,7 @@ export default function StyleConfigPage() {
           columns={columns}
           dataSource={configs}
           pagination={pagination}
-          scroll={{ x: 1096 }}
+          scroll={{ x: 1286 }}
           className="data-table"
           onChange={(nextPagination) => {
             setQuery((prev) => ({
@@ -337,8 +351,20 @@ export default function StyleConfigPage() {
               />
             )}
           </Form.Item>
-          <Form.Item name="boxSpec" label="盒规">
-            <Input allowClear placeholder="例如 30x20x10" />
+          <Form.Item name="boxSpec" label="内盒规格" rules={[{
+            validator: (_, value?: string) => !value?.trim() || isCompleteBoxSpec(value)
+              ? Promise.resolve() : Promise.reject(new Error("请填写完整的长、宽、高")),
+          }]}>
+            <BoxSpecInput />
+          </Form.Item>
+          <Form.Item name="innerBoxTypeId" label="内盒类型" extra="类型和版本在配置中心的“内盒类型”中维护。">
+            <Select allowClear showSearch optionFilterProp="label" placeholder="选择该款使用的内盒类型 / 版本"
+              onDropdownVisibleChange={(open) => { if (open) void loadBoxTypes(); }}
+              notFoundContent="暂无类型，请先新增内盒类型" options={[
+                ...(editingConfig?.innerBoxTypeId && !boxTypes.some((type) => type.id === editingConfig.innerBoxTypeId)
+                  ? [{ value: editingConfig.innerBoxTypeId, label: editingConfig.innerBoxTypeName || "类型不存在", disabled: true }] : []),
+                ...boxTypes.map((type) => ({ value: type.id, label: `${type.name}${type.enabled ? "" : "（已停用）"}`, disabled: !type.enabled })),
+              ]} />
           </Form.Item>
           <Form.Item name="netWeightPerPair" label="净重/双 kg">
             <InputNumber min={0} precision={3} step={0.001} className="full-width-control" />

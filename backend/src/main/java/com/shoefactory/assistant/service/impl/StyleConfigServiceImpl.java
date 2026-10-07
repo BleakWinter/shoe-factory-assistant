@@ -17,6 +17,7 @@ import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.ShoeStyleConfigMapper;
 import com.shoefactory.assistant.service.StyleConfigService;
+import com.shoefactory.assistant.service.InnerBoxTypeConfigService;
 import com.shoefactory.assistant.util.DevelopmentNoUtil;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -41,15 +42,18 @@ public class StyleConfigServiceImpl implements StyleConfigService {
     private final ShoeStyleConfigMapper shoeStyleConfigMapper;
     private final OrderRecordMapper orderRecordMapper;
     private final OrderRecordDetailMapper orderRecordDetailMapper;
+    private final InnerBoxTypeConfigService boxTypes;
 
     public StyleConfigServiceImpl(
             ShoeStyleConfigMapper shoeStyleConfigMapper,
             OrderRecordMapper orderRecordMapper,
-            OrderRecordDetailMapper orderRecordDetailMapper
+            OrderRecordDetailMapper orderRecordDetailMapper,
+            InnerBoxTypeConfigService boxTypes
     ) {
         this.shoeStyleConfigMapper = shoeStyleConfigMapper;
         this.orderRecordMapper = orderRecordMapper;
         this.orderRecordDetailMapper = orderRecordDetailMapper;
+        this.boxTypes = boxTypes;
     }
 
     @Override
@@ -79,6 +83,7 @@ public class StyleConfigServiceImpl implements StyleConfigService {
                 .map(StyleConfigResponse::from)
                 .toList();
         attachStyleConfigShoeImages(records);
+        attachInnerBoxTypes(records);
         return PageResponse.from(resultPage, records);
     }
 
@@ -121,7 +126,9 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         } catch (DuplicateKeyException ex) {
             throw new BusinessException("开发编号已存在: " + developmentNo, ex);
         }
-        return StyleConfigResponse.from(config);
+        StyleConfigResponse response = StyleConfigResponse.from(config);
+        attachInnerBoxTypes(List.of(response));
+        return response;
     }
 
     @Override
@@ -132,18 +139,23 @@ public class StyleConfigServiceImpl implements StyleConfigService {
             throw new BusinessException("开发编号配置不存在: " + id);
         }
         String boxSpec = blankToNull(request.getBoxSpec());
+        validateInnerBoxType(request.getInnerBoxTypeId(), config.getInnerBoxTypeId());
         LocalDateTime now = LocalDateTime.now();
         shoeStyleConfigMapper.update(null, new LambdaUpdateWrapper<ShoeStyleConfig>()
                 .eq(ShoeStyleConfig::getId, id)
                 .set(ShoeStyleConfig::getBoxSpec, boxSpec)
+                .set(ShoeStyleConfig::getInnerBoxTypeId, request.getInnerBoxTypeId())
                 .set(ShoeStyleConfig::getNetWeightPerPair, request.getNetWeightPerPair())
                 .set(ShoeStyleConfig::getGrossWeightPerPair, request.getGrossWeightPerPair())
                 .set(ShoeStyleConfig::getUpdatedAt, now));
         config.setBoxSpec(boxSpec);
+        config.setInnerBoxTypeId(request.getInnerBoxTypeId());
         config.setNetWeightPerPair(request.getNetWeightPerPair());
         config.setGrossWeightPerPair(request.getGrossWeightPerPair());
         config.setUpdatedAt(now);
-        return StyleConfigResponse.from(config);
+        StyleConfigResponse response = StyleConfigResponse.from(config);
+        attachInnerBoxTypes(List.of(response));
+        return response;
     }
 
     @Override
@@ -393,6 +405,8 @@ public class StyleConfigServiceImpl implements StyleConfigService {
     }
 
     private void applyEditableFields(ShoeStyleConfig config, StyleConfigSaveRequest request) {
+        validateInnerBoxType(request.getInnerBoxTypeId(), null);
+        config.setInnerBoxTypeId(request.getInnerBoxTypeId());
         config.setBoxSpec(blankToNull(request.getBoxSpec()));
         config.setNetWeightPerPair(request.getNetWeightPerPair());
         config.setGrossWeightPerPair(request.getGrossWeightPerPair());
@@ -431,6 +445,18 @@ public class StyleConfigServiceImpl implements StyleConfigService {
         Map<String, String> imageUrlsByDevelopmentNo = collectShoeImageUrlsByDevelopmentNo(developmentNos);
         records.forEach(record -> record.setImageUrl(
                 imageUrlsByDevelopmentNo.get(normalizeDevelopmentNo(record.getDevelopmentNo()))));
+    }
+
+    private void validateInnerBoxType(Long id, Long currentId) {
+        if (id != null && !id.equals(currentId)) boxTypes.requireEnabled(id);
+    }
+
+    private void attachInnerBoxTypes(List<StyleConfigResponse> records) {
+        var types = boxTypes.byIds(records.stream().map(StyleConfigResponse::getInnerBoxTypeId).toList());
+        records.forEach(record -> {
+            var type = record.getInnerBoxTypeId() == null ? null : types.get(record.getInnerBoxTypeId());
+            record.setInnerBoxTypeName(type == null ? null : type.getName());
+        });
     }
 
     private void attachStyleConfigShoeImages(List<StyleConfigResponse> records) {

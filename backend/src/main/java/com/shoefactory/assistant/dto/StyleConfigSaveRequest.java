@@ -3,6 +3,7 @@ package com.shoefactory.assistant.dto;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
 
@@ -13,6 +14,9 @@ public class StyleConfigSaveRequest {
 
     @Size(max = 128)
     private String boxSpec;
+
+    @Positive
+    private Long innerBoxTypeId;
 
     @DecimalMin(value = "0.000", inclusive = true)
     @Digits(integer = 7, fraction = 3)
@@ -29,6 +33,10 @@ public class StyleConfigSaveRequest {
     public void setDevelopmentNo(String developmentNo) {
         this.developmentNo = developmentNo;
     }
+
+    public Long getInnerBoxTypeId() { return innerBoxTypeId; }
+
+    public void setInnerBoxTypeId(Long innerBoxTypeId) { this.innerBoxTypeId = innerBoxTypeId; }
 
     public String getBoxSpec() {
         return boxSpec;

@@ -14,6 +14,7 @@ public class ShoeStyleConfig {
     private Long id;
     private String developmentNo;
     private String boxSpec;
+    private Long innerBoxTypeId;
     private BigDecimal netWeightPerPair;
     private BigDecimal grossWeightPerPair;
     private BigDecimal shoePrice;
@@ -35,6 +36,10 @@ public class ShoeStyleConfig {
     public void setDevelopmentNo(String developmentNo) {
         this.developmentNo = developmentNo;
     }
+
+    public Long getInnerBoxTypeId() { return innerBoxTypeId; }
+
+    public void setInnerBoxTypeId(Long innerBoxTypeId) { this.innerBoxTypeId = innerBoxTypeId; }
 
     public String getBoxSpec() {
         return boxSpec;

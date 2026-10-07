@@ -5,6 +5,7 @@ import CustomerConfigPage from "../pages/CustomerConfigPage";
 import OrderDetailsRoute from "../pages/OrderDetailsRoute";
 import ManualOrderPage from "../pages/ManualOrderPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
+import PackingOrderPage from "../pages/PackingOrderPage";
 import MonthlyReconciliationPage from "../pages/MonthlyReconciliationPage";
 import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
 import PrintSelectionPage from "../pages/PrintSelectionPage";
@@ -12,6 +13,7 @@ import PrintTaskListPage from "../pages/PrintTaskListPage";
 import ShoePriceConfigPage from "../pages/ShoePriceConfigPage";
 import ShoeStatisticsPage from "../pages/ShoeStatisticsPage";
 import StyleConfigPage from "../pages/StyleConfigPage";
+import InnerBoxTypeConfigPage from "../pages/InnerBoxTypeConfigPage";
 
 export const router = createBrowserRouter([
   {
@@ -32,12 +34,13 @@ export const router = createBrowserRouter([
       { path: "tasks/shipping-note", element: <ShippingNotePrintPage /> },
       { path: "shipping-notes", element: <Navigate to="/tasks/shipping-note" replace /> },
       { path: "component-orders", element: <Navigate to="/component-orders/packing" replace /> },
-      { path: "component-orders/packing", element: <ComponentOrderPage key="component-order-packing" title="订包装" processType={1} /> },
+      { path: "component-orders/packing", element: <PackingOrderPage /> },
       { path: "component-orders/outsole", element: <ComponentOrderPage key="component-order-outsole" title="订大底" processType={2} /> },
       { path: "component-orders/insole", element: <ComponentOrderPage key="component-order-insole" title="订中底" processType={3} /> },
       { path: "component-orders/heel", element: <ComponentOrderPage key="component-order-heel" title="订鞋跟" processType={4} /> },
       { path: "customer-configs", element: <CustomerConfigPage /> },
       { path: "style-configs", element: <StyleConfigPage /> },
+      { path: "inner-box-types", element: <InnerBoxTypeConfigPage /> },
       { path: "price-configs", element: <ShoePriceConfigPage /> },
       { path: "*", element: <Navigate to="/orders" replace /> },
     ],

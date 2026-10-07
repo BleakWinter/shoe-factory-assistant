@@ -2502,7 +2502,98 @@ a {
   grid-template-columns: repeat(3, minmax(0,1fr));
   gap: 16px;
 }
+.packing-workspace-toolbar,
+.packing-order-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+.packing-date-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.packing-date-field .ant-input { width: 160px; }
+.packing-source-filters { margin-bottom: 16px; }
+.packing-source-filters .ant-select { width: 300px; }
+.packing-source-filters .ant-input-affix-wrapper { width: 220px; }
+.packing-capacity-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.packing-order-items .ant-table-cell { overflow-wrap: anywhere; }
+.packing-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 12px;
+}
+.packing-editor-field .ant-select {
+  width: 100%;
+}
+
+.box-spec-input {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.box-spec-dimension {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.box-spec-dimension .ant-input-affix-wrapper {
+  min-width: 0;
+}
+
+.box-spec-separator {
+  color: #8a97a6;
+}
+
+.packing-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.packing-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.packing-editor-field > span:first-child { color: #617083; }
+.packing-capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px;
+}
+.packing-capacity-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  color: #617083;
+  background: #fff;
+  border: 1px solid #dde3eb;
+  border-radius: 6px;
+}
+.packing-capacity-used {
+  color: #285db8;
+  background: #eff5ff;
+  border-color: #b9d0f8;
+}
+.packing-detail-image { object-fit: contain; max-height: 120px; }
 @media (max-width: 760px) {
   .manual-order-basics, .manual-order-line { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .manual-summary-grid { grid-template-columns: 1fr; }
+  .packing-editor-fields { grid-template-columns: 1fr; }
 }
