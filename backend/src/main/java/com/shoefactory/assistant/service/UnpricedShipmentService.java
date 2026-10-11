@@ -1,9 +1,12 @@
 package com.shoefactory.assistant.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.UnpricedShipmentResponse.*;
 import com.shoefactory.assistant.entity.CustomerConfig;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
+import com.shoefactory.assistant.entity.ShoeQuotation;
+import com.shoefactory.assistant.mapper.ShoeQuotationMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.YearMonth;
@@ -15,20 +18,25 @@ import java.util.stream.Collectors;
 public class UnpricedShipmentService {
     private final LedgerDataService ledger;
     private final CustomerConfigService customers;
+    private final ShoeQuotationMapper quotations;
 
-    public UnpricedShipmentService(LedgerDataService ledger, CustomerConfigService customers) {
+    public UnpricedShipmentService(LedgerDataService ledger, CustomerConfigService customers, ShoeQuotationMapper quotations) {
         this.ledger = ledger;
         this.customers = customers;
+        this.quotations = quotations;
     }
 
     public List<MonthSummary> listMonths(Long customerId) {
-        return loadDetails(loadData(customerId), null).stream()
+        List<Detail> details = loadDetails(loadData(customerId), null);
+        var histories = quotationHistories(details);
+        return details.stream()
                 .collect(Collectors.groupingBy(row -> YearMonth.from(row.shippingDate()).toString(),
                         () -> new TreeMap<String, List<Detail>>(Comparator.reverseOrder()), Collectors.toList()))
                 .entrySet().stream()
                 .map(entry -> new MonthSummary(entry.getKey(), countStyles(entry.getValue()),
                         (int) entry.getValue().stream().map(row -> mainStyle(row.developmentNo())).distinct().count(),
-                        entry.getValue().stream().mapToInt(Detail::shippingQuantity).sum()))
+                        entry.getValue().stream().mapToInt(Detail::shippingQuantity).sum(),
+                        quotationCounts(entry.getValue(), histories)))
                 .toList();
     }
 
@@ -39,19 +47,64 @@ public class UnpricedShipmentService {
         LedgerDataService.Data data = loadData(customerId);
         List<Detail> details = loadDetails(data, period);
         Map<StyleKey, String> images = styleImages(data);
+        var histories = quotationHistories(details);
         List<StyleGroup> groups = details.stream()
                 .collect(Collectors.groupingBy(row -> mainStyle(row.developmentNo())))
                 .entrySet().stream()
                 .map(entry -> new StyleGroup(entry.getKey(), countStyles(entry.getValue()),
-                        entry.getValue().stream().mapToInt(Detail::shippingQuantity).sum(), summarizeStyles(entry.getValue(), images)))
+                        entry.getValue().stream().mapToInt(Detail::shippingQuantity).sum(),
+                        summarizeStyles(entry.getValue(), images, histories), quotationCounts(entry.getValue(), histories)))
                 .sorted(Comparator.comparingInt(StyleGroup::missingPriceCount).reversed()
                         .thenComparing(StyleGroup::mainStyle))
                 .toList();
         return new MonthDetails(period.toString(), countStyles(details),
-                details.stream().mapToInt(Detail::shippingQuantity).sum(), groups);
+                details.stream().mapToInt(Detail::shippingQuantity).sum(), groups, quotationCounts(details, histories));
     }
 
     private record StyleKey(Long customerId, String developmentNo) {}
+
+    private record QuotationHistory(QuotationSummary latest, QuotationSummary latestPriced) {
+        QuotationStatus status() { return latestPriced == null ? QuotationStatus.DRAFT : QuotationStatus.QUOTED; }
+    }
+
+    private Map<StyleKey, QuotationHistory> quotationHistories(List<Detail> details) {
+        var keys = details.stream().map(this::styleKey)
+                .filter(key -> key.customerId() != null && !key.developmentNo().isBlank())
+                .collect(Collectors.toSet());
+        if (keys.isEmpty()) return Map.of();
+        // 一次查询全部关联版本，不限制报价日期；已报价格不因较新的未完成版本而消失。
+        var quotes = quotations.selectList(new LambdaQueryWrapper<ShoeQuotation>()
+                .in(ShoeQuotation::getCustomerId, keys.stream().map(StyleKey::customerId).distinct().toList())
+                .in(ShoeQuotation::getDevelopmentNo, keys.stream().map(StyleKey::developmentNo).distinct().toList()));
+        Map<StyleKey, QuotationHistory> histories = new HashMap<>();
+        quotes.stream().sorted(Comparator.comparing(ShoeQuotation::getCreatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(ShoeQuotation::getId, Comparator.reverseOrder()))
+                .forEach(quote -> {
+                    var key = new StyleKey(quote.getCustomerId(), CustomerPriceService.normalize(quote.getDevelopmentNo()));
+                    if (!keys.contains(key)) return;
+                    var summary = new QuotationSummary(quote.getId(), quote.getVersionNo(), quote.getFinalPrice(),
+                            quote.getQuotationDate(), quote.getCreatedAt(), quote.getAdoptedAt());
+                    var history = histories.get(key);
+                    if (history == null) {
+                        histories.put(key, new QuotationHistory(summary, quote.getFinalPrice() == null ? null : summary));
+                    } else if (history.latestPriced() == null && quote.getFinalPrice() != null) {
+                        histories.put(key, new QuotationHistory(history.latest(), summary));
+                    }
+                });
+        return histories;
+    }
+
+    private QuotationCounts quotationCounts(List<Detail> details, Map<StyleKey, QuotationHistory> histories) {
+        int unquoted = 0, drafts = 0, quoted = 0;
+        for (var key : details.stream().map(this::styleKey).collect(Collectors.toSet())) {
+            var history = histories.get(key);
+            if (history == null) unquoted++;
+            else if (history.status() == QuotationStatus.DRAFT) drafts++;
+            else quoted++;
+        }
+        return new QuotationCounts(unquoted, drafts, quoted);
+    }
 
     private StyleKey styleKey(Detail detail) {
         return new StyleKey(detail.customerId(), detail.developmentNo());
@@ -62,14 +115,19 @@ public class UnpricedShipmentService {
         return (int) details.stream().map(this::styleKey).distinct().count();
     }
 
-    private List<StyleSummary> summarizeStyles(List<Detail> details, Map<StyleKey, String> images) {
+    private List<StyleSummary> summarizeStyles(List<Detail> details, Map<StyleKey, String> images,
+                                             Map<StyleKey, QuotationHistory> histories) {
         return details.stream()
                 .collect(Collectors.groupingBy(this::styleKey))
                 .entrySet().stream()
-                .map(entry -> new StyleSummary(entry.getKey().customerId(), entry.getValue().get(0).customerName(),
+                .map(entry -> {
+                    var history = histories.get(entry.getKey());
+                    return new StyleSummary(entry.getKey().customerId(), entry.getValue().get(0).customerName(),
                         entry.getKey().developmentNo(), images.get(entry.getKey()),
                         entry.getValue().stream().mapToInt(Detail::shippingQuantity).sum(),
-                        entry.getValue()))
+                        entry.getValue(), history == null ? QuotationStatus.NOT_QUOTED : history.status(),
+                        history == null ? null : history.latest(), history == null ? null : history.latestPriced());
+                })
                 .sorted(Comparator.comparing(StyleSummary::developmentNo)
                         .thenComparing(StyleSummary::customerId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();

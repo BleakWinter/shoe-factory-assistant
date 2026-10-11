@@ -25,6 +25,22 @@
   white-space: nowrap;
 }
 
+.unpriced-quotation-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.unpriced-quotation-status .ant-tag {
+  margin-inline-end: 0;
+}
+
+.unpriced-drawer-quotation {
+  margin-bottom: 16px;
+}
+
 .statistics-unpriced-section > .ant-btn {
   margin-bottom: 18px;
 }

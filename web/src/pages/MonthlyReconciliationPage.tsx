@@ -214,7 +214,7 @@ export default function MonthlyReconciliationPage() {
           message={`${reconciliation?.missingPriceCount || 0} 条出货明细尚未配置单价，暂未计入货款合计`}
           action={
             <Button size="small" onClick={() => navigate(`/unpriced-styles?month=${month}&customerId=${customerId}`)}>
-              查看未报价款号
+              查看待定价款号
             </Button>
           }
         />

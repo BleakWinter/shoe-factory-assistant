@@ -25,11 +25,27 @@ export interface MonthlyReconciliation {
   details: MonthlyReconciliationDetail[];
 }
 
+export interface UnpricedQuotationCounts {
+  unquotedCount: number;
+  draftCount: number;
+  quotedCount: number;
+}
+
+export interface UnpricedQuotationSummary {
+  id: number;
+  versionNo: number;
+  finalPrice: number | string | null;
+  quotationDate: string | null;
+  createdAt: string | null;
+  adoptedAt: string | null;
+}
+
 export interface UnpricedMonthSummary {
   month: string;
   missingPriceCount: number;
   mainStyleCount: number;
   shippingQuantity: number;
+  quotationCounts: UnpricedQuotationCounts;
 }
 
 export interface UnpricedShipmentDetail {
@@ -52,6 +68,7 @@ export interface UnpricedStyleGroup {
   missingPriceCount: number;
   shippingQuantity: number;
   styles: UnpricedStyleSummary[];
+  quotationCounts: UnpricedQuotationCounts;
 }
 
 export interface UnpricedStyleSummary {
@@ -61,6 +78,9 @@ export interface UnpricedStyleSummary {
   imageUrl?: string | null;
   shippingQuantity: number;
   details: UnpricedShipmentDetail[];
+  quotationStatus: "NOT_QUOTED" | "DRAFT" | "QUOTED";
+  latestQuotation: UnpricedQuotationSummary | null;
+  latestPricedQuotation: UnpricedQuotationSummary | null;
 }
 
 export interface UnpricedMonthDetails {
@@ -68,4 +88,5 @@ export interface UnpricedMonthDetails {
   missingPriceCount: number;
   shippingQuantity: number;
   groups: UnpricedStyleGroup[];
+  quotationCounts: UnpricedQuotationCounts;
 }

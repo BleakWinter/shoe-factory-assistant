@@ -790,7 +790,7 @@ export default function ShoeStatisticsPage() {
             {activeStatistic === "payment" ? (
               <div className="statistics-unpriced-section">
                 <Button onClick={() => navigate(`/unpriced-styles${customerId ? `?customerId=${customerId}` : ""}`)}>
-                  按出货月份查看未报价款号
+                  按出货月份查看待定价款号
                 </Button>
                 <Typography.Title level={5}>
                   未出货且未配置单价的款号

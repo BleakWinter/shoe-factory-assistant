@@ -33,7 +33,7 @@ const navLeafItems: NavLeafItem[] = [
   { path: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
   {
     path: "/unpriced-styles",
-    label: "未报价款号",
+    label: "待定价款号",
     icon: <DollarOutlined />,
     parentKey: "finance-center",
     parentLabel: "财务管理",
@@ -140,7 +140,7 @@ const menuItems: MenuProps["items"] = [
     icon: <AccountBookOutlined />,
     children: [
       { key: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
-      { key: "/unpriced-styles", label: "未报价款号", icon: <DollarOutlined /> },
+      { key: "/unpriced-styles", label: "待定价款号", icon: <DollarOutlined /> },
       { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
     ],
   },

@@ -2,6 +2,8 @@ package com.shoefactory.assistant.service;
 
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.entity.*;
+import com.shoefactory.assistant.dto.UnpricedShipmentResponse.QuotationStatus;
+import com.shoefactory.assistant.mapper.ShoeQuotationMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,12 +22,13 @@ import static org.mockito.Mockito.*;
 class UnpricedShipmentServiceTest {
     @Mock LedgerDataService ledger;
     @Mock CustomerConfigService customers;
+    @Mock ShoeQuotationMapper quotations;
     private UnpricedShipmentService service;
     private CustomerConfig customer;
     private LedgerDataService.Data data;
 
     @BeforeEach void prepare() {
-        service = new UnpricedShipmentService(ledger, customers);
+        service = new UnpricedShipmentService(ledger, customers, quotations);
         customer = new CustomerConfig();
         customer.setId(1L); customer.setName("达为");
         OrderRecord order = new OrderRecord();
@@ -236,6 +239,134 @@ class UnpricedShipmentServiceTest {
         assertNull(styles.get(0).imageUrl());
         assertEquals("/api/orders/details/51/image", styles.get(1).imageUrl());
         assertNull(month.groups().stream().filter(group -> group.mainStyle().equals("未填款号")).findFirst().orElseThrow().styles().get(0).imageUrl());
+    }
+
+    @Test void countsUnquotedDraftAndQuotedStylesSeparatelyAfterDeduplicatingShipments() {
+        var items = new ArrayList<>(data.items()); items.add(item(37L, 20L, 17L));
+        when(customers.list()).thenReturn(List.of(customer));
+        when(ledger.load(null)).thenReturn(new LedgerDataService.Data(data.orders(), data.details(), data.tasks(), items, data.pricesByDetailId()));
+        when(quotations.selectList(any())).thenReturn(List.of(
+                quotation(101L, 1L, "JCD-162-15-03", 1, "79.50", "2026-08-01T10:00:00"),
+                quotation(102L, 1L, "JCD-205-1-34", 1, null, "2026-10-01T10:00:00")));
+
+        var month = service.getMonth("2026-10", null);
+        assertEquals(3, month.missingPriceCount());
+        assertEquals(1, month.quotationCounts().unquotedCount());
+        assertEquals(1, month.quotationCounts().draftCount());
+        assertEquals(1, month.quotationCounts().quotedCount());
+        var quoted = month.groups().get(0);
+        assertEquals(1, quoted.quotationCounts().quotedCount());
+        assertEquals(QuotationStatus.QUOTED, quoted.styles().get(0).quotationStatus());
+        assertEquals(new BigDecimal("79.50"), quoted.styles().get(0).latestPricedQuotation().finalPrice());
+        assertEquals(300, quoted.shippingQuantity());
+        assertEquals(QuotationStatus.DRAFT, month.groups().get(1).styles().get(0).quotationStatus());
+        assertEquals(102L, month.groups().get(1).styles().get(0).latestQuotation().id());
+        assertNull(month.groups().get(1).styles().get(0).latestPricedQuotation());
+        assertEquals(QuotationStatus.NOT_QUOTED, month.groups().get(2).styles().get(0).quotationStatus());
+        verify(quotations).selectList(any());
+
+        var months = service.listMonths(null);
+        assertEquals(month.quotationCounts(), months.get(0).quotationCounts());
+        assertEquals(1, months.get(1).quotationCounts().draftCount());
+        assertEquals(1, months.get(2).quotationCounts().draftCount());
+        verify(quotations, times(2)).selectList(any());
+    }
+
+    @Test void usesTheMostRecentlySavedQuoteAcrossVersionsAndQuoteGroupsIncludingZeroPrices() {
+        when(customers.list()).thenReturn(List.of(customer));
+        when(ledger.load(null)).thenReturn(data);
+        var older = quotation(101L, 1L, "JCD-162-15-03", 1, "79.50", "2026-08-01T10:00:00");
+        var newer = quotation(102L, 1L, "JCD-162-15-03", 2, "80.00", "2026-08-02T10:00:00");
+        var anotherGroup = quotation(103L, 1L, "JCD-162-15-03", 1, "0.00", "2026-08-03T10:00:00");
+        anotherGroup.setVersionGroup("another-group");
+        when(quotations.selectList(any())).thenReturn(List.of(newer, older, anotherGroup));
+
+        var style = service.getMonth("2026-10", null).groups().get(0).styles().get(0);
+        assertEquals(QuotationStatus.QUOTED, style.quotationStatus());
+        assertEquals(103L, style.latestQuotation().id());
+        assertEquals(103L, style.latestPricedQuotation().id());
+        assertEquals(new BigDecimal("0.00"), style.latestPricedQuotation().finalPrice());
+        assertEquals(LocalDate.parse("2026-08-03"), style.latestPricedQuotation().quotationDate());
+    }
+
+    @Test void keepsTheLastQuotedPriceVisibleWhenTheNewestVersionIsStillADraft() {
+        when(customers.list()).thenReturn(List.of(customer));
+        when(ledger.load(null)).thenReturn(data);
+        var priced = quotation(101L, 1L, "JCD-162-15-03", 1, "79.50", "2026-09-01T10:00:00");
+        var draft = quotation(102L, 1L, "JCD-162-15-03", 2, null, "2026-09-02T10:00:00");
+        when(quotations.selectList(any())).thenReturn(List.of(priced, draft));
+
+        var month = service.getMonth("2026-10", null);
+        var style = month.groups().get(0).styles().get(0);
+        assertEquals(QuotationStatus.QUOTED, style.quotationStatus());
+        assertEquals(102L, style.latestQuotation().id());
+        assertNull(style.latestQuotation().finalPrice());
+        assertEquals(101L, style.latestPricedQuotation().id());
+        assertEquals(new BigDecimal("79.50"), style.latestPricedQuotation().finalPrice());
+        assertEquals(1, month.quotationCounts().quotedCount());
+        assertEquals(0, month.quotationCounts().draftCount());
+    }
+
+    @Test void quotationStatusMatchesTheCustomerAndExactNormalizedFullStyle() {
+        var anotherCustomer = new CustomerConfig(); anotherCustomer.setId(2L); anotherCustomer.setName("宝翔");
+        var anotherOrder = new OrderRecord(); anotherOrder.setId(50L); anotherOrder.setCustomerId(2L);
+        var sameStyle = detail(51L, " jcd－162－15－03 ", 25); sameStyle.setOrderId(50L);
+        var otherTask = task(60L, "2026-10-08"); otherTask.setCustomerId(2L);
+        var orders = new ArrayList<>(data.orders()); orders.add(anotherOrder);
+        var details = new ArrayList<>(data.details()); details.add(sameStyle);
+        var tasks = new ArrayList<>(data.tasks()); tasks.add(otherTask);
+        var items = new ArrayList<>(data.items()); items.add(item(70L, 60L, 51L));
+        when(customers.list()).thenReturn(List.of(customer, anotherCustomer));
+        when(ledger.load(null)).thenReturn(new LedgerDataService.Data(orders, details, tasks, items, data.pricesByDetailId()));
+        when(quotations.selectList(any())).thenReturn(List.of(
+                quotation(101L, 2L, "JCD-162-15-03", 1, "79.50", "2026-09-01T10:00:00"),
+                quotation(102L, 1L, "JCD-162-15-04", 1, "80.00", "2026-09-01T10:00:00"),
+                quotation(103L, null, "JCD-162-15-03", 1, "81.00", "2026-09-01T10:00:00")));
+
+        var month = service.getMonth("2026-10", null);
+        var styles = month.groups().get(0).styles();
+        assertEquals(QuotationStatus.NOT_QUOTED, styles.get(0).quotationStatus());
+        assertNull(styles.get(0).latestQuotation());
+        assertEquals(QuotationStatus.QUOTED, styles.get(1).quotationStatus());
+        assertEquals(101L, styles.get(1).latestQuotation().id());
+        assertEquals(2, month.quotationCounts().unquotedCount());
+        assertEquals(1, month.quotationCounts().quotedCount());
+    }
+
+    @Test void configuredCustomerPricesRemoveStylesEvenWhenTheirSavedQuotationStillExists() {
+        when(customers.list()).thenReturn(List.of(customer));
+        var prices = new HashMap<>(data.pricesByDetailId());
+        prices.put(11L, BigDecimal.ZERO); prices.put(12L, BigDecimal.ZERO); prices.put(13L, new BigDecimal("80"));
+        when(ledger.load(null)).thenReturn(new LedgerDataService.Data(data.orders(), data.details(), data.tasks(), data.items(), prices));
+
+        var month = service.getMonth("2026-10", null);
+        assertTrue(month.groups().isEmpty());
+        assertEquals(0, month.missingPriceCount());
+        assertEquals(0, month.quotationCounts().quotedCount());
+        assertEquals(0, month.quotationCounts().draftCount());
+        assertEquals(0, month.quotationCounts().unquotedCount());
+        verifyNoInteractions(quotations);
+    }
+
+    @Test void preservesPastAdoptionInformationWhenTheCustomerPriceIsCurrentlyMissing() {
+        when(customers.list()).thenReturn(List.of(customer));
+        when(ledger.load(null)).thenReturn(data);
+        var quote = quotation(101L, 1L, "JCD-162-15-03", 1, "79.50", "2026-09-01T10:00:00");
+        quote.setAdoptedAt(LocalDateTime.parse("2026-09-02T10:00:00"));
+        when(quotations.selectList(any())).thenReturn(List.of(quote));
+
+        var style = service.getMonth("2026-10", null).groups().get(0).styles().get(0);
+        assertEquals(QuotationStatus.QUOTED, style.quotationStatus());
+        assertEquals(quote.getAdoptedAt(), style.latestPricedQuotation().adoptedAt());
+        assertFalse(data.pricesByDetailId().containsKey(11L));
+    }
+
+    private ShoeQuotation quotation(Long id, Long customerId, String style, int version, String price, String savedAt) {
+        var quote = new ShoeQuotation(); quote.setId(id); quote.setCustomerId(customerId); quote.setDevelopmentNo(style);
+        quote.setVersionGroup("group-" + customerId + "-" + style); quote.setVersionNo(version);
+        quote.setFinalPrice(price == null ? null : new BigDecimal(price));
+        quote.setCreatedAt(LocalDateTime.parse(savedAt)); quote.setQuotationDate(quote.getCreatedAt().toLocalDate());
+        return quote;
     }
 
     private OrderRecordDetail detail(Long id, String style, int quantity) {
