@@ -4,6 +4,7 @@ import { toAssetUrl } from "../api/orderApi";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createShoePriceConfig, fetchShoePriceConfigDevelopmentNoOptions, fetchShoePriceConfigs, updateShoePriceConfig } from "../api/priceConfigApi";
+import { fetchQuotationForPriceConfig } from "../api/quotationApi";
 import { useCustomers } from "../hooks/useCustomers";
 import type { ShoePriceConfig } from "../types/priceConfig";
 import type { DevelopmentNoOption } from "../types/order";
@@ -27,9 +28,12 @@ export default function ShoePriceConfigPage() {
   const [saving,setSaving]=useState(false);
   const [open,setOpen]=useState(false);
   const [editing,setEditing]=useState<Price>();
+  const [openingQuotationId,setOpeningQuotationId]=useState<number>();
   const [form]=Form.useForm<Values>();
   const requestSequence=useRef(0);
   const optionRequestSequence=useRef(0);
+  const quotationRequestSequence=useRef(0);
+  const openingQuotation=useRef(false);
   const loadOptions=useCallback(async()=>{
     const sequence=++optionRequestSequence.current;
     setOptionLoading(true);setDevelopmentNoOptions([]);
@@ -52,6 +56,19 @@ export default function ShoePriceConfigPage() {
   },[customerId,developmentNoPaths,incompleteOnly,page,message]);
   useEffect(()=>{void load();return ()=>{requestSequence.current++;};},[load]);
   useEffect(()=>{void loadOptions();return ()=>{optionRequestSequence.current++;};},[loadOptions]);
+  useEffect(()=>()=>{quotationRequestSequence.current++;},[]);
+  async function openQuotation(row:Price) {
+    if(openingQuotation.current)return;
+    openingQuotation.current=true;setOpeningQuotationId(row.id);
+    const sequence=++quotationRequestSequence.current;
+    try {
+      const quotationId=await fetchQuotationForPriceConfig(row.customerId,row.developmentNo);
+      if(sequence!==quotationRequestSequence.current)return;
+      navigate(quotationId!=null?`/price-configs/quotations/${quotationId}`:
+        `/price-configs/quotations/new?customerId=${row.customerId}&developmentNo=${encodeURIComponent(row.developmentNo)}`);
+    } catch(e){if(sequence===quotationRequestSequence.current)message.error(e instanceof Error?e.message:"报价加载失败");}
+    finally {if(sequence===quotationRequestSequence.current){openingQuotation.current=false;setOpeningQuotationId(undefined);}}
+  }
   function edit(row?:Price) {
     setEditing(row);form.resetFields();
     form.setFieldsValue(row||{customerId:customerId||customers[0]?.id});setOpen(true);
@@ -87,7 +104,7 @@ export default function ShoePriceConfigPage() {
           {title:"单价",dataIndex:"shoePrice",render:value=>value==null?"-":`¥ ${Number(value).toFixed(2)}`},
           {title:"状态",dataIndex:"complete",render:value=><Tag color={value?"green":"gold"}>{value?"已配置":"待配置"}</Tag>},
           {title:"更新时间",dataIndex:"updatedAt",render:formatDateTime},
-          {title:"操作",render:(_,row)=><Space><Button icon={<EditOutlined/>} onClick={()=>edit(row)}>编辑</Button><Button onClick={()=>navigate(`/price-configs/quotations/new?customerId=${row.customerId}&developmentNo=${encodeURIComponent(row.developmentNo)}`)}>做报价</Button></Space>},
+          {title:"操作",render:(_,row)=><Space><Button icon={<EditOutlined/>} onClick={()=>edit(row)}>编辑</Button><Button loading={openingQuotationId===row.id} disabled={openingQuotationId!=null} onClick={()=>void openQuotation(row)}>做报价</Button></Space>},
         ]}/>
     </div>
     <Modal open={open} title={editing?"编辑价格":"新建客户款号价格"} okText="保存" cancelText="取消"

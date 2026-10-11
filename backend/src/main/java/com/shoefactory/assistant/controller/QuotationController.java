@@ -39,6 +39,10 @@ public class QuotationController {
     public ApiResponse<java.util.List<DevelopmentNoOptionResponse>> developmentOptions(@RequestParam(required=false) Long customerId) {
         return ApiResponse.ok(service.developmentOptions(customerId));
     }
+    @GetMapping("/for-price-config")
+    public ApiResponse<Long> forPriceConfig(@RequestParam Long customerId,@RequestParam String developmentNo) {
+        return ApiResponse.ok(service.forPriceConfig(customerId,developmentNo));
+    }
     @GetMapping("/{id}")
     public ApiResponse<QuotationResponse> get(@PathVariable Long id) { return ApiResponse.ok(service.get(id)); }
     @PostMapping

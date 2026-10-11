@@ -61,4 +61,18 @@ class QuotationControllerTest {
         mvc.perform(get("/api/quotations/development-options").param("customerId","2")).andExpect(status().isOk());
         verify(service).developmentOptions(2L); verifyNoMoreInteractions(service);
     }
+    @Test void priceConfigEntryReturnsTheSelectedVersionWithoutCreatingAQuotation() throws Exception {
+        when(service.forPriceConfig(2L,"JCD-253-1-01")).thenReturn(10L);
+        mvc.perform(get("/api/quotations/for-price-config").param("customerId","2").param("developmentNo","JCD-253-1-01"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").value(10));
+        verify(service).forPriceConfig(2L,"JCD-253-1-01"); verifyNoMoreInteractions(service);
+    }
+    @Test void priceConfigEntryAllowsNoExistingQuotationAndRequiresBothKeys() throws Exception {
+        when(service.forPriceConfig(2L,"new-style")).thenReturn(null);
+        mvc.perform(get("/api/quotations/for-price-config").param("customerId","2").param("developmentNo","new-style"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+        verify(service).forPriceConfig(2L,"new-style");
+        mvc.perform(get("/api/quotations/for-price-config").param("developmentNo","new-style")).andExpect(status().isBadRequest());
+        verifyNoMoreInteractions(service);
+    }
 }

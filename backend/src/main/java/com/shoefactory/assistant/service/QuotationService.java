@@ -54,6 +54,19 @@ public class QuotationService {
                 .map(CustomerPriceService::normalize).toList());
     }
     @Transactional(readOnly = true)
+    public Long forPriceConfig(Long customerId, String developmentNo) {
+        customers.require(customerId);
+        String style=CustomerPriceService.normalize(developmentNo);
+        if(style.isBlank()) throw new BusinessException("请填写款号");
+        // 已采用的历史版本也要参与选择；多个采用记录取最近一次，其余按创建顺序取最新版本。
+        var quotation=quotations.selectOne(new LambdaQueryWrapper<ShoeQuotation>()
+                .select(ShoeQuotation::getId)
+                .eq(ShoeQuotation::getCustomerId,customerId).eq(ShoeQuotation::getDevelopmentNo,style)
+                .orderByDesc(ShoeQuotation::getAdoptedAt).orderByDesc(ShoeQuotation::getCreatedAt)
+                .orderByDesc(ShoeQuotation::getId).last("LIMIT 1"));
+        return quotation==null?null:quotation.getId();
+    }
+    @Transactional(readOnly = true)
     public QuotationResponse get(Long id) {
         ShoeQuotation quotation = require(id);
         var versions = quotations.selectList(new LambdaQueryWrapper<ShoeQuotation>()
