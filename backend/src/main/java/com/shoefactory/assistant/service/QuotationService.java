@@ -7,13 +7,16 @@ import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.PageResponse;
 import com.shoefactory.assistant.dto.QuotationResponse;
 import com.shoefactory.assistant.dto.QuotationSaveRequest;
+import com.shoefactory.assistant.dto.DevelopmentNoOptionResponse;
 import com.shoefactory.assistant.entity.*;
 import com.shoefactory.assistant.mapper.*;
 import com.shoefactory.assistant.util.FileStorageUtil;
+import com.shoefactory.assistant.util.DevelopmentNoOptionBuilder;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -34,12 +37,21 @@ public class QuotationService {
         this.images=images; this.details=details; this.orders=orders; this.storage=storage;
     }
     @Transactional(readOnly = true)
-    public PageResponse<QuotationResponse> list(Long customerId, String style, long page, long size) {
-        var result = quotations.listLatest(new Page<>(Math.max(1,page),Math.max(1,Math.min(size,100))),customerId,CustomerPriceService.normalize(style));
+    public PageResponse<QuotationResponse> list(Long customerId, String style, String developmentNos,
+                                              LocalDate startDate, LocalDate endDate, long page, long size) {
+        if (startDate!=null && endDate!=null && startDate.isAfter(endDate)) throw new BusinessException("开始日期不能晚于结束日期");
+        var styles = developmentNos==null ? List.<String>of() : Arrays.stream(developmentNos.split(","))
+                .map(CustomerPriceService::normalize).filter(value->!value.isBlank()).distinct().toList();
+        var result = quotations.listLatest(new Page<>(Math.max(1,page),Math.max(1,Math.min(size,100))),
+                customerId,CustomerPriceService.normalize(style),styles,startDate,endDate);
         var names = customers.list().stream().collect(Collectors.toMap(CustomerConfig::getId,CustomerConfig::getName));
         var currentPrices = prices.prices();
         return PageResponse.from(result,result.getRecords().stream().map(q -> response(q,q.getVersionNo(),
                 names.get(q.getCustomerId()),currentPrices.get(CustomerPriceService.key(q.getCustomerId(),q.getDevelopmentNo())),List.of(),List.of())).toList());
+    }
+    public List<DevelopmentNoOptionResponse> developmentOptions(Long customerId) {
+        return DevelopmentNoOptionBuilder.build(quotations.listLatestDevelopmentNos(customerId).stream()
+                .map(CustomerPriceService::normalize).toList());
     }
     @Transactional(readOnly = true)
     public QuotationResponse get(Long id) {

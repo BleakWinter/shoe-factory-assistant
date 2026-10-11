@@ -6,6 +6,7 @@ import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.*;
 import com.shoefactory.assistant.entity.*;
 import com.shoefactory.assistant.mapper.*;
+import com.shoefactory.assistant.util.DevelopmentNoOptionBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -66,23 +67,19 @@ public class CustomerPriceService {
                 .map(CustomerPriceConfig::getDevelopmentNo).distinct().sorted().toList();
     }
     public List<DevelopmentNoOptionResponse> developmentOptions(Long customerId) {
-        return mapper.selectList(new LambdaQueryWrapper<CustomerPriceConfig>()
+        var styles = mapper.selectList(new LambdaQueryWrapper<CustomerPriceConfig>()
                 .eq(customerId!=null,CustomerPriceConfig::getCustomerId,customerId)).stream()
-                .map(CustomerPriceConfig::getDevelopmentNo).distinct().sorted()
-                .map(style->new DevelopmentNoOptionResponse(style,style,List.of())).toList();
+                .map(CustomerPriceConfig::getDevelopmentNo).map(CustomerPriceService::normalize)
+                .toList();
+        return DevelopmentNoOptionBuilder.build(styles);
     }
     public PageResponse<PriceResponse> list(Long customerId, String developmentNos, Boolean incompleteOnly, long page, long size) {
         var wrapper = new LambdaQueryWrapper<CustomerPriceConfig>()
                 .eq(customerId != null, CustomerPriceConfig::getCustomerId, customerId)
                 .orderByAsc(CustomerPriceConfig::getCustomerId).orderByAsc(CustomerPriceConfig::getDevelopmentNo);
         if (developmentNos != null && !developmentNos.isBlank()) {
-            List<String> styles = Arrays.stream(developmentNos.split(",")).map(String::trim).filter(s -> !s.isBlank()).toList();
-            if (!styles.isEmpty()) wrapper.and(w -> {
-                for (int i = 0; i < styles.size(); i++) {
-                    if (i > 0) w.or();
-                    w.like(CustomerPriceConfig::getDevelopmentNo, styles.get(i));
-                }
-            });
+            List<String> styles = Arrays.stream(developmentNos.split(",")).map(CustomerPriceService::normalize).filter(s -> !s.isBlank()).distinct().toList();
+            if (!styles.isEmpty()) wrapper.in(CustomerPriceConfig::getDevelopmentNo,styles);
         }
         if (Boolean.TRUE.equals(incompleteOnly)) wrapper.isNull(CustomerPriceConfig::getShoePrice);
         var result = mapper.selectPage(new Page<>(Math.max(1,page), Math.min(100,Math.max(1,size))), wrapper);

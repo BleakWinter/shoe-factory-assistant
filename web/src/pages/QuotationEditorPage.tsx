@@ -9,6 +9,7 @@ import { useCustomers } from "../hooks/useCustomers";
 import type { Decimal, Quotation, QuotationDraft, QuotationItem, QuoteCategory } from "../types/quotation";
 import { formatDateTime } from "../utils/format";
 import { adoptionIssue, calculateQuotation, decimalText, itemAmount, newQuotation, priceText, quotationDraft, today } from "../utils/quotation";
+import { quotationPrintCapacityIssue, quotationPrintRowCounts } from "../utils/quotationPrint";
 
 export default function QuotationEditorPage() {
   const { id } = useParams(), location = useLocation(), navigate = useNavigate(), customers = useCustomers();
@@ -83,7 +84,8 @@ export default function QuotationEditorPage() {
   }
   function updateItem(index: number, patch: Partial<QuotationItem>) { update({ items: draft.items.map((item, i) => i === index ? { ...item, ...patch } : item) }); }
   function addItem(category: QuoteCategory) {
-    if (draft.items.length >= 200) { message.warning("一份报价最多 200 个项目"); return; }
+    const limit = quotationPrintRowCounts[category];
+    if (draft.items.filter(item => item.category === category).length >= limit) { message.info(`该区域已填满 ${limit} 行，请编辑或删除现有项目`); return; }
     update({ items: [...draft.items, { category, partName: "", materialName: "", quantity: null, unit: "双", unitPrice: null, remark: "" }] });
   }
   async function persist(): Promise<Quotation> {
@@ -147,6 +149,7 @@ export default function QuotationEditorPage() {
     finally { markBusy(false); }
   }
   async function exportExcel() {
+    const issue = quotationPrintCapacityIssue(draft); if (issue) { message.warning(issue); return; }
     markBusy(true);
     try { const quote = await persist(), blob = await exportQuotationExcel(quote.id);
       const url = URL.createObjectURL(blob), anchor = document.createElement("a"); anchor.href = url; anchor.download = `报价-${quote.developmentNo || "未填款号"}-V${quote.versionNo}.xlsx`;
@@ -155,11 +158,14 @@ export default function QuotationEditorPage() {
     finally { markBusy(false); }
   }
   async function print() {
+    const issue = quotationPrintCapacityIssue(draft); if (issue) { message.warning(issue); return; }
     setPrinting(true); document.body.classList.add("quotation-printing");
     // 等待打印副本和图片就绪，浏览器打印可选择“另存为 PDF”。
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".quotation-print-root img"));
     await Promise.all(images.map(image => image.decode().catch(() => undefined)));
+    await document.fonts.ready;
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     window.print(); document.body.classList.remove("quotation-printing"); setPrinting(false);
   }
   if (loading) return <div className="page-panel quotation-loading"><Spin tip="加载报价…"/></div>;
@@ -221,7 +227,7 @@ export default function QuotationEditorPage() {
     <footer className="page-panel quotation-footer"><span>{dirty ? "当前修改尚未保存" : saved ? `V${saved.versionNo} · ${formatDateTime(saved.createdAt)}` : "可先保存草稿，稍后继续补齐"}</span>
       <Space wrap><Button aria-label="打印 / PDF" icon={<PrinterOutlined/>} disabled={busy} onClick={() => void print()}>打印 / PDF</Button><Button aria-label={saved ? "保存新版本" : "保存报价"} icon={<SaveOutlined/>} loading={busy} disabled={busy} onClick={() => void save()}>{saved ? "保存新版本" : "保存报价"}</Button><Button aria-label="采用为客户单价" type="primary" icon={<CheckOutlined/>} disabled={busy} onClick={adopt}>采用为客户单价</Button></Space></footer>
     <Modal open={preview} title="报价单预览" width={980} onCancel={() => setPreview(false)} footer={<Space><Button aria-label="关闭" onClick={() => setPreview(false)}>关闭</Button><Button type="primary" icon={<PrinterOutlined/>} onClick={() => void print()}>打印 / 另存 PDF</Button></Space>}>
-      {dirty && <Alert type="info" message="预览包含当前未保存的修改。" style={{ marginBottom: 16 }}/>}<QuotationPreview draft={draft} customerName={customerName} version={!dirty ? saved?.versionNo : undefined}/></Modal>
-    {printing && createPortal(<div className="quotation-print-root"><QuotationPreview draft={draft} customerName={customerName} version={!dirty ? saved?.versionNo : undefined}/></div>, document.body)}
+      {dirty && <Alert type="info" message="预览包含当前未保存的修改。" style={{ marginBottom: 16 }}/>}<QuotationPreview draft={draft} customerName={customerName}/></Modal>
+    {printing && createPortal(<div className="quotation-print-root"><QuotationPreview draft={draft} customerName={customerName}/></div>, document.body)}
   </div>;
 }

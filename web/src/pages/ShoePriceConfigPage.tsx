@@ -1,11 +1,12 @@
 import { EditOutlined } from "@ant-design/icons";
-import { App, Button, Checkbox, Form, Image, Input, InputNumber, Modal, Select, Space, Table, Tag } from "antd";
+import { App, Button, Cascader, Checkbox, Form, Image, Input, InputNumber, Modal, Select, Space, Table, Tag } from "antd";
 import { toAssetUrl } from "../api/orderApi";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createShoePriceConfig, fetchShoePriceConfigs, updateShoePriceConfig } from "../api/priceConfigApi";
+import { createShoePriceConfig, fetchShoePriceConfigDevelopmentNoOptions, fetchShoePriceConfigs, updateShoePriceConfig } from "../api/priceConfigApi";
 import { useCustomers } from "../hooks/useCustomers";
 import type { ShoePriceConfig } from "../types/priceConfig";
+import type { DevelopmentNoOption } from "../types/order";
 import { formatDateTime } from "../utils/format";
 import PriceConfigToolbar from "../components/PriceConfigToolbar";
 type Price = ShoePriceConfig;
@@ -15,7 +16,9 @@ export default function ShoePriceConfigPage() {
   const navigate=useNavigate();
   const customers=useCustomers();
   const [customerId,setCustomerId]=useState<number>();
-  const [keyword,setKeyword]=useState("");
+  const [developmentNoPaths,setDevelopmentNoPaths]=useState<string[][]>([]);
+  const [developmentNoOptions,setDevelopmentNoOptions]=useState<DevelopmentNoOption[]>([]);
+  const [optionLoading,setOptionLoading]=useState(false);
   const [incompleteOnly,setIncompleteOnly]=useState(false);
   const [rows,setRows]=useState<Price[]>([]);
   const [total,setTotal]=useState(0);
@@ -26,17 +29,29 @@ export default function ShoePriceConfigPage() {
   const [editing,setEditing]=useState<Price>();
   const [form]=Form.useForm<Values>();
   const requestSequence=useRef(0);
+  const optionRequestSequence=useRef(0);
+  const loadOptions=useCallback(async()=>{
+    const sequence=++optionRequestSequence.current;
+    setOptionLoading(true);setDevelopmentNoOptions([]);
+    try {
+      const options=await fetchShoePriceConfigDevelopmentNoOptions(customerId);
+      if(sequence===optionRequestSequence.current)setDevelopmentNoOptions(options);
+    } catch(e){if(sequence===optionRequestSequence.current)message.error(e instanceof Error?e.message:"款号选项加载失败");}
+    finally {if(sequence===optionRequestSequence.current)setOptionLoading(false);}
+  },[customerId,message]);
   const load=useCallback(async()=>{
     setLoading(true);
     const sequence=++requestSequence.current;
     try {
-      const data=await fetchShoePriceConfigs({customerId,developmentNos:keyword,incompleteOnly,page,size:20});
+      const developmentNos=developmentNoPaths.map(path=>path[path.length-1]).filter(Boolean).join(",");
+      const data=await fetchShoePriceConfigs({customerId,developmentNos,incompleteOnly,page,size:20});
       if(sequence!==requestSequence.current)return;
       setRows(data.records);setTotal(data.total);
     } catch(e){if(sequence===requestSequence.current){setRows([]);setTotal(0);message.error(e instanceof Error?e.message:"价格配置加载失败");}}
     finally {if(sequence===requestSequence.current)setLoading(false);}
-  },[customerId,keyword,incompleteOnly,page,message]);
-  useEffect(()=>{void load();},[load]);
+  },[customerId,developmentNoPaths,incompleteOnly,page,message]);
+  useEffect(()=>{void load();return ()=>{requestSequence.current++;};},[load]);
+  useEffect(()=>{void loadOptions();return ()=>{optionRequestSequence.current++;};},[loadOptions]);
   function edit(row?:Price) {
     setEditing(row);form.resetFields();
     form.setFieldsValue(row||{customerId:customerId||customers[0]?.id});setOpen(true);
@@ -47,17 +62,21 @@ export default function ShoePriceConfigPage() {
       const payload={...values,shoePrice:values.shoePrice??null};
       if(editing)await updateShoePriceConfig(editing.id,payload);
       else await createShoePriceConfig(payload);
-      setOpen(false);message.success("客户款号价格已保存");await load();
+      setOpen(false);message.success("客户款号价格已保存");await Promise.all([load(),loadOptions()]);
     } catch(e){message.error(e instanceof Error?e.message:"价格保存失败");}
     finally {setSaving(false);}
   }
   return <div className="workspace">
-    <PriceConfigToolbar activeTab="prices" loading={loading} onRefresh={()=>void load()} onCreate={()=>edit()}/>
+    <PriceConfigToolbar activeTab="prices" loading={loading} onRefresh={()=>void Promise.all([load(),loadOptions()])} onCreate={()=>edit()}/>
     <div className="page-panel">
       <Space wrap style={{marginBottom:16}}>
         <Select allowClear placeholder="全部客户" value={customerId} style={{width:180}}
-          options={customers.map(c=>({label:c.name,value:c.id}))} onChange={value=>{setCustomerId(value);setPage(1);}}/>
-        <Input.Search allowClear placeholder="款号" onSearch={value=>{setKeyword(value);setPage(1);}}/>
+          options={customers.map(c=>({label:c.name,value:c.id}))} onChange={value=>{setCustomerId(value);setDevelopmentNoPaths([]);setPage(1);}}/>
+        <Cascader allowClear multiple showSearch className="style-cascader" aria-label="款号" style={{width:320}}
+          placeholder={optionLoading?"款号加载中…":"款号（可多选）"} disabled={optionLoading}
+          displayRender={labels=>labels.join("-")} maxTagCount="responsive" showCheckedStrategy={Cascader.SHOW_CHILD}
+          options={developmentNoOptions} value={developmentNoPaths}
+          onChange={value=>{setDevelopmentNoPaths(value as string[][]);setPage(1);}}/>
         <Checkbox checked={incompleteOnly} onChange={e=>{setIncompleteOnly(e.target.checked);setPage(1);}}>仅未配置价格</Checkbox>
       </Space>
       <Table rowKey="id" loading={loading} dataSource={rows} scroll={{x:750}} pagination={{current:page,pageSize:20,total,showSizeChanger:false,onChange:setPage}}

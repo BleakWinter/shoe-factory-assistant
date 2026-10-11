@@ -8,11 +8,13 @@ import com.shoefactory.assistant.service.QuotationExcelService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.*;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/quotations")
@@ -25,9 +27,17 @@ public class QuotationController {
     }
     @GetMapping
     public ApiResponse<PageResponse<QuotationResponse>> list(@RequestParam(required=false) Long customerId,
-            @RequestParam(required=false) String developmentNo, @RequestParam(defaultValue="1") long page,
+            @RequestParam(required=false) String developmentNo,
+            @RequestParam(required=false) String developmentNos,
+            @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(defaultValue="1") long page,
             @RequestParam(defaultValue="20") long size) {
-        return ApiResponse.ok(service.list(customerId,developmentNo,page,size));
+        return ApiResponse.ok(service.list(customerId,developmentNo,developmentNos,startDate,endDate,page,size));
+    }
+    @GetMapping("/development-options")
+    public ApiResponse<java.util.List<DevelopmentNoOptionResponse>> developmentOptions(@RequestParam(required=false) Long customerId) {
+        return ApiResponse.ok(service.developmentOptions(customerId));
     }
     @GetMapping("/{id}")
     public ApiResponse<QuotationResponse> get(@PathVariable Long id) { return ApiResponse.ok(service.get(id)); }

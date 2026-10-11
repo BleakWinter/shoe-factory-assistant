@@ -153,10 +153,114 @@ class QuotationTest {
                     if(result!=null && result.getCellType()==CellType.NUMERIC) totals.put(label.getStringCellValue(),result.getNumberValue());
                 }
             }
-            assertEquals(24.595,totals.get("鞋面材料小计"),0.00000001);
-            assertEquals(79.095,totals.get("计算合计"),0.00000001);
-            assertEquals(80,totals.get("最终报价（自动取整）"),0.00000001);
-            assertTrue(sheet.getRow(2).getCell(0).getStringCellValue().contains("195-13-23"));
+            assertEquals(24.595,totals.get("材料成本合计"),0.00000001);
+            assertEquals(80,totals.get("加工费合计"),0.00000001);
+            assertEquals("195-13-23",sheet.getRow(2).getCell(5).getStringCellValue());
+            assertEquals("清化鞋业成本分析表",sheet.getRow(0).getCell(0).getStringCellValue());
+            assertEquals(31,sheet.getLastRowNum());
+            assertTrue(sheet.getMergedRegions().stream().anyMatch(range -> "A3:D6".equals(range.formatAsString())));
+            assertTrue(sheet.getMergedRegions().stream().anyMatch(range -> "D25:E25".equals(range.formatAsString())));
+            assertEquals(24,sheet.getRow(7).getHeightInPoints());
+            assertEquals(30,sheet.getRow(2).getHeightInPoints());
+            assertEquals(Math.round(11.6640625*256),sheet.getColumnWidth(0));
+            assertEquals(82,sheet.getPrintSetup().getScale());
+            assertTrue(sheet.getFitToPage());
+            assertEquals(1,sheet.getPrintSetup().getFitWidth());
+            assertEquals(1,sheet.getPrintSetup().getFitHeight());
+            assertFalse(sheet.getPrintSetup().getLandscape());
+            assertEquals(.7,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.LEFT));
+            assertEquals(.75,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.TOP));
+            assertEquals("宋体",workbook.getFontAt(sheet.getRow(0).getCell(0).getCellStyle().getFontIndex()).getFontName());
+            assertEquals(22,workbook.getFontAt(sheet.getRow(0).getCell(0).getCellStyle().getFontIndex()).getFontHeightInPoints());
+            assertEquals("0.00_);[Red]\\(0.00\\)",sheet.getRow(17).getCell(5).getCellStyle().getDataFormatString());
+            assertEquals(CellType.STRING,evaluator.evaluate(sheet.getRow(31).getCell(5)).getCellType());
+        }
+    }
+    @Test void exportedTemplateKeepsEntryOrderAndLeavesUnusedRowsBlank() throws Exception {
+        var input=sample(null,"CENT",false,null);
+        var lines=new ArrayList<QuotationSaveRequest.Item>();
+        lines.add(new QuotationSaveRequest.Item("MATERIAL","鞋身里","杏PU",decimal("0.04"),"码",decimal("26"),null));
+        lines.add(new QuotationSaveRequest.Item("MATERIAL","面料","羊皮",decimal("1.25"),"尺",decimal("17.5"),null));
+        lines.add(new QuotationSaveRequest.Item("MATERIAL","鞋身里","另一种里料",decimal("0.04"),"码",decimal("26"),null));
+        lines.add(new QuotationSaveRequest.Item("OUTSOLE","鞋跟","跟",decimal("1"),"双",decimal("2"),null));
+        lines.add(new QuotationSaveRequest.Item("FEE","包跟","工序",decimal("1"),"双",decimal("1.5"),null));
+        var imported=new QuotationSaveRequest(null,2L,input.developmentNo(),input.lastNo(),input.colorMaterial(),input.quotationDate(),null,null,
+                input.laborCost(),false,"CENT",false,null,"Excel 导入：报价2026-9-12.xlsx；工作表：195-13-23；版本：V1",lines);
+        var quote=service.create(imported);
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(quote)))) {
+            var sheet=book.getSheetAt(0);
+            assertEquals(31,sheet.getLastRowNum());
+            assertEquals("鞋身里",sheet.getRow(7).getCell(0).getStringCellValue());
+            assertEquals("杏PU",sheet.getRow(7).getCell(1).getStringCellValue());
+            assertEquals("面料",sheet.getRow(8).getCell(0).getStringCellValue());
+            assertEquals("羊皮",sheet.getRow(8).getCell(1).getStringCellValue());
+            assertEquals("鞋身里",sheet.getRow(9).getCell(0).getStringCellValue());
+            assertEquals("另一种里料",sheet.getRow(9).getCell(1).getStringCellValue());
+            assertEquals("包跟",sheet.getRow(18).getCell(0).getStringCellValue());
+            assertEquals("鞋跟",sheet.getRow(28).getCell(0).getStringCellValue());
+            for(int row: new int[]{10,11,12,13,14,15,16,19,20,21,22,23,29,30}) {
+                for(int col=0;col<7;col++) assertEquals("",new org.apache.poi.ss.usermodel.DataFormatter().formatCellValue(sheet.getRow(row).getCell(col)));
+            }
+            assertEquals(23.955,book.getCreationHelper().createFormulaEvaluator().evaluate(sheet.getRow(17).getCell(5)).getNumberValue(),1e-8);
+        }
+    }
+    @Test void fullyFilledTemplateKeepsAllThirtyTwoRowsAndAmounts() throws Exception {
+        var lines=new ArrayList<QuotationSaveRequest.Item>();
+        for(var group: Map.of("MATERIAL",10,"FEE",6,"OUTSOLE",3).entrySet()) {
+            for(int i=0;i<group.getValue();i++) lines.add(item(group.getKey(),"1","1"));
+        }
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(request(null,true,"CEIL",false,null,lines)))))) {
+            var sheet=book.getSheetAt(0); var evaluator=book.getCreationHelper().createFormulaEvaluator();
+            assertEquals(31,sheet.getLastRowNum());
+            assertEquals(10,evaluator.evaluate(sheet.getRow(17).getCell(5)).getNumberValue());
+            assertEquals(67,evaluator.evaluate(sheet.getRow(25).getCell(5)).getNumberValue());
+            assertEquals(3,evaluator.evaluate(sheet.getRow(31).getCell(5)).getNumberValue());
+        }
+    }
+    @Test void exportRejectsOverflowWithoutDroppingItemsOrGrowingTemplate() {
+        for(var group: Map.of("MATERIAL",10,"FEE",6,"OUTSOLE",3).entrySet()) {
+            var lines=new ArrayList<QuotationSaveRequest.Item>();
+            for(int i=0;i<=group.getValue();i++) lines.add(item(group.getKey(),"1","1"));
+            var quote=service.create(request(null,false,"CEIL",false,null,lines));
+            var error=assertThrows(BusinessException.class,()->new QuotationExcelService(images).export(quote));
+            assertTrue(error.getMessage().contains("最多容纳 "+group.getValue()));
+            assertEquals(group.getValue()+1,service.get(quote.id()).items().size());
+        }
+    }
+    @Test void exportIncludesOutsoleWithoutChangingBlankAndManualPriceSemantics() throws Exception {
+        var complete=request(null,true,"CENT",false,null,List.of(item("MATERIAL","1","1.2345"),item("OUTSOLE","1","2")));
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(complete))))) {
+            var sheet=book.getSheetAt(0); var evaluator=book.getCreationHelper().createFormulaEvaluator();
+            assertEquals(51.23,evaluator.evaluate(sheet.getRow(25).getCell(5)).getNumberValue());
+            assertEquals(2,evaluator.evaluate(sheet.getRow(31).getCell(5)).getNumberValue());
+            assertEquals("含大底",sheet.getRow(25).getCell(6).getStringCellValue());
+        }
+        var incomplete=request(null,false,"CEIL",true,"72.55",List.of(item("MATERIAL",null,null)));
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(incomplete))))) {
+            var sheet=book.getSheetAt(0); var evaluator=book.getCreationHelper().createFormulaEvaluator();
+            assertEquals("",evaluator.evaluate(sheet.getRow(17).getCell(5)).getStringValue());
+            assertEquals(72.55,sheet.getRow(25).getCell(5).getNumericCellValue());
+        }
+    }
+    @Test void exportedPictureStaysInsideOriginalMergedHeaderAndKeepsBytes() throws Exception {
+        var output=new ByteArrayOutputStream(); ImageIO.write(new BufferedImage(400,200,BufferedImage.TYPE_INT_RGB),"png",output);
+        var uploaded=images.upload(new MockMultipartFile("file","shoe.png","image/png",output.toByteArray()));
+        var input=sample(null,"CEIL",false,null);
+        var request=new QuotationSaveRequest(null,input.customerId(),input.developmentNo(),input.lastNo(),input.colorMaterial(),input.quotationDate(),uploaded.imageKey(),null,
+                input.laborCost(),input.includeOutsole(),input.roundingMode(),input.manualPrice(),input.finalPrice(),input.note(),input.items());
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(request))))) {
+            assertArrayEquals(output.toByteArray(),book.getAllPictures().get(0).getData());
+            var picture=(org.apache.poi.xssf.usermodel.XSSFPicture)book.getSheetAt(0).getDrawingPatriarch().getShapes().get(0);
+            var anchor=picture.getClientAnchor();
+            assertEquals(2,anchor.getRow1()); assertTrue(anchor.getRow2()<=6);
+            assertTrue(anchor.getCol1()<4); assertTrue(anchor.getCol2()<=4);
+        }
+        var imported=new QuotationSaveRequest(null,input.customerId(),"195-25-03",input.lastNo(),input.colorMaterial(),input.quotationDate(),uploaded.imageKey(),null,
+                input.laborCost(),input.includeOutsole(),input.roundingMode(),input.manualPrice(),input.finalPrice(),"Excel 导入：报价2026-9-12.xlsx；工作表：195-25-03；版本：V1",input.items());
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(imported))))) {
+            var picture=(org.apache.poi.xssf.usermodel.XSSFPicture)book.getSheetAt(0).getDrawingPatriarch().getShapes().get(0);
+            assertEquals(0,picture.getClientAnchor().getCol1());
+            assertEquals(org.apache.poi.util.Units.pixelToEMU(86),picture.getClientAnchor().getDx1());
         }
     }
     @Test void adoptionPriceIsScopedToCustomerAndNormalizedStyle() {

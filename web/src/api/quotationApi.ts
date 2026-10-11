@@ -1,7 +1,11 @@
 import request from "../utils/request";
+import type { DevelopmentNoOption } from "../types/order";
 import type { Decimal, Quotation, QuotationDraft, QuotationPage } from "../types/quotation";
-export async function fetchQuotations(params: { customerId?: number; developmentNo?: string; page: number; size: number }) {
+export async function fetchQuotations(params: { customerId?: number; developmentNos?: string; startDate?: string; endDate?: string; page: number; size: number }) {
   return (await request.get<QuotationPage>("/quotations", { params })).data;
+}
+export async function fetchQuotationDevelopmentNoOptions(customerId?: number) {
+  return (await request.get<DevelopmentNoOption[]>("/quotations/development-options", { params: { customerId } })).data || [];
 }
 export async function fetchQuotation(id: number) { return (await request.get<Quotation>(`/quotations/${id}`)).data; }
 export async function saveQuotation(draft: QuotationDraft, source?: Quotation) {

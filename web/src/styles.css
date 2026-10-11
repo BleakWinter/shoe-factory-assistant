@@ -2690,21 +2690,14 @@ a {
 .quotation-footer > span { font-size: 13px; color: #8994a5; }
 .quotation-loading { display: flex; align-items: center; justify-content: center; min-height: 300px; }
 .quotation-adopt-confirm strong { color: #1677ff; }
-.quotation-paper { padding: 24px; color: #202b3b; background: white; }
-.quotation-paper h1 { text-align: center; font-size: 24px; margin: 0 0 26px; }
-.quotation-paper-header { display: flex; justify-content: space-between; gap: 25px; margin-bottom: 20px; }
-.quotation-paper-header dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 25px; flex: 1; margin: 0; }
-.quotation-paper-header dl > div { display: flex; gap: 10px; }
-.quotation-paper dt { color: #8791a0; flex-shrink: 0; }
-.quotation-paper dd { margin: 0; overflow-wrap: anywhere; }
-.quotation-paper-header img { width: 150px; height: 120px; object-fit: contain; }
-.quotation-paper table { border-collapse: collapse; width: 100%; font-size: 12px; }
-.quotation-paper th, .quotation-paper td { border: 1px solid #cbd2db; padding: 9px 8px; overflow-wrap: anywhere; }
-.quotation-paper th { background: #f3f5f8; font-weight: 500; text-align: left; }
-.quotation-paper td:nth-child(3), .quotation-paper td:nth-child(5), .quotation-paper td:nth-child(6) { font-variant-numeric: tabular-nums; }
-.quotation-paper .quotation-paper-final { font-size: 17px; font-weight: 600; }
-.quotation-paper-note { white-space: pre-wrap; overflow-wrap: anywhere; }
-.quotation-paper-caption { font-size: 11px; color: #8791a0; margin-top: 18px; }
+.quotation-preview-scroll { overflow-x: auto; padding: 16px; background: #f0f2f5; }
+.quotation-paper { margin: 0 auto; box-sizing: border-box; color: black; background: white; font-family: "宋体", SimSun, "Songti SC", serif; }
+.quotation-paper table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+.quotation-paper td { padding: 0 2px; border: none; vertical-align: middle; line-height: 1; background: white; overflow: hidden; }
+.quotation-cell-text { display: inline-block; white-space: pre; max-width: none; }
+.quotation-paper .quotation-paper-image { padding: 0; overflow: visible; border: 0.5pt solid black; }
+.quotation-paper-image-box { position: relative; }
+.quotation-paper-image img { position: absolute; object-fit: contain; }
 .quotation-print-root { display: none; }
 @media (max-width: 1200px) {
   .quotation-editor-grid { grid-template-columns: minmax(0,1fr); }
@@ -2719,17 +2712,14 @@ a {
   .quotation-section-heading, .quotation-footer { flex-wrap: wrap; }
   .quotation-labor { flex-direction: column; align-items: flex-start; }
   .quotation-footer { position: static; }
-  .quotation-paper { padding: 5px; overflow-x: auto; }
-  .quotation-paper table { min-width: 620px; }
-  .quotation-paper-header { flex-wrap: wrap; }
 }
 @media print {
-  @page quotation-page { size: A4 portrait; margin: 12mm; }
+  @page quotation-page { size: A4 portrait; margin: 0; }
+  body.quotation-printing { margin: 0; padding: 0; }
   body.quotation-printing #root, body.quotation-printing .ant-modal-root { display: none !important; }
   body.quotation-printing .quotation-print-root { display: block; page: quotation-page; }
   body.quotation-printing .quotation-print-root, body.quotation-printing .quotation-print-root * { visibility: visible; }
-  body.quotation-printing .quotation-paper { padding: 0; overflow: visible; }
-  body.quotation-printing .quotation-paper table { min-width: 0; }
+  body.quotation-printing .quotation-preview-scroll { overflow: visible; padding: 0; background: none; }
+  body.quotation-printing .quotation-paper { margin: 0; zoom: 1 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.quotation-printing .quotation-paper tr { break-inside: avoid; }
-  body.quotation-printing .quotation-paper thead { display: table-header-group; }
 }

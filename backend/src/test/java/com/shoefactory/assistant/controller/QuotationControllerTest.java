@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -44,5 +45,20 @@ class QuotationControllerTest {
     @Test void referenceRouteIsDistinctFromVersionIdRoute() throws Exception {
         mvc.perform(get("/api/quotations/reference").param("customerId","2").param("developmentNo","195-13-23")).andExpect(status().isOk());
         verify(service).reference(2L,"195-13-23"); verifyNoMoreInteractions(service);
+    }
+    @Test void listAcceptsMultipleStylesAndQuotationDateRange() throws Exception {
+        mvc.perform(get("/api/quotations").param("customerId","2")
+                .param("developmentNos","JCD-253-1-01,JCD-253-1-02")
+                .param("startDate","2026-10-11").param("endDate","2026-10-12").param("page","3"))
+                .andExpect(status().isOk());
+        verify(service).list(2L,null,"JCD-253-1-01,JCD-253-1-02",LocalDate.of(2026,10,11),LocalDate.of(2026,10,12),3,20);
+    }
+    @Test void listAllowsClearedDatesAndKeepsLegacyKeywordParameter() throws Exception {
+        mvc.perform(get("/api/quotations").param("developmentNo","253")) .andExpect(status().isOk());
+        verify(service).list(null,"253",null,null,null,1,20);
+    }
+    @Test void quotationStyleOptionsRouteIsDistinctFromVersionIdRoute() throws Exception {
+        mvc.perform(get("/api/quotations/development-options").param("customerId","2")).andExpect(status().isOk());
+        verify(service).developmentOptions(2L); verifyNoMoreInteractions(service);
     }
 }

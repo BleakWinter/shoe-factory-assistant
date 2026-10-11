@@ -43,11 +43,9 @@ export function calculateQuotation(draft: QuotationDraft) {
 }
 export function today() { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
 export function newQuotation(): QuotationDraft {
-  const item = (category: QuotationItem["category"], partName: string, unit = "双"): QuotationItem => ({ category, partName, materialName: "", quantity: null, unit, unitPrice: null, remark: "" });
   return { customerId: null, developmentNo: "", lastNo: "", colorMaterial: "", quotationDate: today(), imageKey: null,
     laborCost: null, includeOutsole: false, roundingMode: "CEIL", manualPrice: false, finalPrice: null, note: "",
-    items: [item("MATERIAL", "鞋面", "尺"), item("MATERIAL", "内里", "码"), item("FEE", "包装"), item("FEE", "胶水 / 辅料"),
-      item("OUTSOLE", "大底"), item("OUTSOLE", "中底"), item("OUTSOLE", "鞋跟")] };
+    items: [] };
 }
 export function quotationDraft(quote: QuotationDraft): QuotationDraft {
   return { customerId: quote.customerId, developmentNo: quote.developmentNo || "", lastNo: quote.lastNo || "", colorMaterial: quote.colorMaterial || "",
