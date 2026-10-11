@@ -354,11 +354,18 @@ public class OrderServiceImpl implements OrderService {
             return true;
         }
         List<String> availableValues = response.getDevelopmentNoList().stream()
-                .map(this::normalizeDevelopmentNo)
+                .map(DevelopmentNoUtil::normalizeSearchTerm)
+                .filter(this::hasText)
+                .map(value -> value.toUpperCase(Locale.ROOT))
                 .toList();
+        // 级联选项会省略字母前缀；搜索编号不能按完整款号校验，也不能让空编号匹配所有订单。
         return developmentNos.stream()
-                .map(this::normalizeDevelopmentNo)
-                .anyMatch(expected -> availableValues.stream().anyMatch(value -> value.contains(expected)));
+                .map(DevelopmentNoUtil::normalizeSearchTerm)
+                .filter(this::hasText)
+                .map(value -> value.toUpperCase(Locale.ROOT))
+                .anyMatch(expected -> availableValues.stream()
+                        // 按编号段匹配，避免 172 命中 1172、02 命中 020。
+                        .anyMatch(value -> ("-" + value + "-").contains("-" + expected + "-")));
     }
 
     private boolean matchesRecognitionFilters(
