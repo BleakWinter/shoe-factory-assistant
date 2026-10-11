@@ -7,6 +7,7 @@ import ManualOrderPage from "../pages/ManualOrderPage";
 import OrderWorkspacePage from "../pages/OrderWorkspacePage";
 import PackingOrderPage from "../pages/PackingOrderPage";
 import MonthlyReconciliationPage from "../pages/MonthlyReconciliationPage";
+import UnpricedStylesPage from "../pages/UnpricedStylesPage";
 import ShippingNotePrintPage from "../pages/ShippingNotePrintPage";
 import PrintSelectionPage from "../pages/PrintSelectionPage";
 import PrintTaskListPage from "../pages/PrintTaskListPage";
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
       { path: "orders", element: <OrderWorkspacePage /> },
       { path: "statistics", element: <ShoeStatisticsPage /> },
       { path: "monthly-reconciliation", element: <MonthlyReconciliationPage /> },
+      { path: "unpriced-styles", element: <UnpricedStylesPage /> },
       { path: "orders/:id/details", element: <OrderDetailsRoute /> },
       { path: "orders/:id/manual", element: <ManualOrderPage /> },
       { path: "tasks", element: <Navigate to="/tasks/order" replace /> },

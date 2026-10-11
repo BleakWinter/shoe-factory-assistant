@@ -1,0 +1,30 @@
+.unpriced-panel-heading {
+  flex-wrap: wrap;
+}
+
+.unpriced-detail-panel {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 0;
+}
+
+.unpriced-detail-panel > .ant-typography {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.unpriced-style-image {
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+}
+
+.unpriced-image-empty {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.statistics-unpriced-section > .ant-btn {
+  margin-bottom: 18px;
+}

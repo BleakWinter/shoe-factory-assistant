@@ -4,6 +4,7 @@ import { App, Button, Empty, Modal, Segmented, Select, Skeleton, Space, Statisti
 import { useCustomers } from "../hooks/useCustomers";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { fetchOrderStatistics } from "../api/statisticsApi";
 import type {
   DevelopmentNoOrderReference,
@@ -11,7 +12,6 @@ import type {
   OrderStatistics,
   ShippedOrderStatistic,
   StatisticsTimePoint,
-  UnpricedShippedStyle,
   UnpricedUnshippedStyle,
   UnshippedStyleStatistic,
 } from "../types/order";
@@ -141,14 +141,6 @@ interface UnshippedStyleRow extends UnshippedStyleStatistic {
   countdownTone: ReturnType<typeof getCountdownTone>;
 }
 
-interface UnpricedShippedStyleRow {
-  key: string;
-  developmentNo: string;
-  periodKey: string;
-  periodLabel: string;
-  shippedPairs: number;
-}
-
 interface ShippedOrderStatisticRow {
   key: string;
   orderNo: string;
@@ -254,41 +246,6 @@ function getPeriodLabel(period: string, granularity: TimeGranularity) {
   return period;
 }
 
-function buildUnpricedShippedStyleRows(
-  items: UnpricedShippedStyle[],
-  granularity: TimeGranularity,
-): UnpricedShippedStyleRow[] {
-  const rowsByKey = new Map<string, UnpricedShippedStyleRow>();
-  for (const item of items) {
-    const developmentNo = formatText(item.developmentNo);
-    const periodKey = item.shippingDate ? getPeriodKey(item.shippingDate, granularity) : "unknown";
-    const key = `${periodKey}::${developmentNo}`;
-    const row = rowsByKey.get(key);
-    if (row) {
-      row.shippedPairs += item.shippedPairs || 0;
-      continue;
-    }
-    rowsByKey.set(key, {
-      key,
-      developmentNo,
-      periodKey,
-      periodLabel: periodKey === "unknown" ? "-" : getPeriodLabel(periodKey, granularity),
-      shippedPairs: item.shippedPairs || 0,
-    });
-  }
-  return [...rowsByKey.values()].sort((left, right) => {
-    if (left.periodKey === "unknown") {
-      return right.periodKey === "unknown" ? right.shippedPairs - left.shippedPairs : 1;
-    }
-    if (right.periodKey === "unknown") {
-      return -1;
-    }
-    return right.periodKey.localeCompare(left.periodKey)
-      || right.shippedPairs - left.shippedPairs
-      || left.developmentNo.localeCompare(right.developmentNo, "zh-CN", { numeric: true });
-  });
-}
-
 function buildTrendChartData(points: StatisticsTimePoint[], granularity: TimeGranularity): TrendChartDatum[] {
   const valuesByPeriod = new Map<string, number>();
   for (const point of points) {
@@ -342,6 +299,7 @@ function buildShippedOrderStatisticRows(
 }
 
 export default function ShoeStatisticsPage() {
+  const navigate = useNavigate();
   const customers=useCustomers();
   const [customerId,setCustomerId]=useState<number>();
   const requestSequence=useRef(0);
@@ -404,10 +362,6 @@ export default function ShoeStatisticsPage() {
     [unshippedSortMode, unshippedStyleBaseRows],
   );
   const unshippedRankingRows = useMemo(() => unshippedStyleRows.slice(0, 12), [unshippedStyleRows]);
-  const unpricedShippedStyleRows = useMemo(
-    () => buildUnpricedShippedStyleRows(statistics?.unpricedShippedStyles || [], timeGranularity),
-    [statistics?.unpricedShippedStyles, timeGranularity],
-  );
   const maxUnshippedPairCount = useMemo(
     () => Math.max(1, ...unshippedRankingRows.map((row) => row.unshippedPairCount || 0)),
     [unshippedRankingRows],
@@ -702,43 +656,6 @@ export default function ShoeStatisticsPage() {
     ],
     [],
   );
-  const unpricedPeriodColumnTitle = timeGranularity === "year"
-    ? "出货年份"
-    : timeGranularity === "month"
-      ? "出货月份"
-      : "出货日期";
-  const unpricedStyleColumns = useMemo<ColumnsType<UnpricedShippedStyleRow>>(
-    () => [
-      {
-        title: "序号",
-        key: "rank",
-        width: 58,
-        align: "center" as const,
-        render: (_value, _record, index) => index + 1,
-      },
-      {
-        title: "开发编号",
-        dataIndex: "developmentNo",
-        key: "developmentNo",
-        render: (value?: string) => formatText(value),
-      },
-      {
-        title: unpricedPeriodColumnTitle,
-        dataIndex: "periodLabel",
-        key: "periodLabel",
-        width: timeGranularity === "day" ? 126 : 112,
-      },
-      {
-        title: "未计价出货双数",
-        dataIndex: "shippedPairs",
-        key: "shippedPairs",
-        width: 144,
-        align: "right" as const,
-        render: (value?: number) => `${formatCount(value)} 双`,
-      },
-    ],
-    [timeGranularity, unpricedPeriodColumnTitle],
-  );
   const unpricedUnshippedStyleColumns = useMemo<ColumnsType<UnpricedUnshippedStyle>>(
     () => [
       {
@@ -872,52 +789,32 @@ export default function ShoeStatisticsPage() {
             )}
             {activeStatistic === "payment" ? (
               <div className="statistics-unpriced-section">
+                <Button onClick={() => navigate(`/unpriced-styles${customerId ? `?customerId=${customerId}` : ""}`)}>
+                  按出货月份查看未报价款号
+                </Button>
                 <Typography.Title level={5}>
-                  未配置单价的款号
+                  未出货且未配置单价的款号
                 </Typography.Title>
-                <div className="statistics-unpriced-grid">
-                  <div className="statistics-unpriced-panel">
-                    <div className="statistics-unpriced-heading">
-                      <Typography.Text strong>已出货</Typography.Text>
-                      <Typography.Text type="warning">
-                        {formatCount(statistics?.unpricedShippedPairs)} 双未计入货款
-                      </Typography.Text>
-                    </div>
-                    {unpricedShippedStyleRows.length ? (
-                      <Table<UnpricedShippedStyleRow>
-                        rowKey="key"
-                        columns={unpricedStyleColumns}
-                        dataSource={unpricedShippedStyleRows}
-                        pagination={unpricedShippedStyleRows.length > 6
-                          ? { pageSize: 6, showSizeChanger: false }
-                          : false}
-                        size="small"
-                      />
-                    ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有缺价的已出货款号" />
-                    )}
+                <div className="statistics-unpriced-panel">
+                  <div className="statistics-unpriced-heading">
+                    <Typography.Text strong>未出货</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {formatCount(statistics?.unpricedUnshippedPairs)} 双待出货，暂无出货日期
+                    </Typography.Text>
                   </div>
-                  <div className="statistics-unpriced-panel">
-                    <div className="statistics-unpriced-heading">
-                      <Typography.Text strong>未出货</Typography.Text>
-                      <Typography.Text type="secondary">
-                        {formatCount(statistics?.unpricedUnshippedPairs)} 双待出货，暂无出货日期
-                      </Typography.Text>
-                    </div>
-                    {statistics?.unpricedUnshippedStyles?.length ? (
-                      <Table<UnpricedUnshippedStyle>
-                        rowKey="developmentNo"
-                        columns={unpricedUnshippedStyleColumns}
-                        dataSource={statistics.unpricedUnshippedStyles}
-                        pagination={statistics.unpricedUnshippedStyles.length > 6
-                          ? { pageSize: 6, showSizeChanger: false }
-                          : false}
-                        size="small"
-                      />
-                    ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有缺价的未出货款号" />
-                    )}
-                  </div>
+                  {statistics?.unpricedUnshippedStyles?.length ? (
+                    <Table<UnpricedUnshippedStyle>
+                      rowKey="developmentNo"
+                      columns={unpricedUnshippedStyleColumns}
+                      dataSource={statistics.unpricedUnshippedStyles}
+                      pagination={statistics.unpricedUnshippedStyles.length > 6
+                        ? { pageSize: 6, showSizeChanger: false }
+                        : false}
+                      size="small"
+                    />
+                  ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有缺价的未出货款号" />
+                  )}
                 </div>
               </div>
             ) : null}

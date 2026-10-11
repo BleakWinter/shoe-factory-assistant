@@ -32,6 +32,13 @@ const navLeafItems: NavLeafItem[] = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
   {
+    path: "/unpriced-styles",
+    label: "未报价款号",
+    icon: <DollarOutlined />,
+    parentKey: "finance-center",
+    parentLabel: "财务管理",
+  },
+  {
     path: "/monthly-reconciliation",
     label: "月度对账",
     icon: <AccountBookOutlined />,
@@ -133,6 +140,7 @@ const menuItems: MenuProps["items"] = [
     icon: <AccountBookOutlined />,
     children: [
       { key: "/monthly-reconciliation", label: "月度对账", icon: <AccountBookOutlined /> },
+      { key: "/unpriced-styles", label: "未报价款号", icon: <DollarOutlined /> },
       { key: "/price-configs", label: "价格配置", icon: <DollarOutlined /> },
     ],
   },
@@ -210,11 +218,12 @@ export default function App() {
     }
     return {
       key: currentItem.path,
-      path: currentItem.path === "/price-configs" ? location.pathname : currentItem.path,
+      path: currentItem.path === "/price-configs" || currentItem.path === "/unpriced-styles"
+        ? `${location.pathname}${location.search}` : currentItem.path,
       label: currentItem.label,
       icon: currentItem.icon,
     };
-  }, [currentItem.icon, currentItem.label, currentItem.path, isOrderDetailPage, isQuotationEditor, location.pathname, location.state, routeState?.order?.id, routeState?.order?.orderNo]);
+  }, [currentItem.icon, currentItem.label, currentItem.path, isOrderDetailPage, isQuotationEditor, location.pathname, location.search, location.state, routeState?.order?.id, routeState?.order?.orderNo]);
 
   useEffect(() => {
     setWorkspaceTabs((prev) => {
