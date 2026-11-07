@@ -9,7 +9,7 @@ import { useCustomers } from "../hooks/useCustomers";
 import type { Decimal, Quotation, QuotationDraft, QuotationItem, QuoteCategory } from "../types/quotation";
 import { formatDateTime } from "../utils/format";
 import { adoptionIssue, calculateQuotation, decimalText, itemAmount, newQuotation, priceText, quotationDraft, today } from "../utils/quotation";
-import { quotationPrintCapacityIssue, quotationPrintRowCounts } from "../utils/quotationPrint";
+import { quotationPrintCapacityIssue, quotationItemLimit } from "../utils/quotationPrint";
 
 type EditorDraft = Omit<QuotationDraft, "items"> & { items: (QuotationItem & { rowKey: number })[] };
 
@@ -104,8 +104,7 @@ export default function QuotationEditorPage() {
     update({ items });
   }
   function addItem(category: QuoteCategory) {
-    const limit = quotationPrintRowCounts[category];
-    if (draft.items.filter(item => item.category === category).length >= limit) { message.info(`该区域已填满 ${limit} 行，请编辑或删除现有项目`); return; }
+    if (draft.items.length >= quotationItemLimit) { message.info(`每份报价最多支持 ${quotationItemLimit} 个项目`); return; }
     update({ items: [...draft.items, { rowKey: nextRowKey.current++, category, partName: "", materialName: "", quantity: null, unit: "双", unitPrice: null, remark: "" }] });
   }
   async function persist(): Promise<Quotation> {

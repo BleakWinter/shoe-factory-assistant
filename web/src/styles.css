@@ -2702,7 +2702,7 @@ a {
 .quotation-cell-text { display: inline-block; white-space: pre; max-width: none; }
 .quotation-paper .quotation-paper-image { padding: 0; overflow: visible; border: 0.5pt solid black; }
 .quotation-paper-image-box { position: relative; }
-.quotation-paper-image img { position: absolute; object-fit: contain; }
+.quotation-paper-image img { position: absolute; inset: 0; width: 100%; height: 100%; padding: 3px 8px; box-sizing: border-box; object-fit: contain; }
 .quotation-print-root { display: none; }
 @media (max-width: 1200px) {
   .quotation-editor-grid { grid-template-columns: minmax(0,1fr); }
@@ -2727,4 +2727,5 @@ a {
   body.quotation-printing .quotation-preview-scroll { overflow: visible; padding: 0; background: none; }
   body.quotation-printing .quotation-paper { margin: 0; zoom: 1 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.quotation-printing .quotation-paper tr { break-inside: avoid; }
+  body.quotation-printing .quotation-preview-scroll + .quotation-preview-scroll { break-before: page; }
 }

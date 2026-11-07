@@ -1,13 +1,14 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { Alert } from "antd";
 import type { CSSProperties, ReactNode } from "react";
-import type { QuotationDraft, QuoteCategory } from "../types/quotation";
+import type { QuotationDraft } from "../types/quotation";
 import { calculateQuotation, itemAmount } from "../utils/quotation";
 import {
   quotationPrintTemplate as template, quotationPrintProfile, quotationCellStyle, quotationRowHeight,
-  quotationPrintRows, quotationPrintAmount, quotationPrintDecimal, quotationOutsoleAmount, quotationPrintCapacityIssue,
-  quotationPrintGeometry,
+  quotationPrintAmount, quotationPrintDecimal, quotationOutsoleAmount, quotationPrintCapacityIssue,
+  quotationPrintGeometry, quotationPrintPages,
 } from "../utils/quotationPrint";
+import type { QuotationPrintLine } from "../utils/quotationPrint";
 
 export default function QuotationPreview({ draft, customerName }: { draft: QuotationDraft; customerName?: string }) {
   const profile = quotationPrintProfile(draft.note);
@@ -15,6 +16,7 @@ export default function QuotationPreview({ draft, customerName }: { draft: Quota
   if (capacityIssue) return <Alert type="warning" showIcon message={capacityIssue}/>;
   const totals = calculateQuotation(draft);
   const { columns, width, page } = quotationPrintGeometry(profile);
+  const pages = quotationPrintPages(draft, profile);
   function cell(row: number, col: number, text: string, props: { colSpan?: number; rowSpan?: number; children?: ReactNode } = {}) {
     const style = quotationCellStyle(profile, row, col);
     const right = quotationCellStyle(profile, row, col + (props.colSpan ?? 1) - 1);
@@ -30,23 +32,32 @@ export default function QuotationPreview({ draft, customerName }: { draft: Quota
   function row(rowNo: number, cells: ReactNode) {
     return <tr key={rowNo} style={{ height: `${quotationRowHeight(profile, rowNo)}pt` }}>{cells}</tr>;
   }
-  function items(category: QuoteCategory, start: number) {
-    const rows = quotationPrintRows(draft, category, profile);
-    return rows.map(({ label, item }, i) => {
-      const rowNo = start + i;
-      const values = [label, item?.materialName ?? "", item ? quotationPrintDecimal(item.quantity, quotationCellStyle(profile, rowNo, 2)) : "",
+  function itemLine({ label, item, templateRow: rowNo }: QuotationPrintLine) {
+      const values = [label ?? "", item?.materialName ?? "", item ? quotationPrintDecimal(item.quantity, quotationCellStyle(profile, rowNo, 2)) : "",
         item?.unit ?? "", item ? quotationPrintDecimal(item.unitPrice, quotationCellStyle(profile, rowNo, 4)) : "",
         item ? quotationPrintAmount(itemAmount(item), quotationCellStyle(profile, rowNo, 5)) : "", item?.remark ?? ""];
-      return <tr key={`${category}-${i}`} style={{ height: `${quotationRowHeight(profile, rowNo)}pt` }}>
-        {values.map((value, col) => cell(rowNo, col, value))}</tr>;
-    });
+      return row(rowNo, values.map((value, col) => cell(rowNo, col, value)));
   }
   function total(rowNo: number, label: string, amount: string) {
     return row(rowNo, Array.from({ length: 7 }, (_, col) => cell(rowNo, col, col === 0 ? label : col === 5 ? amount : "")));
   }
+  function bodyLine(line: QuotationPrintLine) {
+    const rowNo = line.templateRow;
+    switch (line.type) {
+      case "item": return itemLine(line);
+      case "materialTotal": return total(rowNo, "材料成本合计", quotationPrintAmount(totals.materials, quotationCellStyle(profile, rowNo, 5)));
+      case "labor": return row(rowNo, <>{cell(rowNo, 0, "加工费")}{cell(rowNo, 1, "")}{cell(rowNo, 2, "")}{cell(rowNo, 3, "", { colSpan: 2 })}
+        {cell(rowNo, 5, quotationPrintDecimal(draft.laborCost, quotationCellStyle(profile, rowNo, 5)))}{cell(rowNo, 6, "")}</>);
+      case "finalTotal": return row(rowNo, Array.from({ length: 7 }, (_, col) => cell(rowNo, col, col === 0 ? "加工费合计" : col === 5
+        ? quotationPrintDecimal(totals.finalPrice, quotationCellStyle(profile, rowNo, 5)) : col === 6 && draft.includeOutsole ? "含大底" : "")));
+      case "outsoleHeading": return row(rowNo, Array.from({ length: 7 }, (_, col) => cell(rowNo, col, col === 0 ? "大底报价" : "")));
+      case "outsoleHeader": return row(rowNo, template.outsoleHeaders.map((label, col) => cell(rowNo, col, label)));
+      case "outsoleTotal": return total(rowNo, "合计", quotationPrintAmount(quotationOutsoleAmount(draft), quotationCellStyle(profile, rowNo, 5)));
+    }
+  }
   const information = [["款号", draft.developmentNo], ["楦号", draft.lastNo], ["客户", customerName ?? ""],
     ["日期", draft.quotationDate?.replace(/-(0?)(\d+)/g, ".$2") ?? ""]];
-  return <A4Paper>
+  return <>{pages.map((lines, pageIndex) => <A4Paper key={pageIndex}>
     <div className="quotation-paper-content" style={{ width, zoom: page.scale }}>
     <table aria-label="报价明细"><colgroup>{columns.map((col, i) => <col key={i} style={{ width: `${col / width * 100}%` }}/>)}</colgroup><tbody>
       {row(1, cell(1, 0, template.title, { colSpan: 7 }))}
@@ -54,22 +65,12 @@ export default function QuotationPreview({ draft, customerName }: { draft: Quota
       {information.map(([label, value], i) => row(3 + i, <>
         {i === 0 && <td className="quotation-paper-image" colSpan={4} rowSpan={4}>
           <div className="quotation-paper-image-box" style={{ height: [3,4,5,6].reduce((sum, index) => sum + quotationRowHeight(profile, index), 0) * 96 / 72 - 2 / 3 }}>
-          {draft.imageUrl && <img src={draft.imageUrl} alt="鞋款" style={profile.imageBox}/>}</div></td>}
+          {draft.imageUrl && <img src={draft.imageUrl} alt="鞋款"/>}</div></td>}
         {cell(3 + i, 4, label)}{cell(3 + i, 5, value, { colSpan: 2 })}</>))}
       {row(7, template.headers.map((label, col) => cell(7, col, label)))}
-      {items("MATERIAL", 8)}
-      {total(18, "材料成本合计", quotationPrintAmount(totals.materials, quotationCellStyle(profile, 18, 5)))}
-      {items("FEE", 19)}
-      {row(25, <>{cell(25, 0, "加工费")}{cell(25, 1, "")}{cell(25, 2, "")}{cell(25, 3, "", { colSpan: 2 })}
-        {cell(25, 5, quotationPrintDecimal(draft.laborCost, quotationCellStyle(profile, 25, 5)))}{cell(25, 6, "")}</>)}
-      {row(26, Array.from({ length: 7 }, (_, col) => cell(26, col, col === 0 ? "加工费合计" : col === 5
-        ? quotationPrintDecimal(totals.finalPrice, quotationCellStyle(profile, 26, 5)) : col === 6 && draft.includeOutsole ? "含大底" : "")))}
-      {row(27, Array.from({ length: 7 }, (_, col) => cell(27, col, col === 0 ? "大底报价" : "")))}
-      {row(28, template.outsoleHeaders.map((label, col) => cell(28, col, label)))}
-      {items("OUTSOLE", 29)}
-      {total(32, "合计", quotationPrintAmount(quotationOutsoleAmount(draft), quotationCellStyle(profile, 32, 5)))}
+      {lines.map((line, index) => <Fragment key={index}>{bodyLine(line)}</Fragment>)}
     </tbody></table></div>
-  </A4Paper>;
+  </A4Paper>)}</>;
 }
 
 function A4Paper({ children }: { children: ReactNode }) {

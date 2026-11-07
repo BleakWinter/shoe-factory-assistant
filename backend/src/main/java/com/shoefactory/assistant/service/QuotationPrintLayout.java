@@ -2,7 +2,6 @@ package com.shoefactory.assistant.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.entity.ShoeQuotationItem;
 import java.io.IOException;
 import java.util.*;
@@ -44,14 +43,10 @@ final class QuotationPrintLayout {
     List<Line> lines(List<ShoeQuotationItem> items, String category, int firstRow) {
         var entries = items.stream().filter(item -> category.equals(item.getCategory())).toList();
         int count = property("labels").path(category).size();
-        if (entries.size() > count) {
-            String name = switch (category) { case "MATERIAL" -> "材料"; case "FEE" -> "费用"; default -> "大底"; };
-            throw new BusinessException(name+"区域最多容纳 "+count+" 个项目，请调整后再导出");
-        }
         var lines = new ArrayList<Line>();
-        for (int slot = 0; slot < count; slot++) {
+        for (int slot = 0; slot < Math.max(count, entries.size()); slot++) {
             var item = slot < entries.size() ? entries.get(slot) : null;
-            lines.add(new Line(item == null ? "" : item.getPartName(), item, firstRow+slot));
+            lines.add(new Line(item == null ? "" : item.getPartName(), item, firstRow+Math.min(slot,count-1)));
         }
         return lines;
     }

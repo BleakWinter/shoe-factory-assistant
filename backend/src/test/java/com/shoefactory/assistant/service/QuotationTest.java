@@ -163,13 +163,15 @@ class QuotationTest {
             assertEquals(24,sheet.getRow(7).getHeightInPoints());
             assertEquals(30,sheet.getRow(2).getHeightInPoints());
             assertEquals(Math.round(11.6640625*256),sheet.getColumnWidth(0));
-            assertEquals(82,sheet.getPrintSetup().getScale());
+            assertEquals(91,sheet.getPrintSetup().getScale());
             assertTrue(sheet.getFitToPage());
             assertEquals(1,sheet.getPrintSetup().getFitWidth());
             assertEquals(1,sheet.getPrintSetup().getFitHeight());
             assertFalse(sheet.getPrintSetup().getLandscape());
-            assertEquals(.7,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.LEFT));
-            assertEquals(.75,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.TOP));
+            assertEquals(.35,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.LEFT),0.00000001);
+            assertEquals(.35,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.RIGHT),0.00000001);
+            assertEquals(.375,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.TOP),0.00000001);
+            assertEquals(.375,sheet.getMargin(org.apache.poi.ss.usermodel.PageMargin.BOTTOM),0.00000001);
             assertEquals("宋体",workbook.getFontAt(sheet.getRow(0).getCell(0).getCellStyle().getFontIndex()).getFontName());
             assertEquals(22,workbook.getFontAt(sheet.getRow(0).getCell(0).getCellStyle().getFontIndex()).getFontHeightInPoints());
             assertEquals("0.00_);[Red]\\(0.00\\)",sheet.getRow(17).getCell(5).getCellStyle().getDataFormatString());
@@ -217,14 +219,45 @@ class QuotationTest {
             assertEquals(3,evaluator.evaluate(sheet.getRow(31).getCell(5)).getNumberValue());
         }
     }
-    @Test void exportRejectsOverflowWithoutDroppingItemsOrGrowingTemplate() {
+    @Test void exportExpandsEachSectionWithoutDroppingItems() throws Exception {
         for(var group: Map.of("MATERIAL",10,"FEE",6,"OUTSOLE",3).entrySet()) {
             var lines=new ArrayList<QuotationSaveRequest.Item>();
             for(int i=0;i<=group.getValue();i++) lines.add(item(group.getKey(),"1","1"));
-            var quote=service.create(request(null,false,"CEIL",false,null,lines));
-            var error=assertThrows(BusinessException.class,()->new QuotationExcelService(images).export(quote));
-            assertTrue(error.getMessage().contains("最多容纳 "+group.getValue()));
+            var quote=service.create(request(null,"OUTSOLE".equals(group.getKey()),"CEIL",false,null,lines));
+            try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(quote)))) {
+                var sheet=book.getSheetAt(0); var evaluator=book.getCreationHelper().createFormulaEvaluator();
+                assertEquals(32,sheet.getLastRowNum());
+                int start=switch(group.getKey()) { case "MATERIAL" -> 7; case "FEE" -> 18; default -> 28; };
+                for(int index=0;index<=group.getValue();index++) {
+                    assertEquals("材料",sheet.getRow(start+index).getCell(1).getStringCellValue());
+                    assertEquals(1,evaluator.evaluate(sheet.getRow(start+index).getCell(5)).getNumberValue());
+                }
+                assertEquals(quote.finalPrice().doubleValue(),evaluator.evaluate(sheet.getRow(group.getKey().equals("OUTSOLE")?25:26).getCell(5)).getNumberValue());
+                assertEquals("成本分析表!$A$1:$G$33",book.getPrintArea(0));
+            }
             assertEquals(group.getValue()+1,service.get(quote.id()).items().size());
+        }
+    }
+    @Test void expandedSectionsKeepTotalsStylesAndPrintAllRows() throws Exception {
+        var lines=new ArrayList<QuotationSaveRequest.Item>();
+        for(var group: Map.of("MATERIAL",12,"FEE",8,"OUTSOLE",5).entrySet()) {
+            for(int i=0;i<group.getValue();i++) {
+                lines.add(new QuotationSaveRequest.Item(group.getKey(),group.getKey()+i,"材料"+i,decimal("1"),"双",decimal("1"),null));
+            }
+        }
+        try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(request(null,true,"CEIL",false,null,lines)))))) {
+            var sheet=book.getSheetAt(0); var evaluator=book.getCreationHelper().createFormulaEvaluator();
+            assertEquals(37,sheet.getLastRowNum());
+            assertEquals("MATERIAL11",sheet.getRow(18).getCell(0).getStringCellValue());
+            assertEquals("FEE7",sheet.getRow(27).getCell(0).getStringCellValue());
+            assertEquals("OUTSOLE4",sheet.getRow(36).getCell(0).getStringCellValue());
+            assertEquals(sheet.getRow(16).getCell(5).getCellStyle(),sheet.getRow(18).getCell(5).getCellStyle());
+            assertEquals(12,evaluator.evaluate(sheet.getRow(19).getCell(5)).getNumberValue());
+            assertEquals(73,evaluator.evaluate(sheet.getRow(29).getCell(5)).getNumberValue());
+            assertEquals(5,evaluator.evaluate(sheet.getRow(37).getCell(5)).getNumberValue());
+            assertEquals("成本分析表!$A$1:$G$38",book.getPrintArea(0));
+            assertEquals(0,sheet.getPrintSetup().getFitHeight());
+            assertEquals("1:7",sheet.getRepeatingRows().formatAsString());
         }
     }
     @Test void exportIncludesOutsoleWithoutChangingBlankAndManualPriceSemantics() throws Exception {
@@ -242,7 +275,7 @@ class QuotationTest {
             assertEquals(72.55,sheet.getRow(25).getCell(5).getNumericCellValue());
         }
     }
-    @Test void exportedPictureStaysInsideOriginalMergedHeaderAndKeepsBytes() throws Exception {
+    @Test void exportedPictureStaysCenteredInsideMergedHeaderAndKeepsBytes() throws Exception {
         var output=new ByteArrayOutputStream(); ImageIO.write(new BufferedImage(400,200,BufferedImage.TYPE_INT_RGB),"png",output);
         var uploaded=images.upload(new MockMultipartFile("file","shoe.png","image/png",output.toByteArray()));
         var input=sample(null,"CEIL",false,null);
@@ -254,14 +287,31 @@ class QuotationTest {
             var anchor=picture.getClientAnchor();
             assertEquals(2,anchor.getRow1()); assertTrue(anchor.getRow2()<=6);
             assertTrue(anchor.getCol1()<4); assertTrue(anchor.getCol2()<=4);
+            assertCenteredPicture(book.getSheetAt(0),anchor);
         }
         var imported=new QuotationSaveRequest(null,input.customerId(),"195-25-03",input.lastNo(),input.colorMaterial(),input.quotationDate(),uploaded.imageKey(),null,
                 input.laborCost(),input.includeOutsole(),input.roundingMode(),input.manualPrice(),input.finalPrice(),"Excel 导入：报价2026-9-12.xlsx；工作表：195-25-03；版本：V1",input.items());
         try(var book=new XSSFWorkbook(new ByteArrayInputStream(new QuotationExcelService(images).export(service.create(imported))))) {
             var picture=(org.apache.poi.xssf.usermodel.XSSFPicture)book.getSheetAt(0).getDrawingPatriarch().getShapes().get(0);
             assertEquals(0,picture.getClientAnchor().getCol1());
-            assertEquals(org.apache.poi.util.Units.pixelToEMU(86),picture.getClientAnchor().getDx1());
+            assertCenteredPicture(book.getSheetAt(0),picture.getClientAnchor());
         }
+    }
+    private static void assertCenteredPicture(org.apache.poi.ss.usermodel.Sheet sheet,org.apache.poi.ss.usermodel.ClientAnchor anchor) {
+        double left = anchor.getDx1()/(double)org.apache.poi.util.Units.EMU_PER_PIXEL;
+        double right = anchor.getDx2()/(double)org.apache.poi.util.Units.EMU_PER_PIXEL;
+        for (int col = 0; col < anchor.getCol1(); col++) left += sheet.getColumnWidthInPixels(col);
+        for (int col = 0; col < anchor.getCol2(); col++) right += sheet.getColumnWidthInPixels(col);
+        double areaWidth = 0;
+        for (int col = 0; col < 4; col++) areaWidth += sheet.getColumnWidthInPixels(col);
+        assertEquals(areaWidth,left+right,2);
+        assertTrue(left >= 8); assertTrue(right <= areaWidth-8);
+        double top = anchor.getDy1()/(double)org.apache.poi.util.Units.EMU_PER_PIXEL;
+        double bottom = anchor.getDy2()/(double)org.apache.poi.util.Units.EMU_PER_PIXEL;
+        for (int row = 2; row < anchor.getRow1(); row++) top += sheet.getRow(row).getHeightInPoints()*96/72;
+        for (int row = 2; row < anchor.getRow2(); row++) bottom += sheet.getRow(row).getHeightInPoints()*96/72;
+        assertEquals(160,top+bottom,2);
+        assertEquals(2,(right-left)/(bottom-top),0.02);
     }
     @Test void adoptionPriceIsScopedToCustomerAndNormalizedStyle() {
         initializeTable(CustomerPriceConfig.class);

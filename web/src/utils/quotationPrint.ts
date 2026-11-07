@@ -36,24 +36,57 @@ export function quotationPrintGeometry(profile: PrintProfile) {
   const units = columns.reduce((sum, value) => sum + value, 0);
   return { width, columns: columns.map(value => value / units * width), page };
 }
-export const quotationPrintRowCounts = { MATERIAL: base.labels.MATERIAL.length, FEE: base.labels.FEE.length, OUTSOLE: base.labels.OUTSOLE.length };
-const categoryNames = { MATERIAL: "材料", FEE: "费用", OUTSOLE: "大底" };
+export const quotationItemLimit = 200;
 export function quotationPrintCapacityIssue(draft: QuotationDraft): string | null {
-  for (const category of Object.keys(quotationPrintRowCounts) as QuoteCategory[]) {
-    const count = quotationPrintRowCounts[category];
-    if (draft.items.filter(item => item.category === category).length > count) return `${categoryNames[category]}区域最多容纳 ${count} 个项目，请调整后再预览、打印或导出`;
-  }
-  return null;
+  return draft.items.length > quotationItemLimit ? `每份报价最多支持 ${quotationItemLimit} 个项目` : null;
 }
-// 保留固定行数，按编辑列表顺序展示；空行不填部位，也不参与金额计算。
+// 原模板行数作为最小行数；超出的项目沿用该区域最后一条明细的样式。
 export function quotationPrintRows(draft: QuotationDraft, category: QuoteCategory, profile: PrintProfile) {
   const entries = draft.items.filter(item => item.category === category);
   const count = profile.labels[category].length;
-  if (entries.length > count) throw new Error(quotationPrintCapacityIssue(draft)!);
-  return Array.from({ length: count }, (_, index): { label: string; item?: QuotationItem } => {
+  const start = { MATERIAL: 8, FEE: 19, OUTSOLE: 29 }[category];
+  return Array.from({ length: Math.max(count, entries.length) }, (_, index) => {
     const item = entries[index];
-    return item ? { label: item.partName, item } : { label: "" };
+    return { label: item?.partName ?? "", item, templateRow: start + Math.min(index, count - 1) };
   });
+}
+export type QuotationPrintLine = {
+  type: "item" | "materialTotal" | "labor" | "finalTotal" | "outsoleHeading" | "outsoleHeader" | "outsoleTotal";
+  templateRow: number;
+  label?: string;
+  item?: QuotationItem;
+  keepWithNext?: boolean;
+};
+export function quotationPrintPages(draft: QuotationDraft, profile: PrintProfile): QuotationPrintLine[][] {
+  const items = (category: QuoteCategory): QuotationPrintLine[] => {
+    const rows = quotationPrintRows(draft, category, profile);
+    return rows.map((row, index) => ({ ...row, type: "item", keepWithNext: index === rows.length - 1 }));
+  };
+  const rows: QuotationPrintLine[] = [
+    ...items("MATERIAL"), { type: "materialTotal", templateRow: 18 },
+    ...items("FEE"), { type: "labor", templateRow: 25, keepWithNext: true },
+    { type: "finalTotal", templateRow: 26 },
+    { type: "outsoleHeading", templateRow: 27, keepWithNext: true },
+    { type: "outsoleHeader", templateRow: 28, keepWithNext: true },
+    ...items("OUTSOLE"), { type: "outsoleTotal", templateRow: 32 },
+  ];
+  const page = template.printPage;
+  const headerHeight = Array.from({ length: 7 }, (_, index) => quotationRowHeight(profile, index + 1)).reduce((sum, value) => sum + value, 0);
+  const capacity = (page.heightMm - page.marginVerticalMm * 2) * 72 / 25.4 / page.scale - headerHeight - 2;
+  const pages: QuotationPrintLine[][] = [[]];
+  let height = 0;
+  rows.forEach((line, index) => {
+    let required = quotationRowHeight(profile, line.templateRow);
+    for (let next = index; rows[next]?.keepWithNext && rows[next + 1]; next++) {
+      required += quotationRowHeight(profile, rows[next + 1].templateRow);
+    }
+    if (height + required > capacity && pages[pages.length - 1].length) {
+      pages.push([]); height = 0;
+    }
+    pages[pages.length - 1].push(line);
+    height += quotationRowHeight(profile, line.templateRow);
+  });
+  return pages;
 }
 export function quotationPrintAmount(value: bigint | null, style: PrintCellStyle): string {
   if (value === null) return "";

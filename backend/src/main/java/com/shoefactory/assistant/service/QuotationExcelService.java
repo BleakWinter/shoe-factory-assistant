@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.util.*;
 
-/** 保存的报价快照按原 Excel 成本分析表导出，打印范围保留原表 32 行结构。 */
+/** 保存的报价快照按原 Excel 成本分析表导出，明细区域按项目数扩展。 */
 @Service
 public class QuotationExcelService {
     private final QuotationImageStore images;
@@ -70,9 +70,18 @@ public class QuotationExcelService {
             sheet.getPrintSetup().setLandscape(false);
             sheet.getPrintSetup().setScale((short)Math.round(layout.template().path("printPage").path("scale").asDouble()*100));
             sheet.setFitToPage(true);
-            sheet.getPrintSetup().setFitWidth((short)1); sheet.getPrintSetup().setFitHeight((short)1);
-            sheet.setMargin(PageMargin.LEFT, .7); sheet.setMargin(PageMargin.RIGHT, .7);
-            sheet.setMargin(PageMargin.TOP, .75); sheet.setMargin(PageMargin.BOTTOM, .75);
+            sheet.getPrintSetup().setFitWidth((short)1);
+            var page = layout.template().path("printPage");
+            double contentHeight = 0;
+            for (var row : sheet) contentHeight += row.getHeightInPoints();
+            double pageHeight = (page.path("heightMm").asDouble()-2*page.path("marginVerticalMm").asDouble())*72/25.4;
+            boolean multiplePages = contentHeight*page.path("scale").asDouble()*page.path("browserRowHeightFactor").asDouble() > pageHeight-2;
+            sheet.getPrintSetup().setFitHeight((short)(multiplePages ? 0 : 1));
+            if (multiplePages) sheet.setRepeatingRows(new CellRangeAddress(0,6,-1,-1));
+            double horizontalMargin = page.path("marginHorizontalMm").asDouble()/25.4;
+            double verticalMargin = page.path("marginVerticalMm").asDouble()/25.4;
+            sheet.setMargin(PageMargin.LEFT, horizontalMargin); sheet.setMargin(PageMargin.RIGHT, horizontalMargin);
+            sheet.setMargin(PageMargin.TOP, verticalMargin); sheet.setMargin(PageMargin.BOTTOM, verticalMargin);
             sheet.setMargin(PageMargin.HEADER, .3); sheet.setMargin(PageMargin.FOOTER, .3);
             book.setPrintArea(0, 0, 6, 0, bottomTotal);
             book.getCreationHelper().createFormulaEvaluator().evaluateAll();
@@ -142,25 +151,24 @@ public class QuotationExcelService {
     private void addImage(XSSFWorkbook book, Sheet sheet, String key, QuotationPrintLayout layout) throws IOException {
         var path = images.require(key); var bytes = Files.readAllBytes(path);
         var image = ImageIO.read(new ByteArrayInputStream(bytes));
-        var box = layout.property("imageBox");
-        double areaWidth = box.path("width").asDouble(), areaHeight = box.path("height").asDouble();
+        double areaWidth = 0, areaHeight = 0;
+        for (int col = 0; col < 4; col++) areaWidth += sheet.getColumnWidthInPixels(col);
+        for (int row = 2; row < 6; row++) areaHeight += sheet.getRow(row).getHeightInPoints()*96/72;
+        areaWidth -= 16; areaHeight -= 6;
         double scale = Math.min(areaWidth/image.getWidth(), areaHeight/image.getHeight());
         double width = image.getWidth()*scale, height = image.getHeight()*scale;
-        double x = box.path("left").asDouble()+(areaWidth-width)/2, y = box.path("top").asDouble()+(areaHeight-height)/2;
+        double x = 8+(areaWidth-width)/2, y = 3+(areaHeight-height)/2;
         for (int i = 1; i <= 2; i++) y += layout.rowHeight(i)*96/72;
         var anchor = book.getCreationHelper().createClientAnchor();
-        position(anchor, x, y, true, layout); position(anchor, x+width, y+height, false, layout);
+        position(anchor, x, y, true, sheet); position(anchor, x+width, y+height, false, sheet);
         anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
         int picture = book.addPicture(bytes, key.endsWith(".png") ? Workbook.PICTURE_TYPE_PNG : Workbook.PICTURE_TYPE_JPEG);
         sheet.createDrawingPatriarch().createPicture(anchor, picture);
     }
-    private static void position(ClientAnchor anchor, double x, double y, boolean first, QuotationPrintLayout layout) {
+    private static void position(ClientAnchor anchor, double x, double y, boolean first, Sheet sheet) {
         int col = 0, row = 0;
-        var page = layout.template().path("printPage");
-        double width = page.path("tableWidthMm").asDouble()*96/25.4/page.path("scale").asDouble();
-        double units = 0; for(var value : layout.property("columns")) units += value.asDouble();
-        while (col < 6 && x >= layout.property("columns").get(col).asDouble()/units*width) x -= layout.property("columns").get(col++).asDouble()/units*width;
-        while (row < 31 && y >= layout.rowHeight(row+1)*96/72) y -= layout.rowHeight(++row)*96/72;
+        while (col < 6 && x >= sheet.getColumnWidthInPixels(col)) x -= sheet.getColumnWidthInPixels(col++);
+        while (row < 31 && y >= sheet.getRow(row).getHeightInPoints()*96/72) y -= sheet.getRow(row++).getHeightInPoints()*96/72;
         if (first) { anchor.setCol1(col); anchor.setRow1(row); anchor.setDx1(Units.pixelToEMU((int)Math.round(x))); anchor.setDy1(Units.pixelToEMU((int)Math.round(y))); }
         else { anchor.setCol2(col); anchor.setRow2(row); anchor.setDx2(Units.pixelToEMU((int)Math.round(x))); anchor.setDy2(Units.pixelToEMU((int)Math.round(y))); }
     }

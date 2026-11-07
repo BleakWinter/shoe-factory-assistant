@@ -6020,11 +6020,11 @@
   "printPage": {
     "widthMm": 210,
     "heightMm": 297,
-    "marginHorizontalMm": 17.78,
-    "marginVerticalMm": 19.05,
-    "scale": 0.82,
-    "tableWidthMm": 173.84,
+    "marginHorizontalMm": 8.89,
+    "marginVerticalMm": 9.525,
+    "scale": 0.91,
+    "tableWidthMm": 192.22,
     "browserRowHeightFactor": 1.018,
-    "reference": "按用户提供的 WPS A4 打印预览校准浏览器几何尺寸；Excel 原生行高和列宽不变。"
+    "reference": "页边距减半后整体等比例放大，文字与行高保持 WPS 参考页比例；Excel 原生行高和列宽不变。"
   }
 }
