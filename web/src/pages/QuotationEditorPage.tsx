@@ -1,5 +1,5 @@
-import { ArrowLeftOutlined, CheckOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, App, Button, Checkbox, Image, Input, InputNumber, Modal, Select, Space, Spin, Tag, Typography } from "antd";
+import { ArrowLeftOutlined, CheckOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, HolderOutlined, PlusOutlined, PrinterOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, App, Button, Checkbox, Dropdown, Image, Input, InputNumber, Modal, Select, Space, Spin, Tag, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -11,14 +11,18 @@ import { formatDateTime } from "../utils/format";
 import { adoptionIssue, calculateQuotation, decimalText, itemAmount, newQuotation, priceText, quotationDraft, today } from "../utils/quotation";
 import { quotationPrintCapacityIssue, quotationPrintRowCounts } from "../utils/quotationPrint";
 
+type EditorDraft = Omit<QuotationDraft, "items"> & { items: (QuotationItem & { rowKey: number })[] };
+
 export default function QuotationEditorPage() {
   const { id } = useParams(), location = useLocation(), navigate = useNavigate(), customers = useCustomers();
   const { message, modal } = App.useApp();
-  const [draft, setDraft] = useState<QuotationDraft>(newQuotation), [saved, setSaved] = useState<Quotation>();
+  const [draft, setDraft] = useState<EditorDraft>(() => ({ ...newQuotation(), items: [] })), [saved, setSaved] = useState<Quotation>();
   const [loading, setLoading] = useState(false), [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [currentPrice, setCurrentPrice] = useState<Decimal>(null);
   const [priceStatus, setPriceStatus] = useState<"loading" | "ready" | "error">("ready"), [priceRefresh, setPriceRefresh] = useState(0);
   const [preview, setPreview] = useState(false), [printing, setPrinting] = useState(false);
+  const [rowDrag, setRowDrag] = useState<{ sourceKey: number; targetKey?: number }>();
+  const nextRowKey = useRef(0);
   const dirtyRef = useRef(false), busyRef = useRef(false), allowNavigation = useRef(false), fileInput = useRef<HTMLInputElement>(null);
   const savedRef = useRef<Quotation>();
   const justSaved = useRef<Quotation>();
@@ -27,6 +31,14 @@ export default function QuotationEditorPage() {
   function markDirty(value: boolean) { dirtyRef.current = value; setDirty(value); }
   function markBusy(value: boolean) { busyRef.current = value; setBusy(value); }
   function replaceSaved(quote?: Quotation) { savedRef.current = quote; setSaved(quote); }
+  function replaceDraft(quote: QuotationDraft) {
+    const content = quotationDraft(quote);
+    setDraft({ ...content, items: content.items.map(item => ({ ...item, rowKey: nextRowKey.current++ })) });
+    setRowDrag(undefined);
+  }
+  function draftContent(): QuotationDraft {
+    return { ...draft, items: draft.items.map(({ rowKey, ...item }) => item) };
+  }
   const blocker = useBlocker(() => !allowNavigation.current && (dirtyRef.current || busyRef.current));
   useBeforeUnload(event => { if (dirtyRef.current || busyRef.current) { event.preventDefault(); event.returnValue = ""; } });
   useEffect(() => {
@@ -42,17 +54,17 @@ export default function QuotationEditorPage() {
     if (!id) {
       const copy = (location.state as { copy?: QuotationDraft } | null)?.copy;
       const params = new URLSearchParams(location.search), customer = Number(params.get("customerId"));
-      setDraft(copy ? quotationDraft(copy) : { ...newQuotation(), customerId: customer > 0 ? customer : null, developmentNo: params.get("developmentNo") || "" });
+      replaceDraft(copy ?? { ...newQuotation(), customerId: customer > 0 ? customer : null, developmentNo: params.get("developmentNo") || "" });
       markDirty(Boolean(copy)); setCurrentPrice(null); setLoading(false); return;
     }
     if (justSaved.current?.id === Number(id)) {
       const quote = justSaved.current; justSaved.current = undefined;
-      replaceSaved(quote); setDraft(quotationDraft(quote)); setCurrentPrice(quote.currentPrice); setLoading(false); return;
+      replaceSaved(quote); replaceDraft(quote); setCurrentPrice(quote.currentPrice); setLoading(false); return;
     }
     setLoading(true);
     fetchQuotation(Number(id)).then(quote => {
       if (sequence !== routeSequence.current) return;
-      replaceSaved(quote); setDraft(quotationDraft(quote)); setCurrentPrice(quote.currentPrice);
+      replaceSaved(quote); replaceDraft(quote); setCurrentPrice(quote.currentPrice);
     }).catch(error => { if (sequence === routeSequence.current) setLoadError(error instanceof Error ? error.message : "报价加载失败"); })
       .finally(() => { if (sequence === routeSequence.current) setLoading(false); });
     return () => { routeSequence.current++; };
@@ -74,7 +86,7 @@ export default function QuotationEditorPage() {
     window.addEventListener("afterprint", finish);
     return () => { window.removeEventListener("afterprint", finish); document.body.classList.remove("quotation-printing"); };
   }, []);
-  function update(patch: Partial<QuotationDraft>) {
+  function update(patch: Partial<EditorDraft>) {
     if ("customerId" in patch || "developmentNo" in patch) setPriceStatus("loading");
     setDraft(previous => {
       const next = { ...previous, ...patch };
@@ -83,16 +95,24 @@ export default function QuotationEditorPage() {
     }); markDirty(true);
   }
   function updateItem(index: number, patch: Partial<QuotationItem>) { update({ items: draft.items.map((item, i) => i === index ? { ...item, ...patch } : item) }); }
+  function moveItem(from: number, to: number) {
+    const item = draft.items[from];
+    if (busyRef.current || !item || from === to || draft.items[to]?.category !== item.category) return;
+    const items = [...draft.items];
+    items.splice(from, 1);
+    items.splice(to, 0, item);
+    update({ items });
+  }
   function addItem(category: QuoteCategory) {
     const limit = quotationPrintRowCounts[category];
     if (draft.items.filter(item => item.category === category).length >= limit) { message.info(`该区域已填满 ${limit} 行，请编辑或删除现有项目`); return; }
-    update({ items: [...draft.items, { category, partName: "", materialName: "", quantity: null, unit: "双", unitPrice: null, remark: "" }] });
+    update({ items: [...draft.items, { rowKey: nextRowKey.current++, category, partName: "", materialName: "", quantity: null, unit: "双", unitPrice: null, remark: "" }] });
   }
   async function persist(): Promise<Quotation> {
     const source = savedRef.current;
     if (source && !dirtyRef.current) return source;
-    const quote = await saveQuotation({ ...draft, finalPrice: draft.manualPrice ? draft.finalPrice : totals.finalPrice }, source);
-    replaceSaved(quote); setDraft(quotationDraft(quote)); setCurrentPrice(quote.currentPrice); markDirty(false);
+    const quote = await saveQuotation({ ...draftContent(), finalPrice: draft.manualPrice ? draft.finalPrice : totals.finalPrice }, source);
+    replaceSaved(quote); replaceDraft(quote); setCurrentPrice(quote.currentPrice); markDirty(false);
     return quote;
   }
   function showSaved(quote: Quotation) {
@@ -113,7 +133,7 @@ export default function QuotationEditorPage() {
       <p>确认后，该客户此款号的历史统计和月度对账都会按新单价重新计算。{dirty || !saved ? "当前报价会先保存为新版本。" : ""}</p></div>,
       onOk: async () => {
         markBusy(true);
-        try { const quote = await persist(); const adopted = await adoptQuotation(quote.id); replaceSaved(adopted); setDraft(quotationDraft(adopted)); setCurrentPrice(adopted.currentPrice); showSaved(adopted); message.success("已采用为客户单价"); }
+        try { const quote = await persist(); const adopted = await adoptQuotation(quote.id); replaceSaved(adopted); replaceDraft(adopted); setCurrentPrice(adopted.currentPrice); showSaved(adopted); message.success("已采用为客户单价"); }
         catch(error) { message.error(error instanceof Error ? error.message : "采用失败"); throw error; }
         finally { markBusy(false); }
       } });
@@ -142,7 +162,7 @@ export default function QuotationEditorPage() {
     markBusy(true);
     try {
       // 尚未保存的订单图先留存副本，复制后的新款也能独立使用鞋图。
-      const content = draft.sourceDetailId && !draft.imageKey ? quotationDraft(await persist()) : quotationDraft(draft);
+      const content = draft.sourceDetailId && !draft.imageKey ? quotationDraft(await persist()) : quotationDraft(draftContent());
       allowNavigation.current = true;
       navigate("/price-configs/quotations/new", { state: { copy: { ...content, developmentNo: "", quotationDate: today(), sourceDetailId: null } } });
     } catch(error) { message.error(error instanceof Error ? error.message : "复制失败"); }
@@ -171,12 +191,54 @@ export default function QuotationEditorPage() {
   if (loading) return <div className="page-panel quotation-loading"><Spin tip="加载报价…"/></div>;
   if (loadError) return <div className="workspace"><Alert type="error" showIcon message={loadError}/><Button onClick={() => navigate("/price-configs/quotations")}>返回报价列表</Button></div>;
   const history = saved && saved.versionNo !== saved.latestVersionNo;
+  const draggedIndex = rowDrag ? draft.items.findIndex(item => item.rowKey === rowDrag.sourceKey) : -1;
   function section(category: QuoteCategory, title: string, amount: bigint | null, help: string) {
+    const rows = draft.items.map((item, index) => ({ item, index })).filter(({ item }) => item.category === category);
     return <section className="page-panel quotation-section">
       <div className="quotation-section-heading"><div><h3>{title}</h3><span>{help}</span></div><Space><span className="quotation-subtotal">小计 <strong>{decimalText(amount)}</strong> 元</span>
         <Button size="small" icon={<PlusOutlined/>} disabled={busy} onClick={() => addItem(category)}>添加项目</Button></Space></div>
-      <div className="quotation-table-scroll"><table className="quotation-edit-table"><thead><tr>{["部位", "材料 / 工序", "用量", "单位", "单价", "金额", "备注", ""].map((name, index) => <th key={index}>{name}</th>)}</tr></thead>
-        <tbody>{draft.items.map((item, index) => item.category === category && <tr key={index}>
+      <div className="quotation-table-scroll"><table className="quotation-edit-table"><thead><tr><th aria-label="移动顺序"/>{["部位", "材料 / 工序", "用量", "单位", "单价", "金额", "备注", ""].map((name, index) => <th key={index}>{name}</th>)}</tr></thead>
+        <tbody>{rows.map(({ item, index }, position) => <tr key={item.rowKey}
+          className={draggedIndex === index ? "quotation-row-dragging" : undefined}
+          data-drop-position={rowDrag?.targetKey === item.rowKey ? (draggedIndex < index ? "after" : "before") : undefined}
+          onDragOver={event => {
+            if (!rowDrag || busy || draggedIndex === index || draft.items[draggedIndex]?.category !== category) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            if (rowDrag.targetKey !== item.rowKey) setRowDrag({ ...rowDrag, targetKey: item.rowKey });
+          }}
+          onDragLeave={event => {
+            if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+            setRowDrag(drag => drag && drag.targetKey === item.rowKey ? { sourceKey: drag.sourceKey } : drag);
+          }}
+          onDrop={event => {
+            if (!rowDrag || draft.items[draggedIndex]?.category !== category) return;
+            event.preventDefault();
+            moveItem(draggedIndex, index);
+            setRowDrag(undefined);
+          }}>
+          <td className="quotation-row-order">
+            <Dropdown trigger={["click"]} menu={{
+              items: [
+                { key: "up", label: "上移一行", disabled: position === 0 },
+                { key: "down", label: "下移一行", disabled: position === rows.length - 1 },
+              ],
+              onClick: ({ key }) => {
+                const neighbor = rows[position + (key === "up" ? -1 : 1)];
+                if (neighbor) moveItem(index, neighbor.index);
+              },
+            }}>
+              <Button type="text" size="small" className="quotation-row-handle" icon={<HolderOutlined/>}
+                aria-label={`移动${title}第${position + 1}行`} title="拖动排序，或点击选择上移／下移"
+                disabled={busy || rows.length < 2} draggable={!busy && rows.length > 1}
+                onDragStart={event => {
+                  event.dataTransfer.setData("application/x-quotation-row", String(item.rowKey));
+                  event.dataTransfer.effectAllowed = "move";
+                  setRowDrag({ sourceKey: item.rowKey });
+                }}
+                onDragEnd={() => setRowDrag(undefined)}/>
+            </Dropdown>
+          </td>
           <td><Input aria-label={`${title}部位${index+1}`} value={item.partName} maxLength={100} disabled={busy} onChange={event => updateItem(index, { partName: event.target.value })}/></td>
           <td><Input aria-label={`${title}材料${index+1}`} placeholder="材料或工序名称" value={item.materialName} maxLength={255} disabled={busy} onChange={event => updateItem(index, { materialName: event.target.value })}/></td>
           <td><InputNumber aria-label={`${title}用量${index+1}`} stringMode min="0" max="99999999.9999" precision={4} value={item.quantity} disabled={busy} onChange={value => updateItem(index, { quantity: value })}/></td>
