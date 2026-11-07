@@ -1,6 +1,7 @@
 import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
+  DeleteOutlined,
   EditOutlined,
   EyeOutlined,
   FileAddOutlined,
@@ -15,6 +16,7 @@ import type { Key, MouseEvent } from "react";
 import { batchRecordPrintProcess, fetchOrderDetails, fetchOrderPackingDetails, fetchOrders } from "../api/orderApi";
 import {
   createShippingNoteTask,
+  deleteShippingNoteTask,
   fetchShippingNoteGeneratedSummary,
   fetchShippingNoteTask,
   fetchShippingNoteTasks,
@@ -281,7 +283,7 @@ function applyShippingNotePrintSize() {
 }
 
 export default function ShippingNotePrintPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [taskForm] = Form.useForm<ShippingNoteTaskQueryParams>();
   const [tasks, setTasks] = useState<ShippingNoteTask[]>([]);
   const [taskLoading, setTaskLoading] = useState(false);
@@ -318,6 +320,7 @@ export default function ShippingNotePrintPage() {
     items: ShippingNoteItem[];
   } | null>(null);
   const [taskActionLoadingId, setTaskActionLoadingId] = useState<number>();
+  const [deletingTaskId, setDeletingTaskId] = useState<number>();
 
   const selectedOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId),
@@ -626,6 +629,36 @@ export default function ShippingNotePrintPage() {
     }
   };
 
+  const confirmDeleteTask = useCallback((task: ShippingNoteTask) => {
+    modal.confirm({
+      title: "确认删除出货单？",
+      content: (
+        <div>
+          <p>出货单号：{task.taskNo || task.printNo || task.id}</p>
+          <p>删除后无法撤销，出货统计和月度对账将同步更新。原始订单和装箱单会保留。</p>
+          <p>未关联其他出货单的明细将同步清除“出货单打印”处理记录，内盒、外箱贴标记录保留。</p>
+        </div>
+      ),
+      okText: "确认删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDeletingTaskId(task.id);
+        try {
+          await deleteShippingNoteTask(task.id);
+          message.success("出货单已删除");
+          const nextPage = tasks.length === 1 && page > 1 ? page - 1 : page;
+          await loadTasks(nextPage, size);
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : "出货单删除失败");
+          throw error;
+        } finally {
+          setDeletingTaskId(undefined);
+        }
+      },
+    });
+  }, [loadTasks, message, modal, page, size, tasks.length]);
+
   const loadTaskDetail = async (task: ShippingNoteTask) => {
     setTaskActionLoadingId(task.id);
     try {
@@ -805,13 +838,14 @@ export default function ShippingNotePrintPage() {
       {
         title: "操作",
         key: "actions",
-        width: 280,
+        width: 390,
         fixed: "right",
         render: (_, record) => (
           <Space size={8}>
             <Button
               icon={<EditOutlined />}
               loading={taskActionLoadingId === record.id}
+              disabled={deletingTaskId !== undefined}
               onClick={() => void openEditModal(record)}
             >
               编辑
@@ -819,6 +853,7 @@ export default function ShippingNotePrintPage() {
             <Button
               icon={<EyeOutlined />}
               loading={taskActionLoadingId === record.id}
+              disabled={deletingTaskId !== undefined}
               onClick={() => void openTaskDetail(record)}
             >
               查看明细
@@ -827,15 +862,25 @@ export default function ShippingNotePrintPage() {
               type="primary"
               icon={<PrinterOutlined />}
               loading={taskActionLoadingId === record.id}
+              disabled={deletingTaskId !== undefined}
               onClick={() => void openTaskPreview(record)}
             >
               预览
+            </Button>
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={deletingTaskId === record.id}
+              disabled={deletingTaskId !== undefined || taskActionLoadingId !== undefined}
+              onClick={() => confirmDeleteTask(record)}
+            >
+              删除
             </Button>
           </Space>
         ),
       },
     ],
-    [taskActionLoadingId],
+    [confirmDeleteTask, deletingTaskId, taskActionLoadingId],
   );
 
   const leftRowSelection = {
@@ -933,7 +978,7 @@ export default function ShippingNotePrintPage() {
             showSizeChanger: true,
             onChange: (nextPage, nextSize) => void loadTasks(nextPage, nextSize),
           }}
-          scroll={{ x: 1360 }}
+          scroll={{ x: 1470 }}
           className="data-table"
         />
       </div>

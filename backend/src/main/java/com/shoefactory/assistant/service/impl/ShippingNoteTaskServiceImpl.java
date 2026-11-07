@@ -11,11 +11,14 @@ import com.shoefactory.assistant.dto.ShippingNoteGeneratedSummaryResponse;
 import com.shoefactory.assistant.dto.ShippingNoteItemRequest;
 import com.shoefactory.assistant.dto.ShippingNoteTaskResponse;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
+import com.shoefactory.assistant.entity.OrderDetailProcess;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.entity.ShippingNoteTask;
 import com.shoefactory.assistant.entity.ShippingNoteTaskItem;
+import com.shoefactory.assistant.enums.OrderDetailProcessType;
+import com.shoefactory.assistant.mapper.OrderDetailProcessMapper;
 import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
@@ -36,6 +39,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -55,6 +59,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
     private final OrderRecordDetailMapper orderRecordDetailMapper;
     private final OrderPackingDetailMapper orderPackingDetailMapper;
     private final OrderRecordMapper orderRecordMapper;
+    private final OrderDetailProcessMapper orderDetailProcessMapper;
     private final com.shoefactory.assistant.service.CustomerConfigService customers;
 
     public ShippingNoteTaskServiceImpl(
@@ -63,6 +68,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
             OrderRecordDetailMapper orderRecordDetailMapper,
             OrderPackingDetailMapper orderPackingDetailMapper,
             OrderRecordMapper orderRecordMapper,
+            OrderDetailProcessMapper orderDetailProcessMapper,
             com.shoefactory.assistant.service.CustomerConfigService customers
     ) {
         this.shippingNoteTaskMapper = shippingNoteTaskMapper;
@@ -70,6 +76,7 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
         this.orderRecordDetailMapper = orderRecordDetailMapper;
         this.orderPackingDetailMapper = orderPackingDetailMapper;
         this.orderRecordMapper = orderRecordMapper;
+        this.orderDetailProcessMapper = orderDetailProcessMapper;
         this.customers = customers;
     }
 
@@ -227,6 +234,46 @@ public class ShippingNoteTaskServiceImpl implements ShippingNoteTaskService {
             shippingNoteTaskMapper.updateById(task);
         }
         return buildFullResponse(task);
+    }
+
+    @Override
+    @Transactional
+    public void deleteShippingNoteTask(Long id) {
+        ShippingNoteTask task = shippingNoteTaskMapper.selectById(id);
+        if (task == null) {
+            throw new BusinessException("出货单任务不存在: " + id);
+        }
+        if (Integer.valueOf(3).equals(task.getSourceType())) {
+            throw new BusinessException("手工出货记录不能从打印任务删除");
+        }
+        List<Long> sourceDetailIds = shippingNoteTaskItemMapper.selectList(
+                        new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                                .select(ShippingNoteTaskItem::getSourceDetailId)
+                                .eq(ShippingNoteTaskItem::getTaskId, id))
+                .stream().map(ShippingNoteTaskItem::getSourceDetailId)
+                .filter(Objects::nonNull).distinct().toList();
+        shippingNoteTaskItemMapper.delete(new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                .eq(ShippingNoteTaskItem::getTaskId, id));
+        clearUnreferencedShippingPrintProcesses(sourceDetailIds);
+        shippingNoteTaskMapper.deleteById(id);
+    }
+
+    private void clearUnreferencedShippingPrintProcesses(List<Long> sourceDetailIds) {
+        if (sourceDetailIds.isEmpty()) {
+            return;
+        }
+        Set<Long> stillReferencedDetailIds = shippingNoteTaskItemMapper.selectList(
+                        new LambdaQueryWrapper<ShippingNoteTaskItem>()
+                                .select(ShippingNoteTaskItem::getSourceDetailId)
+                                .in(ShippingNoteTaskItem::getSourceDetailId, sourceDetailIds))
+                .stream().map(ShippingNoteTaskItem::getSourceDetailId).collect(Collectors.toSet());
+        List<Long> clearedDetailIds = sourceDetailIds.stream()
+                .filter(detailId -> !stillReferencedDetailIds.contains(detailId)).toList();
+        if (!clearedDetailIds.isEmpty()) {
+            orderDetailProcessMapper.delete(new LambdaQueryWrapper<OrderDetailProcess>()
+                    .in(OrderDetailProcess::getOrderDetailId, clearedDetailIds)
+                    .eq(OrderDetailProcess::getProcessType, OrderDetailProcessType.SHIPPING_NOTE_PRINT.getCode()));
+        }
     }
 
     private List<OrderRecordDetail> resolveSelectedOrderDetails(List<ShippingNoteItemRequest> requestedItems) {

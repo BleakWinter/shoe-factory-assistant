@@ -27,4 +27,6 @@ public interface ShippingNoteTaskService {
     ShippingNoteTaskResponse getShippingNoteTask(Long id);
 
     ShippingNoteTaskResponse updateShippingNoteTask(Long id, ShippingNoteUpdateRequest request);
+
+    void deleteShippingNoteTask(Long id);
 }

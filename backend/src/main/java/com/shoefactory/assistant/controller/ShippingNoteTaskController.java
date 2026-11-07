@@ -9,6 +9,7 @@ import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 import com.shoefactory.assistant.service.ShippingNoteTaskService;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -76,6 +77,12 @@ public class ShippingNoteTaskController {
             @Valid @RequestBody ShippingNoteUpdateRequest request
     ) {
         return ApiResponse.ok(shippingNoteTaskService.updateShippingNoteTask(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> deleteShippingNoteTask(@PathVariable Long id) {
+        shippingNoteTaskService.deleteShippingNoteTask(id);
+        return ApiResponse.ok(null);
     }
 
     private List<Long> parseOrderIds(String orderIds) {

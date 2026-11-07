@@ -61,5 +61,9 @@ export async function updateShippingNoteTask(id: number, payload: ShippingNoteUp
   return data;
 }
 
+export async function deleteShippingNoteTask(id: number) {
+  await request.delete(`/shipping-note-tasks/${id}`);
+}
+
 export const createShippingNote = createShippingNoteTask;
 export const fetchShippingNotes = fetchShippingNoteTasks as (params: ShippingNoteQueryParams) => Promise<PageResponse<ShippingNoteTask>>;

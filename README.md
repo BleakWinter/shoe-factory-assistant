@@ -259,11 +259,14 @@ POST /api/shipping-note-tasks
 GET /api/shipping-note-tasks
 GET /api/shipping-note-tasks/{id}
 PUT /api/shipping-note-tasks/{id}
+DELETE /api/shipping-note-tasks/{id}
 ```
 
 编辑出货单时，`PUT` 可提交 `recipientName`、`shippingDate` 和 `items`（每项包含 `sourceDetailId`）。提交 `items` 会替换该出货单的明细，按提交顺序保存，并重新计算发票编号、开发编号、明细行数、双数和件数；保留原出货单编号及创建时间。明细至少保留一条，且必须有匹配的装箱单。省略 `items` 时只更新收货信息。
 
 重新选择订单时会同步更新出货单的客户归属，同一出货单不能混选不同客户。此编辑入口用于 Excel 打印任务；手工订单及手工出货记录仍从订单页面处理。保存后的统计、月度对账和打印预览均使用更新后的明细，无需增加数据库字段。
+
+出货单列表支持确认后删除。`DELETE` 在同一事务内删除指定出货单及其明细，并清除不再关联任何出货单的明细的“出货单打印”处理记录（类型 7）；仍被其他出货单使用的明细保留该记录。原始订单、订单明细、装箱单、内盒及外箱贴标处理记录均保留；出货统计、月度对账及“隐藏已生成出货单”的结果随之更新。手工出货记录不能从此接口删除。
 
 更多接口见 [docs/接口文档.md](docs/接口文档.md)。
 

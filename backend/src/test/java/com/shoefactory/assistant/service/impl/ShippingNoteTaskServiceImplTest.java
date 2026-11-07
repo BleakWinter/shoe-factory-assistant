@@ -7,11 +7,13 @@ import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.dto.ShippingNoteItemRequest;
 import com.shoefactory.assistant.dto.ShippingNoteUpdateRequest;
 import com.shoefactory.assistant.entity.OrderPackingDetail;
+import com.shoefactory.assistant.entity.OrderDetailProcess;
 import com.shoefactory.assistant.entity.OrderRecord;
 import com.shoefactory.assistant.entity.OrderRecordDetail;
 import com.shoefactory.assistant.entity.ShippingNoteTask;
 import com.shoefactory.assistant.entity.ShippingNoteTaskItem;
 import com.shoefactory.assistant.mapper.OrderPackingDetailMapper;
+import com.shoefactory.assistant.mapper.OrderDetailProcessMapper;
 import com.shoefactory.assistant.mapper.OrderRecordDetailMapper;
 import com.shoefactory.assistant.mapper.OrderRecordMapper;
 import com.shoefactory.assistant.mapper.ShippingNoteTaskItemMapper;
@@ -39,9 +41,10 @@ class ShippingNoteTaskServiceImplTest {
     private final OrderRecordDetailMapper detailMapper = mock(OrderRecordDetailMapper.class);
     private final OrderPackingDetailMapper packingMapper = mock(OrderPackingDetailMapper.class);
     private final OrderRecordMapper orderMapper = mock(OrderRecordMapper.class);
+    private final OrderDetailProcessMapper processMapper = mock(OrderDetailProcessMapper.class);
     private final CustomerConfigService customers = mock(CustomerConfigService.class);
     private final ShippingNoteTaskServiceImpl service = new ShippingNoteTaskServiceImpl(
-            taskMapper, itemMapper, detailMapper, packingMapper, orderMapper, customers
+            taskMapper, itemMapper, detailMapper, packingMapper, orderMapper, processMapper, customers
     );
     private final List<ShippingNoteTaskItem> storedItems = new ArrayList<>();
     private ShippingNoteTask task;
@@ -49,6 +52,7 @@ class ShippingNoteTaskServiceImplTest {
     @BeforeAll
     static void initializeTableMetadata() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), ShippingNoteTaskItem.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), OrderDetailProcess.class);
     }
 
     @BeforeEach
@@ -202,6 +206,138 @@ class ShippingNoteTaskServiceImplTest {
         assertThrows(BusinessException.class, () -> service.updateShippingNoteTask(999L, update(11L)));
         verify(taskMapper, never()).updateById(any(ShippingNoteTask.class));
         verifyNoInteractions(itemMapper, detailMapper, packingMapper, orderMapper);
+    }
+
+    @Test
+    void deletingTaskRemovesOnlyItsShipmentItemsAndKeepsSourceOrders() {
+        ShippingNoteTaskItem selected = new ShippingNoteTaskItem();
+        selected.setTaskId(42L);
+        selected.setSourceDetailId(11L);
+        ShippingNoteTaskItem unrelated = new ShippingNoteTaskItem();
+        unrelated.setTaskId(43L);
+        unrelated.setSourceDetailId(22L);
+        storedItems.addAll(List.of(selected, unrelated));
+        when(itemMapper.selectList(any())).thenReturn(List.of(selected), List.of());
+        when(itemMapper.delete(any(LambdaQueryWrapper.class))).thenAnswer(invocation -> {
+            LambdaQueryWrapper<?> filter = invocation.getArgument(0);
+            assertEquals("(task_id = #{ew.paramNameValuePairs.MPGENVAL1})", filter.getSqlSegment());
+            assertEquals(List.of(42L), new ArrayList<>(filter.getParamNameValuePairs().values()));
+            return storedItems.removeIf(item -> item.getTaskId().equals(42L)) ? 1 : 0;
+        });
+
+        service.deleteShippingNoteTask(42L);
+
+        assertEquals(List.of(unrelated), storedItems);
+        var deletionOrder = inOrder(itemMapper, processMapper, taskMapper);
+        deletionOrder.verify(itemMapper).delete(any(LambdaQueryWrapper.class));
+        deletionOrder.verify(processMapper).delete(any(LambdaQueryWrapper.class));
+        deletionOrder.verify(taskMapper).deleteById(42L);
+        verify(taskMapper, never()).deleteById(43L);
+        verifyNoInteractions(detailMapper, packingMapper, orderMapper, customers);
+    }
+
+    @Test
+    void deletingShipmentClearsOnlyShippingPrintRecordsWithoutOtherShipmentReferences() {
+        ShippingNoteTaskItem first = shipmentItem(42L, 11L);
+        ShippingNoteTaskItem shared = shipmentItem(42L, 22L);
+        when(itemMapper.selectList(any())).thenReturn(
+                List.of(first, shared, first), List.of(shipmentItem(43L, 22L)));
+        OrderDetailProcess shippingPrint = process(11L, 7);
+        OrderDetailProcess innerLabel = process(11L, 5);
+        OrderDetailProcess outerLabel = process(11L, 6);
+        OrderDetailProcess sharedShippingPrint = process(22L, 7);
+        OrderDetailProcess unrelatedShippingPrint = process(33L, 7);
+        List<OrderDetailProcess> processes = new ArrayList<>(List.of(
+                shippingPrint, innerLabel, outerLabel, sharedShippingPrint, unrelatedShippingPrint));
+        when(processMapper.delete(any(LambdaQueryWrapper.class))).thenAnswer(invocation -> {
+            LambdaQueryWrapper<?> filter = invocation.getArgument(0);
+            assertTrue(filter.getSqlSegment().contains("order_detail_id IN"));
+            assertTrue(filter.getSqlSegment().contains("process_type ="));
+            assertEquals(java.util.Set.of(11L, 7), new java.util.HashSet<>(filter.getParamNameValuePairs().values()));
+            return processes.removeIf(p -> p.getOrderDetailId().equals(11L) && p.getProcessType() == 7) ? 1 : 0;
+        });
+
+        service.deleteShippingNoteTask(42L);
+
+        assertEquals(List.of(innerLabel, outerLabel, sharedShippingPrint, unrelatedShippingPrint), processes);
+        verify(processMapper, times(1)).delete(any(LambdaQueryWrapper.class));
+        verifyNoInteractions(detailMapper, packingMapper, orderMapper, customers);
+    }
+
+    @Test
+    void sharedDetailsKeepTheirShippingPrintHistoryWhenAnotherShipmentRemains() {
+        when(itemMapper.selectList(any())).thenReturn(
+                List.of(shipmentItem(42L, 11L)), List.of(shipmentItem(43L, 11L)));
+
+        service.deleteShippingNoteTask(42L);
+
+        verifyNoInteractions(processMapper);
+        verify(taskMapper).deleteById(42L);
+    }
+
+    @Test
+    void emptyShipmentCannotClearAnyProcessingHistory() {
+        when(itemMapper.selectList(any())).thenReturn(List.of());
+
+        service.deleteShippingNoteTask(42L);
+
+        verifyNoInteractions(processMapper);
+        verify(taskMapper).deleteById(42L);
+    }
+
+    @Test
+    void processingCleanupFailureFailsTheShipmentDeletion() {
+        when(itemMapper.selectList(any())).thenReturn(List.of(shipmentItem(42L, 11L)), List.of());
+        when(processMapper.delete(any(LambdaQueryWrapper.class))).thenThrow(new IllegalStateException("cleanup failed"));
+
+        assertThrows(IllegalStateException.class, () -> service.deleteShippingNoteTask(42L));
+
+        verify(taskMapper, never()).deleteById(any(Long.class));
+        verifyNoInteractions(detailMapper, packingMapper, orderMapper, customers);
+    }
+
+    private ShippingNoteTaskItem shipmentItem(Long taskId, Long detailId) {
+        ShippingNoteTaskItem item = new ShippingNoteTaskItem();
+        item.setTaskId(taskId);
+        item.setSourceDetailId(detailId);
+        return item;
+    }
+
+    private OrderDetailProcess process(Long detailId, int type) {
+        OrderDetailProcess process = new OrderDetailProcess();
+        process.setOrderDetailId(detailId);
+        process.setProcessType(type);
+        process.setProcessCount(3);
+        return process;
+    }
+
+    @Test
+    void unknownTaskCannotDeleteAnyShipmentItems() {
+        var error = assertThrows(BusinessException.class, () -> service.deleteShippingNoteTask(999L));
+
+        assertEquals("出货单任务不存在: 999", error.getMessage());
+        verify(taskMapper, never()).deleteById(any(Long.class));
+        verifyNoInteractions(itemMapper, detailMapper, packingMapper, orderMapper);
+    }
+
+    @Test
+    void manualShipmentCannotBeDeletedThroughPrintTasks() {
+        task.setSourceType(3);
+
+        assertThrows(BusinessException.class, () -> service.deleteShippingNoteTask(42L));
+
+        verify(taskMapper, never()).deleteById(any(Long.class));
+        verifyNoInteractions(itemMapper, detailMapper, packingMapper, orderMapper);
+    }
+
+    @Test
+    void failureToDeleteItemsDoesNotRemoveTheTask() {
+        when(itemMapper.delete(any(LambdaQueryWrapper.class))).thenThrow(new IllegalStateException("delete failed"));
+
+        assertThrows(IllegalStateException.class, () -> service.deleteShippingNoteTask(42L));
+
+        verify(taskMapper, never()).deleteById(any(Long.class));
+        verifyNoInteractions(detailMapper, packingMapper, orderMapper);
     }
 
     private void assertRejectedWithoutWrites(ShippingNoteUpdateRequest request) {
