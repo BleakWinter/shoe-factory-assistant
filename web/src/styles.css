@@ -2631,6 +2631,7 @@ a {
 
 /* 鞋款报价：一页编辑，材料与费用保持可见，右侧实时核算。 */
 .quotation-workspace { --quote-blue: #1677ff; }
+.quotation-selection-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .quotation-toolbar .ant-typography { margin: 0; }
 .quotation-toolbar-help { margin-top: 7px; color: #7b8798; font-size: 13px; }
 .quotation-basics { display: grid; grid-template-columns: 225px minmax(0, 1fr); gap: 28px; padding: 22px; }
@@ -2728,4 +2729,5 @@ a {
   body.quotation-printing .quotation-paper { margin: 0; zoom: 1 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.quotation-printing .quotation-paper tr { break-inside: avoid; }
   body.quotation-printing .quotation-preview-scroll + .quotation-preview-scroll { break-before: page; }
+  body.quotation-printing .quotation-print-page + .quotation-print-page { break-before: page; }
 }
