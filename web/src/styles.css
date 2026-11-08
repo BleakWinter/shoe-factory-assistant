@@ -2137,6 +2137,34 @@ a {
   background: #fff8e8 !important;
 }
 
+.settlement-summary-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 10px;
+}
+
+.settlement-summary-group {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dde3eb;
+  border-radius: 4px;
+}
+
+.settlement-summary-group h5.ant-typography {
+  margin: 0 0 8px;
+}
+
+.settlement-summary-total {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dde3eb;
+}
+
 /* Mobile layout: keep the same shell but let controls stack cleanly. */
 @media (max-width: 920px) {
   .app-topbar {

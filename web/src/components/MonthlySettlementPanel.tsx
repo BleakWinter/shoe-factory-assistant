@@ -254,22 +254,36 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
     <section className="page-panel reconciliation-panel">
       <div className="reconciliation-panel-heading"><Typography.Title level={4}>结算汇总</Typography.Title>
         {!locked && dirty && <Typography.Text type="secondary">未保存的预览</Typography.Text>}</div>
-      <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }} items={[
-        { key: "goods", label: "本期货款", children: money(totals.goods) },
-        { key: "carry", label: "跨月补结", children: money(totals.carryover) },
-        { key: "refund", label: "质保金返还", children: money(totals.refund) },
-        { key: "hold", label: "本期质保金扣款", children: money(-totals.hold) },
-        { key: "materials", label: "领料扣款", children: money(-totals.materials) },
-        { key: "adjustment", label: "其他补扣净额", children: money(totals.credits - totals.debits) },
-      ]}/>
-      <Space wrap align="end" size="large">
-        <Statistic title="本期应收" value={totals.receivable} precision={2} prefix="¥"/>
+      <div className="settlement-summary-groups">
+        <section className="settlement-summary-group" aria-label="货款">
+          <Statistic title="本期货款" value={totals.goods} precision={2} prefix="¥"/>
+          <Descriptions size="small" column={1} items={[
+            { key: "carry", label: "跨月补结", children: money(totals.carryover) },
+          ]}/>
+        </section>
+        <section className="settlement-summary-group" aria-label="质保金">
+          <Typography.Title level={5}>质保金</Typography.Title>
+          <Descriptions size="small" column={1} items={[
+            { key: "hold", label: "本期质保金扣款", children: money(0 - totals.hold) },
+            { key: "refund", label: "质保金返还", children: money(totals.refund) },
+          ]}/>
+        </section>
+        <section className="settlement-summary-group" aria-label="其他补扣">
+          <Typography.Title level={5}>其他补扣</Typography.Title>
+          <Descriptions size="small" column={1} items={[
+            { key: "materials", label: "领料扣款", children: money(0 - totals.materials) },
+            { key: "adjustment", label: "其他补扣净额", children: money(totals.credits - totals.debits) },
+          ]}/>
+        </section>
+      </div>
+      <div className="settlement-summary-total">
+        <Statistic title="本期应收（扣补后）" value={totals.receivable} precision={2} prefix="¥"/>
         {!locked && <Space wrap>
           <Button disabled={busy} onClick={save}>保存草稿</Button>
           <Button type="primary" disabled={busy || dirty || view.revision === 0} onClick={confirm}>确认月结</Button>
         </Space>}
         {locked && <Typography.Text type="secondary">确认时间 {view.confirmedAt?.replace("T", " ")}</Typography.Text>}
-      </Space>
+      </div>
     </section>
   </>;
 }
