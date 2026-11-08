@@ -60,12 +60,20 @@ class MonthlySettlementServiceTest {
         service = new MonthlySettlementService(bills, customerLocks, customers, reconciliation, prices, unpriced,
                 new ObjectMapper().findAndRegisterModules());
 
-        shipments.put(SEPTEMBER, reconciliation(shipment(1L, 11L, "2026-09-03", "JCD-200-1-02", 50, "100.00"),
-                shipment(1L, 12L, "2026-09-03", UNPRICED_STYLE, 100, null)));
+        shipments.put(SEPTEMBER, reconciliation(shipment(1L, 11L, "2026-09-03", "JCD-200-1-02", 50, "100.00")));
     }
 
     @Test void anUnapprovedQuoteStaysPendingThenTheShipmentCanBeSettledOnce() {
-        View september = close(SEPTEMBER, service.get(SEPTEMBER, CUSTOMER).draft());
+        shipments.put(SEPTEMBER, reconciliation(shipments.get(SEPTEMBER).getDetails().get(0),
+                shipment(1L, 12L, "2026-09-03", UNPRICED_STYLE, 100, null)));
+        View saved = service.save(SEPTEMBER, CUSTOMER, new SaveRequest(0, service.get(SEPTEMBER, CUSTOMER).draft()));
+        var rejected = assertThrows(BusinessException.class, () -> service.confirm(SEPTEMBER, CUSTOMER,
+                new ConfirmRequest(saved.revision(), saved.previewToken())));
+        assertTrue(rejected.getMessage().contains("1 笔出货未确认客户单价"));
+        assertNull(service.get(SEPTEMBER, CUSTOMER).confirmedAt());
+        Draft initial = saved.draft();
+        View september = close(SEPTEMBER, new Draft(initial.preparedOn(), initial.holdRate(), initial.holdBase(),
+                List.of("1:12"), initial.carryKeys(), initial.materials(), initial.adjustments(), initial.refunds()));
         assertEquals(amount("5000.00"), september.statement().totals().goods());
         assertEquals(150, september.statement().totals().shippedPairs());
         var unapproved = september.statement().pending().get(0);
@@ -87,6 +95,22 @@ class MonthlySettlementServiceTest {
 
         shipments.put(SEPTEMBER, reconciliation(shipment(1L, 12L, "2026-09-03", UNPRICED_STYLE, 100, "90.00")));
         assertEquals(september.statement(), service.get(SEPTEMBER, CUSTOMER).statement());
+    }
+
+    @Test void aShipmentWithoutAQuoteRequiresApprovalOrDeferralBeforeClosing() {
+        String style = "JCD-200-9-01";
+        shipments.put(SEPTEMBER, reconciliation(shipment(1L, 13L, "2026-09-03", style, 10, null)));
+        View saved = service.save(SEPTEMBER, CUSTOMER, new SaveRequest(0, service.get(SEPTEMBER, CUSTOMER).draft()));
+        assertEquals("NOT_QUOTED", saved.statement().pending().get(0).priceStatus());
+        assertNull(saved.statement().pending().get(0).quotedPrice());
+        assertThrows(BusinessException.class, () -> service.confirm(SEPTEMBER, CUSTOMER,
+                new ConfirmRequest(saved.revision(), saved.previewToken())));
+
+        shipments.put(SEPTEMBER, reconciliation(shipment(1L, 13L, "2026-09-03", style, 10, "73.00")));
+        View refreshed = service.get(SEPTEMBER, CUSTOMER);
+        View confirmed = service.confirm(SEPTEMBER, CUSTOMER, new ConfirmRequest(refreshed.revision(), refreshed.previewToken()));
+        assertNotNull(confirmed.confirmedAt());
+        assertEquals(amount("730.00"), confirmed.statement().totals().goods());
     }
 
     @Test void holdIsDueTwoBillMonthsLaterAndPartialRefundLeavesABalance() {

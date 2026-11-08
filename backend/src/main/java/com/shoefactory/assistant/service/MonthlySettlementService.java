@@ -95,6 +95,12 @@ public class MonthlySettlementService {
         if (!token(latest).equals(request.previewToken())) {
             throw new BusinessException("出货、价格或返还余额已更新，请刷新核对后再确认");
         }
+        Set<String> deferredKeys = Set.copyOf(draft.deferredKeys());
+        long unconfirmed = latest.pending().stream().filter(row -> YearMonth.from(row.shippingDate()).equals(period)
+                && row.unitPrice() == null && !deferredKeys.contains(row.key())).count();
+        if (unconfirmed > 0) {
+            throw new BusinessException("本期还有 " + unconfirmed + " 笔出货未确认客户单价，请先采用客户单价或标记暂缓");
+        }
         Set<String> carryKeys = Set.copyOf(draft.carryKeys());
         Snapshot locked = new Snapshot(latest.current(), latest.pending(),
                 latest.carryovers().stream().filter(row -> carryKeys.contains(row.key())).toList(),

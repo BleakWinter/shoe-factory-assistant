@@ -2165,6 +2165,10 @@ a {
   border-top: 1px solid #dde3eb;
 }
 
+.settlement-price-warning {
+  margin-top: 12px;
+}
+
 /* Mobile layout: keep the same shell but let controls stack cleanly. */
 @media (max-width: 920px) {
   .app-topbar {

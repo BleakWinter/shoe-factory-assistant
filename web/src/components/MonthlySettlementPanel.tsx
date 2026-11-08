@@ -1,4 +1,4 @@
-import { App, Button, Collapse, Descriptions, Input, InputNumber, Select, Space, Spin, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Collapse, Descriptions, Input, InputNumber, Select, Space, Spin, Statistic, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localToday } from "../api/manualOrderApi";
@@ -86,8 +86,14 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
     ...statement.pending.filter(row => row.shippingDate.slice(0, 7) !== month || row.unitPrice === null),
     ...allCurrent.filter(row => deferred.has(row.key)),
   ];
+  const unconfirmedCurrent = locked ? [] : pending.filter(row => row.shippingDate.slice(0, 7) === month
+    && row.unitPrice === null && !deferred.has(row.key));
+  const quotedCurrent = unconfirmedCurrent.filter(row => row.quotedPrice !== null);
+  const quoteEstimate = quotedCurrent.reduce((sum, row) => sum + cents(row.quotedPrice) * row.quantity, 0);
   const goods = sumCents(current, row => row.amount);
   const carryover = sumCents(statement.carryovers.filter(row => carryKeys.has(row.key)), row => row.amount);
+  const currentForecast = (goods + quoteEstimate) / 100;
+  const totalForecast = (goods + quoteEstimate + carryover) / 100;
   const holdBase = draft.holdBase === null ? goods : cents(draft.holdBase);
   const hold = Number((BigInt(holdBase) * BigInt(cents(draft.holdRate)) + 5000n) / 10000n);
   const materials = draft.materials.reduce((total, row) => total + materialCents(row), 0);
@@ -106,6 +112,14 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   };
 
   function change(patch: Partial<SettlementDraft>) { setDraft(value => value && { ...value, ...patch }); }
+  function toggleDeferred(key: string) {
+    change({ deferredKeys: deferred.has(key) ? draft!.deferredKeys.filter(value => value !== key) : [...deferred, key] });
+  }
+  function deferUnconfirmed() {
+    modal.confirm({ title: `暂缓本期 ${unconfirmedCurrent.length} 笔未确认出货？`, okText: "标为暂缓",
+      content: "暂缓后会从本期货款预估移出。保存草稿并确认月结后，可在后续账期补结。",
+      onOk: () => change({ deferredKeys: [...deferred, ...unconfirmedCurrent.map(row => row.key)] }) });
+  }
   function updateMaterial(index: number, patch: Partial<SettlementMaterial>) {
     change({ materials: draft!.materials.map((row, offset) => offset === index ? { ...row, ...patch } : row) });
   }
@@ -148,7 +162,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   }
 
   function confirm() {
-    if (!view?.previewToken || dirty || !view.revision) return;
+    if (!view?.previewToken || dirty || !view.revision || unconfirmedCurrent.length) return;
     const token = view.previewToken;
     modal.confirm({ title: `确认 ${month} 月结`, okText: "确认月结", cancelText: "继续核对",
       content: `本期应收 ${money(totals.receivable)}。确认后固定当期价格和金额，未结的出货可在后续账期补结。`,
@@ -157,14 +171,19 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
 
   const currentColumns: ColumnsType<SettlementShipment> = [...shipmentColumns, ...priceColumns,
     ...(!locked ? [{ title: "操作", width: 78, render: (_: unknown, row: SettlementShipment) =>
-      <Button type="link" size="small" disabled={!editable} onClick={() => change({ deferredKeys: [...draft.deferredKeys, row.key] })}>暂缓</Button> }] : [])];
+      <Button type="link" size="small" disabled={!editable} onClick={() => toggleDeferred(row.key)}>暂缓</Button> }] : [])];
   const pendingColumns: ColumnsType<SettlementShipment> = [...shipmentColumns,
     { title: "已报单价", dataIndex: "quotedPrice", align: "right", width: 105, render: money },
     { title: "确认单价", dataIndex: "unitPrice", align: "right", width: 105, render: money },
-    { title: "状态", width: 172, render: (_, row) => <Tag color={row.unitPrice === null ? "gold" : "blue"}>{statuses[row.priceStatus]}</Tag> },
-    { title: "操作", width: 105, render: (_, row) => !locked && deferred.has(row.key)
-      ? <Button type="link" size="small" disabled={!editable} onClick={() => change({ deferredKeys: draft.deferredKeys.filter(key => key !== row.key) })}>取消暂缓</Button>
-      : row.quotationId ? <Button type="link" size="small" href={`/price-configs/quotations/${row.quotationId}`} target="_blank" rel="noopener noreferrer">查看报价</Button> : null },
+    { title: "状态", width: 172, render: (_, row) => <Space wrap size={4}>
+      <Tag color={row.unitPrice === null ? "gold" : "blue"}>{statuses[row.priceStatus]}</Tag>
+      {row.unitPrice === null && deferred.has(row.key) && <Tag>已暂缓</Tag>}
+    </Space> },
+    { title: "操作", width: 164, render: (_, row) => <Space wrap size={4}>
+      {row.quotationId && <Button type="link" size="small" href={`/price-configs/quotations/${row.quotationId}`} target="_blank" rel="noopener noreferrer">查看报价</Button>}
+      {!locked && row.shippingDate.slice(0, 7) === month && <Button type="link" size="small" disabled={!editable}
+        onClick={() => toggleDeferred(row.key)}>{deferred.has(row.key) ? "取消暂缓" : "暂缓"}</Button>}
+    </Space> },
   ];
 
   return <>
@@ -188,9 +207,12 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
     </section>
     <section className="page-panel reconciliation-panel">
       <div className="reconciliation-panel-heading"><div><Typography.Title level={4}>待请款</Typography.Title>
-        <Typography.Text type="secondary">{locked ? "确认月结时留待后续请款的记录" : "待批价或本期暂缓的货款暂不计入应收"}</Typography.Text></div>
-        <Button href={`/unpriced-styles?month=${month}&customerId=${customerId}`} target="_blank" rel="noopener noreferrer">查看待定价款号</Button></div>
-      <Table size="small" rowKey="key" columns={pendingColumns} dataSource={pending} pagination={pagination} scroll={{ x: 1110 }}/>
+        <Typography.Text type="secondary">{locked ? "确认月结时留待后续请款的记录" : "本期待批价的出货可按已有报价预估。标为暂缓后移出本期预估。"}</Typography.Text></div>
+        <Space wrap>
+          {unconfirmedCurrent.length > 0 && <Button disabled={!editable} onClick={deferUnconfirmed}>暂缓本期全部未确认项</Button>}
+          <Button href={`/unpriced-styles?month=${month}&customerId=${customerId}`} target="_blank" rel="noopener noreferrer">查看待定价款号</Button>
+        </Space></div>
+      <Table size="small" rowKey="key" columns={pendingColumns} dataSource={pending} pagination={pagination} scroll={{ x: 1180 }}/>
     </section>
     <section className="page-panel reconciliation-panel">
       <div className="reconciliation-panel-heading"><div><Typography.Title level={4}>跨月补结</Typography.Title>
@@ -256,10 +278,19 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
         {!locked && dirty && <Typography.Text type="secondary">未保存的预览</Typography.Text>}</div>
       <div className="settlement-summary-groups">
         <section className="settlement-summary-group" aria-label="货款">
-          <Statistic title="本期货款" value={totals.goods} precision={2} prefix="¥"/>
+          <Statistic title={locked ? "本期货款" : quotedCurrent.length > 0 ? "货款预估合计" : "已确认货款合计"}
+            value={locked ? totals.goods : totalForecast} precision={2} prefix="¥"/>
           <Descriptions size="small" column={1} items={[
-            { key: "carry", label: "跨月补结", children: money(totals.carryover) },
+            ...(!locked ? [
+              { key: "goods", label: "本期已确认货款", children: money(totals.goods) },
+              { key: "estimate", label: "待批价货款预估", children: quotedCurrent.length > 0 ? money(quoteEstimate / 100) : "—" },
+              { key: "subtotal", label: "本期货款小计", children: money(currentForecast) },
+            ] : []),
+            { key: "carry", label: locked ? "跨月补结" : "已选跨月补结", children: money(totals.carryover) },
           ]}/>
+          {unconfirmedCurrent.length > quotedCurrent.length && <Typography.Text type="secondary">
+            {unconfirmedCurrent.length - quotedCurrent.length} 笔暂无完整报价，暂未计入预估
+          </Typography.Text>}
         </section>
         <section className="settlement-summary-group" aria-label="质保金">
           <Typography.Title level={5}>质保金</Typography.Title>
@@ -276,11 +307,14 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
           ]}/>
         </section>
       </div>
+      {unconfirmedCurrent.length > 0 && <Alert className="settlement-price-warning" type="warning" showIcon
+        message={`本期还有 ${unconfirmedCurrent.length} 笔出货未确认单价，请先采用客户单价或标记暂缓。`}/>}
       <div className="settlement-summary-total">
-        <Statistic title="本期应收（扣补后）" value={totals.receivable} precision={2} prefix="¥"/>
+        <Statistic title={unconfirmedCurrent.length ? "已确认部分应收（扣补后）" : "本期应收（扣补后）"}
+          value={totals.receivable} precision={2} prefix="¥"/>
         {!locked && <Space wrap>
           <Button disabled={busy} onClick={save}>保存草稿</Button>
-          <Button type="primary" disabled={busy || dirty || view.revision === 0} onClick={confirm}>确认月结</Button>
+          <Button type="primary" disabled={busy || dirty || view.revision === 0 || unconfirmedCurrent.length > 0} onClick={confirm}>确认月结</Button>
         </Space>}
         {locked && <Typography.Text type="secondary">确认时间 {view.confirmedAt?.replace("T", " ")}</Typography.Text>}
       </div>
