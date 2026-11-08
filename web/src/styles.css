@@ -2737,6 +2737,18 @@ a {
 .quotation-paper-image-box { position: relative; }
 .quotation-paper-image img { position: absolute; inset: 0; width: 100%; height: 100%; padding: 3px 8px; box-sizing: border-box; object-fit: contain; }
 .quotation-print-root { display: none; }
+.quotation-print-root .quotation-paper { zoom: 1 !important; }
+@media screen {
+  /* 打开打印窗口前，先按实际纸张尺寸测量每个单元格。 */
+  body.quotation-printing .quotation-print-root {
+    display: block;
+    position: fixed;
+    top: 0;
+    right: 100%;
+    width: max-content;
+    visibility: hidden;
+  }
+}
 @media (max-width: 1200px) {
   .quotation-editor-grid { grid-template-columns: minmax(0,1fr); }
   .quotation-summary { position: static; }
@@ -2759,7 +2771,7 @@ a {
   body.quotation-printing .quotation-print-root, body.quotation-printing .quotation-print-root * { visibility: visible; }
   .quotation-signed-print-image { display: block; box-sizing: border-box; width: 100%; height: 295mm; padding: 10mm; object-fit: contain; break-inside: avoid; }
   body.quotation-printing .quotation-preview-scroll { overflow: visible; padding: 0; background: none; }
-  body.quotation-printing .quotation-paper { margin: 0; zoom: 1 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.quotation-printing .quotation-paper { margin: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.quotation-printing .quotation-paper tr { break-inside: avoid; }
   body.quotation-printing .quotation-preview-scroll + .quotation-preview-scroll { break-before: page; }
   body.quotation-printing .quotation-print-page + .quotation-print-page { break-before: page; }
