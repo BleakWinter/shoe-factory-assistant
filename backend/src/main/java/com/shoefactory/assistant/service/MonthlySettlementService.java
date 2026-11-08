@@ -22,11 +22,13 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.*;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class MonthlySettlementService {
     private static final BigDecimal ZERO = new BigDecimal("0.00");
+    private static final Pattern LEGACY_REFUND = Pattern.compile("^历史质保金返还｜([1-9][0-9]{3}-(?:0[1-9]|1[0-2]))（(原 Excel [^）]+)）$");
 
     private final MonthlySettlementMapper bills;
     private final CustomerConfigMapper customerLocks;
@@ -66,7 +68,7 @@ public class MonthlySettlementService {
         MonthlySettlement bill = context.bill();
         if (confirmed(bill)) throw new BusinessException("账单已确认，请刷新查看");
         checkRevision(bill, request.revision());
-        Draft draft = request.draft();
+        Draft draft = separateLegacyRefunds(request.draft()).draft();
         Snapshot snapshot = calculate(customerId, period, draft, context.history(), true);
         boolean isNew = bill == null;
         if (isNew) {
@@ -105,6 +107,7 @@ public class MonthlySettlementService {
         Snapshot locked = new Snapshot(latest.current(), latest.pending(),
                 latest.carryovers().stream().filter(row -> carryKeys.contains(row.key())).toList(),
                 latest.refunds().stream().filter(row -> row.amount().signum() > 0).toList(), latest.totals());
+        bill.setDraftJson(write(draft));
         bill.setSnapshotJson(write(locked));
         bill.setConfirmedAt(LocalDateTime.now().withNano(0));
         bill.setRevision(bill.getRevision() + 1);
@@ -182,17 +185,32 @@ public class MonthlySettlementService {
         if (validate && !carryovers.stream().map(Shipment::key).collect(Collectors.toSet()).containsAll(selected)) {
             throw new BusinessException("部分补结明细已入账或单价已变更，请刷新后重新选择");
         }
-        List<Refund> refunds = refunds(period, draft, history, validate);
+        Map<String, BigDecimal> pastHistorical = new HashMap<>();
+        for (ClosedBill previous : history) {
+            previous.historicalRefunds().forEach(row -> pastHistorical.merge(row.originMonth(), row.amount(), BigDecimal::add));
+        }
+        List<Refund> refunds = refunds(period, draft, history, pastHistorical, validate);
         Totals totals = totals(shippedPairs, current, carryovers, refunds, draft, selected);
+        if (validate && pastHistorical.getOrDefault(period.toString(), ZERO).compareTo(totals.hold()) > 0) {
+            throw new BusinessException("本期质保金扣款小于后续账单已录的历史返还金额");
+        }
         return new Snapshot(current, pending, carryovers, refunds, totals);
     }
 
-    private List<Refund> refunds(YearMonth period, Draft draft, List<ClosedBill> history, boolean validate) {
+    private List<Refund> refunds(YearMonth period, Draft draft, List<ClosedBill> history,
+            Map<String, BigDecimal> pastHistorical, boolean validate) {
         Map<Long, BigDecimal> requested = new HashMap<>();
         Set<Long> omitted = Set.copyOf(draft.omittedRefundIds());
         for (RefundInput input : draft.refunds()) {
             if (omitted.contains(input.originId())) throw new BusinessException("本期已移除的质保金不能同时计入返还");
             if (requested.put(input.originId(), input.amount()) != null) throw new BusinessException("同一笔质保金只能录入一次返还");
+        }
+        Map<String, BigDecimal> historical = new HashMap<>();
+        for (HistoricalRefund input : draft.historicalRefunds()) {
+            if (validate && (!YearMonth.parse(input.originMonth()).isBefore(period) || historical.containsKey(input.originMonth()))) {
+                throw new BusinessException("历史质保金返还的原扣款月须早于本期，同一原扣款月在本期合并录入");
+            }
+            historical.merge(input.originMonth(), input.amount(), BigDecimal::add);
         }
         Map<Long, BigDecimal> paid = new HashMap<>();
         for (ClosedBill previous : history) {
@@ -201,14 +219,20 @@ public class MonthlySettlementService {
         List<Refund> available = new ArrayList<>();
         for (ClosedBill previous : history) {
             YearMonth due = YearMonth.parse(previous.month()).plusMonths(2);
-            BigDecimal remaining = previous.snapshot().totals().hold().subtract(paid.getOrDefault(previous.id(), ZERO));
+            BigDecimal remaining = previous.snapshot().totals().hold().subtract(paid.getOrDefault(previous.id(), ZERO))
+                    .subtract(pastHistorical.getOrDefault(previous.month(), ZERO)).max(ZERO);
+            BigDecimal recordedHere = historical.getOrDefault(previous.month(), ZERO);
+            if (validate && recordedHere.compareTo(remaining) > 0) {
+                throw new BusinessException(previous.month() + " 的历史返还不能超过剩余质保金");
+            }
             if (due.isAfter(period) || remaining.signum() <= 0) continue;
             BigDecimal amount = requested.remove(previous.id());
-            if (validate && amount != null && amount.compareTo(remaining) > 0) {
+            BigDecimal remainingAfterHistorical = remaining.subtract(recordedHere);
+            if (validate && amount != null && amount.compareTo(remainingAfterHistorical) > 0) {
                 throw new BusinessException(previous.month() + " 的质保金返还不能超过剩余金额");
             }
             available.add(new Refund(previous.id(), previous.month(), due.toString(), remaining,
-                    amount == null || amount.compareTo(remaining) > 0 ? ZERO : money(amount)));
+                    amount == null || amount.compareTo(remainingAfterHistorical) > 0 ? ZERO : money(amount)));
         }
         if (validate && !requested.isEmpty()) throw new BusinessException("部分质保金已返还或尚未到期，请刷新后重新选择");
         return available;
@@ -220,7 +244,7 @@ public class MonthlySettlementService {
         BigDecimal carry = sum(carryovers.stream().filter(row -> selected.contains(row.key())).toList(), Shipment::amount);
         BigDecimal base = draft.holdBase() == null ? goods : money(draft.holdBase());
         BigDecimal hold = money(base.multiply(draft.holdRate()).movePointLeft(2));
-        BigDecimal refund = sum(refunds, Refund::amount);
+        BigDecimal refund = sum(refunds, Refund::amount).add(sum(draft.historicalRefunds(), HistoricalRefund::amount));
         BigDecimal materials = sum(draft.materials(), item -> money(item.quantity().multiply(item.unitPrice())));
         BigDecimal credits = sum(draft.adjustments().stream().filter(item -> item.type() == AdjustmentType.CREDIT).toList(), Adjustment::amount);
         BigDecimal debits = sum(draft.adjustments().stream().filter(item -> item.type() == AdjustmentType.DEBIT).toList(), Adjustment::amount);
@@ -236,7 +260,7 @@ public class MonthlySettlementService {
                 status, quote == null ? null : quote.id(), quote == null ? null : quote.finalPrice());
     }
 
-    private record ClosedBill(long id, String month, Snapshot snapshot) {}
+    private record ClosedBill(long id, String month, Snapshot snapshot, List<HistoricalRefund> historicalRefunds) {}
     private record Context(MonthlySettlement bill, List<ClosedBill> history) {}
 
     private Context context(Long customerId, String month) {
@@ -246,7 +270,8 @@ public class MonthlySettlementService {
         MonthlySettlement bill = rows.stream().filter(row -> month.equals(row.getBillMonth())).findFirst().orElse(null);
         if (confirmed(bill)) return new Context(bill, List.of());
         return new Context(bill, rows.stream().filter(MonthlySettlementService::confirmed)
-                .map(row -> new ClosedBill(row.getId(), row.getBillMonth(), read(row.getSnapshotJson(), Snapshot.class))).toList());
+                .map(row -> new ClosedBill(row.getId(), row.getBillMonth(), read(row.getSnapshotJson(), Snapshot.class),
+                        draft(row).historicalRefunds())).toList());
     }
 
     private void lockCustomer(Long id) {
@@ -256,19 +281,49 @@ public class MonthlySettlementService {
 
     private Draft defaultDraft(CustomerConfig customer) {
         return new Draft(LocalDate.now(), "DAWEI".equals(customer.getCode()) ? BigDecimal.TEN : ZERO,
-                null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     private View lockedView(MonthlySettlement bill) {
-        return new View(bill.getBillMonth(), bill.getRevision(), bill.getConfirmedAt(), bill.getReceivedOn(), draft(bill),
-                read(bill.getSnapshotJson(), Snapshot.class), null);
+        var converted = separateLegacyRefunds(read(bill.getDraftJson(), Draft.class));
+        Snapshot snapshot = read(bill.getSnapshotJson(), Snapshot.class);
+        if (converted.movedAmount().signum() > 0) {
+            // 旧账仅调整展示分类，确认时的应收金额保持一致。
+            Totals totals = snapshot.totals();
+            var reclassified = new Totals(totals.shippedPairs(), totals.goods(), totals.carryover(), totals.holdBase(), totals.hold(),
+                    totals.refund().add(converted.movedAmount()), totals.materials(), totals.credits().subtract(converted.movedAmount()),
+                    totals.debits(), totals.receivable());
+            snapshot = new Snapshot(snapshot.current(), snapshot.pending(), snapshot.carryovers(), snapshot.refunds(), reclassified);
+        }
+        return new View(bill.getBillMonth(), bill.getRevision(), bill.getConfirmedAt(), bill.getReceivedOn(), converted.draft(), snapshot, null);
     }
 
     private View preview(String month, int revision, Draft draft, Snapshot snapshot) {
         return new View(month, revision, null, null, draft, snapshot, token(snapshot));
     }
 
-    private Draft draft(MonthlySettlement bill) { return read(bill.getDraftJson(), Draft.class); }
+    private Draft draft(MonthlySettlement bill) { return separateLegacyRefunds(read(bill.getDraftJson(), Draft.class)).draft(); }
+
+    private record RefundConversion(Draft draft, BigDecimal movedAmount) {}
+
+    private RefundConversion separateLegacyRefunds(Draft draft) {
+        var refunds = new ArrayList<>(draft.historicalRefunds());
+        List<Adjustment> other = new ArrayList<>();
+        BigDecimal moved = ZERO;
+        for (Adjustment adjustment : draft.adjustments()) {
+            var match = LEGACY_REFUND.matcher(adjustment.reason());
+            if (adjustment.type() == AdjustmentType.CREDIT && match.matches()) {
+                refunds.add(new HistoricalRefund(match.group(1), money(adjustment.amount()), match.group(2)));
+                moved = moved.add(adjustment.amount());
+            } else {
+                other.add(adjustment);
+            }
+        }
+        if (moved.signum() == 0) return new RefundConversion(draft, ZERO);
+        Draft converted = new Draft(draft.preparedOn(), draft.holdRate(), draft.holdBase(), draft.deferredKeys(), draft.carryKeys(),
+                draft.materials(), other, draft.refunds(), refunds, draft.omittedRefundIds());
+        return new RefundConversion(converted, moved);
+    }
     private static boolean confirmed(MonthlySettlement bill) { return bill != null && bill.getConfirmedAt() != null; }
     private static int revision(MonthlySettlement bill) { return bill == null ? 0 : bill.getRevision(); }
 

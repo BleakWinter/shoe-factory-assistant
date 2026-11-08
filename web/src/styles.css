@@ -2169,6 +2169,30 @@ a {
   margin-top: 12px;
 }
 
+.settlement-historical-refunds,
+.settlement-historical-refund {
+  display: grid;
+  gap: 8px;
+}
+
+.settlement-historical-refund-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settlement-historical-refund {
+  padding: 10px 0;
+  border-top: 1px solid #e8edf3;
+}
+
+.settlement-historical-refund-reference {
+  display: grid;
+  gap: 4px;
+  max-width: 640px;
+}
+
 /* Mobile layout: keep the same shell but let controls stack cleanly. */
 @media (max-width: 920px) {
   .app-topbar {

@@ -24,6 +24,10 @@ public final class MonthlySettlementData {
     public record RefundInput(@NotNull @Positive Long originId,
             @NotNull @Positive @Digits(integer = 12, fraction = 2) BigDecimal amount) {}
 
+    public record HistoricalRefund(@NotBlank @Pattern(regexp = "[1-9][0-9]{3}-(0[1-9]|1[0-2])") String originMonth,
+            @NotNull @Positive @Digits(integer = 12, fraction = 2) BigDecimal amount,
+            @NotBlank @Size(max = 180) String reference) {}
+
     public record Draft(@NotNull @PastOrPresent LocalDate preparedOn,
             @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 2) BigDecimal holdRate,
             @PositiveOrZero @Digits(integer = 12, fraction = 2) BigDecimal holdBase,
@@ -32,8 +36,10 @@ public final class MonthlySettlementData {
             @NotNull @Size(max = 500) List<@NotNull @Valid Material> materials,
             @NotNull @Size(max = 500) List<@NotNull @Valid Adjustment> adjustments,
             @NotNull @Size(max = 500) List<@NotNull @Valid RefundInput> refunds,
+            @Size(max = 500) List<@NotNull @Valid HistoricalRefund> historicalRefunds,
             @Size(max = 500) List<@NotNull @Positive Long> omittedRefundIds) {
         public Draft {
+            if (historicalRefunds == null) historicalRefunds = List.of();
             if (omittedRefundIds == null) omittedRefundIds = List.of();
         }
     }

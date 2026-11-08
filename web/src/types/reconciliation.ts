@@ -121,6 +121,12 @@ export interface SettlementAdjustment {
   amount: number | null;
 }
 
+export interface SettlementHistoricalRefund {
+  originMonth: string;
+  amount: number | null;
+  reference: string;
+}
+
 export interface SettlementDraft {
   preparedOn: string;
   holdRate: number;
@@ -130,6 +136,7 @@ export interface SettlementDraft {
   materials: SettlementMaterial[];
   adjustments: SettlementAdjustment[];
   refunds: { originId: number; amount: number }[];
+  historicalRefunds: SettlementHistoricalRefund[];
   omittedRefundIds: number[];
 }
 

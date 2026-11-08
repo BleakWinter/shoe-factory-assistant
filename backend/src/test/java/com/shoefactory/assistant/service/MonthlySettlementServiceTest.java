@@ -31,6 +31,7 @@ class MonthlySettlementServiceTest {
     private final Map<String, MonthlySettlement> rows = new TreeMap<>();
     private final Map<String, MonthlyReconciliationResponse> shipments = new HashMap<>();
     private final CustomerPriceService prices = mock(CustomerPriceService.class);
+    private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     private MonthlySettlementService service;
 
     @BeforeEach void setup() {
@@ -57,8 +58,7 @@ class MonthlySettlementServiceTest {
         var quote = new QuotationSummary(7L, 1, amount("80.00"), LocalDate.of(2026, 9, 5), null, null);
         when(unpriced.priceProgress(eq(CUSTOMER), anyCollection()))
                 .thenReturn(Map.of(UNPRICED_STYLE, new UnpricedShipmentService.QuotationHistory(quote, quote)));
-        service = new MonthlySettlementService(bills, customerLocks, customers, reconciliation, prices, unpriced,
-                new ObjectMapper().findAndRegisterModules());
+        service = new MonthlySettlementService(bills, customerLocks, customers, reconciliation, prices, unpriced, json);
 
         shipments.put(SEPTEMBER, reconciliation(shipment(1L, 11L, "2026-09-03", "JCD-200-1-02", 50, "100.00")));
     }
@@ -73,7 +73,7 @@ class MonthlySettlementServiceTest {
         assertNull(service.get(SEPTEMBER, CUSTOMER).confirmedAt());
         Draft initial = saved.draft();
         View september = close(SEPTEMBER, new Draft(initial.preparedOn(), initial.holdRate(), initial.holdBase(),
-                List.of("1:12"), initial.carryKeys(), initial.materials(), initial.adjustments(), initial.refunds(), List.of()));
+                List.of("1:12"), initial.carryKeys(), initial.materials(), initial.adjustments(), initial.refunds(), initial.historicalRefunds(), List.of()));
         assertEquals(amount("5000.00"), september.statement().totals().goods());
         assertEquals(150, september.statement().totals().shippedPairs());
         var unapproved = september.statement().pending().get(0);
@@ -88,7 +88,7 @@ class MonthlySettlementServiceTest {
         assertEquals(unapproved.key(), october.statement().carryovers().get(0).key());
         Draft octDraft = october.draft();
         View closedOctober = close(OCTOBER, new Draft(octDraft.preparedOn(), octDraft.holdRate(), null,
-                List.of(), List.of(unapproved.key()), List.of(), List.of(), List.of(), List.of()));
+                List.of(), List.of(unapproved.key()), List.of(), List.of(), List.of(), List.of(), List.of()));
         assertEquals(amount("8000.00"), closedOctober.statement().totals().carryover());
         assertEquals(0, closedOctober.statement().totals().shippedPairs());
         assertTrue(service.get(NOVEMBER, CUSTOMER).statement().carryovers().isEmpty());
@@ -124,7 +124,7 @@ class MonthlySettlementServiceTest {
         assertEquals(amount("500.00"), due.remaining());
         Draft original = november.draft();
         View closed = close(NOVEMBER, new Draft(original.preparedOn(), original.holdRate(), null, List.of(), List.of(),
-                List.of(), List.of(), List.of(new RefundInput(due.originId(), amount("300.00"))), List.of()));
+                List.of(), List.of(), List.of(new RefundInput(due.originId(), amount("300.00"))), List.of(), List.of()));
         assertEquals(amount("300.00"), closed.statement().totals().refund());
         assertEquals(amount("200.00"), service.get("2026-12", CUSTOMER).statement().refunds().get(0).remaining());
     }
@@ -135,11 +135,11 @@ class MonthlySettlementServiceTest {
         long originId = november.statement().refunds().get(0).originId();
         Draft original = november.draft();
         Draft conflicting = new Draft(original.preparedOn(), original.holdRate(), null, List.of(), List.of(), List.of(), List.of(),
-                List.of(new RefundInput(originId, amount("100.00"))), List.of(originId));
+                List.of(new RefundInput(originId, amount("100.00"))), List.of(), List.of(originId));
         assertThrows(BusinessException.class, () -> service.save(NOVEMBER, CUSTOMER, new SaveRequest(0, conflicting)));
 
         Draft omitted = new Draft(original.preparedOn(), original.holdRate(), null, List.of(), List.of(), List.of(), List.of(),
-                List.of(), List.of(originId));
+                List.of(), List.of(), List.of(originId));
         View closed = close(NOVEMBER, omitted);
         assertEquals(List.of(originId), closed.draft().omittedRefundIds());
         assertEquals(amount("0.00"), closed.statement().totals().refund());
@@ -171,9 +171,63 @@ class MonthlySettlementServiceTest {
         View confirmed = close(SEPTEMBER, new Draft(draft.preparedOn(), draft.holdRate(), amount("4000"), List.of(), List.of(),
                 List.of(new Material(LocalDate.of(2026, 9, 1), "贴标", amount("3.5000"), "卷", amount("1.2300"), "MAT-1")),
                 List.of(new Adjustment(AdjustmentType.CREDIT, "退回材料", amount("20.00")),
-                        new Adjustment(AdjustmentType.DEBIT, "打天皮", amount("10.00"))), List.of(), List.of()));
+                        new Adjustment(AdjustmentType.DEBIT, "打天皮", amount("10.00"))), List.of(), List.of(), List.of()));
         assertEquals(amount("4.31"), confirmed.statement().totals().materials());
         assertEquals(amount("4605.69"), confirmed.statement().totals().receivable());
+    }
+
+    @Test void importedLegacyRefundAppearsUnderDepositsAndReducesTheAvailableBalance() throws Exception {
+        close(SEPTEMBER, service.get(SEPTEMBER, CUSTOMER).draft());
+        Draft november = service.get(NOVEMBER, CUSTOMER).draft();
+        service.save(NOVEMBER, CUSTOMER, new SaveRequest(0, november));
+        writeLegacyAdjustment(NOVEMBER, new Adjustment(AdjustmentType.CREDIT, "退料", amount("20.00")));
+
+        View preview = service.get(NOVEMBER, CUSTOMER);
+        assertEquals(List.of(new HistoricalRefund(SEPTEMBER, amount("300.00"), "原 Excel 2026-11 11月对账单!I99")),
+                preview.draft().historicalRefunds());
+        assertEquals(1, preview.draft().adjustments().size());
+        assertEquals("退料", preview.draft().adjustments().get(0).reason());
+        assertEquals(0, amount("20.00").compareTo(preview.draft().adjustments().get(0).amount()));
+        assertEquals(amount("300.00"), preview.statement().totals().refund());
+        assertEquals(amount("320.00"), preview.statement().totals().receivable());
+
+        Draft draft = preview.draft();
+        long originId = preview.statement().refunds().get(0).originId();
+        var overpayment = new Draft(draft.preparedOn(), draft.holdRate(), draft.holdBase(), draft.deferredKeys(), draft.carryKeys(),
+                draft.materials(), draft.adjustments(), List.of(new RefundInput(originId, amount("200.01"))), draft.historicalRefunds(), List.of());
+        assertThrows(BusinessException.class, () -> service.save(NOVEMBER, CUSTOMER, new SaveRequest(preview.revision(), overpayment)));
+        service.confirm(NOVEMBER, CUSTOMER, new ConfirmRequest(preview.revision(), preview.previewToken()));
+
+        assertEquals(amount("300.00"), service.get(NOVEMBER, CUSTOMER).statement().totals().refund());
+        assertEquals(amount("200.00"), service.get("2026-12", CUSTOMER).statement().refunds().get(0).remaining());
+        assertTrue(json.readTree(rows.get(NOVEMBER).getDraftJson()).get("historicalRefunds").isArray());
+    }
+
+    @Test void viewingAnAlreadyConfirmedLegacyRefundPreservesTheLockedReceivable() throws Exception {
+        close(SEPTEMBER, service.get(SEPTEMBER, CUSTOMER).draft());
+        Draft november = service.get(NOVEMBER, CUSTOMER).draft();
+        var original = new Draft(november.preparedOn(), november.holdRate(), null, List.of(), List.of(), List.of(),
+                List.of(new Adjustment(AdjustmentType.CREDIT, "旧版以其他加款存入", amount("300.00"))), List.of(), List.of(), List.of());
+        View locked = close(NOVEMBER, original);
+        writeLegacyAdjustment(NOVEMBER);
+        String originalSnapshot = rows.get(NOVEMBER).getSnapshotJson();
+
+        View readback = service.get(NOVEMBER, CUSTOMER);
+        assertEquals(amount("300.00"), readback.statement().totals().refund());
+        assertEquals(amount("0.00"), readback.statement().totals().credits());
+        assertEquals(locked.statement().totals().receivable(), readback.statement().totals().receivable());
+        assertEquals(originalSnapshot, rows.get(NOVEMBER).getSnapshotJson());
+        assertEquals(amount("200.00"), service.get("2026-12", CUSTOMER).statement().refunds().get(0).remaining());
+    }
+
+    private void writeLegacyAdjustment(String month, Adjustment... other) throws Exception {
+        MonthlySettlement row = rows.get(month);
+        var legacy = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(row.getDraftJson());
+        legacy.remove("historicalRefunds");
+        List<Adjustment> adjustments = new ArrayList<>(List.of(other));
+        adjustments.add(new Adjustment(AdjustmentType.CREDIT, "历史质保金返还｜2026-09（原 Excel 2026-11 11月对账单!I99）", amount("300.00")));
+        legacy.set("adjustments", json.valueToTree(adjustments));
+        row.setDraftJson(json.writeValueAsString(legacy));
     }
 
     private View close(String month, Draft draft) {

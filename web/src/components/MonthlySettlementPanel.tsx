@@ -3,7 +3,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localToday } from "../api/manualOrderApi";
 import { confirmMonthlySettlement, fetchMonthlySettlement, recordMonthlySettlementReceipt, saveMonthlySettlement } from "../api/reconciliationApi";
-import type { MonthlySettlement, SettlementAdjustment, SettlementDraft, SettlementMaterial, SettlementRefund, SettlementShipment } from "../types/reconciliation";
+import type { MonthlySettlement, SettlementAdjustment, SettlementDraft, SettlementHistoricalRefund, SettlementMaterial, SettlementRefund, SettlementShipment } from "../types/reconciliation";
 
 const yuan = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" });
 const money = (value: number | null) => value === null ? "—" : yuan.format(value);
@@ -44,7 +44,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   const [error, setError] = useState("");
   const sequence = useRef(0);
   const apply = useCallback((result: MonthlySettlement) => {
-    const loaded = { ...result.draft, omittedRefundIds: result.draft.omittedRefundIds ?? [] };
+    const loaded = { ...result.draft, historicalRefunds: result.draft.historicalRefunds ?? [], omittedRefundIds: result.draft.omittedRefundIds ?? [] };
     setView({ ...result, draft: loaded });
     setDraft(loaded);
     setReceipt(result.receivedOn || "");
@@ -102,11 +102,16 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   const omittedRefundIds = new Set(draft.omittedRefundIds);
   const visibleRefunds = statement.refunds.filter(row => !omittedRefundIds.has(row.originId));
   const omittedRefunds = statement.refunds.filter(row => omittedRefundIds.has(row.originId));
+  const historicalByMonth = new Map<string, number>();
+  for (const row of draft.historicalRefunds) {
+    historicalByMonth.set(row.originMonth, (historicalByMonth.get(row.originMonth) || 0) + cents(row.amount));
+  }
+  const refundableAmount = (row: SettlementRefund) => Math.max(0, cents(row.remaining) - (historicalByMonth.get(row.originMonth) || 0)) / 100;
   const validRefunds = draft.refunds.filter(row => {
     const available = availableRefunds.get(row.originId);
-    return available && row.amount <= available.remaining;
+    return available && row.amount <= refundableAmount(available);
   });
-  const refund = sumCents(validRefunds, row => row.amount);
+  const refund = sumCents(validRefunds, row => row.amount) + sumCents(draft.historicalRefunds, row => row.amount);
   const credits = sumCents(draft.adjustments.filter(row => row.type === "CREDIT"), row => row.amount);
   const debits = sumCents(draft.adjustments.filter(row => row.type === "DEBIT"), row => row.amount);
   const totals = locked ? statement.totals : {
@@ -139,6 +144,9 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   function updateAdjustment(index: number, patch: Partial<SettlementAdjustment>) {
     change({ adjustments: draft!.adjustments.map((row, offset) => offset === index ? { ...row, ...patch } : row) });
   }
+  function updateHistoricalRefund(index: number, patch: Partial<SettlementHistoricalRefund>) {
+    change({ historicalRefunds: draft!.historicalRefunds.map((row, offset) => offset === index ? { ...row, ...patch } : row) });
+  }
 
   async function write(action: () => Promise<MonthlySettlement>, success: string) {
     const request = ++sequence.current;
@@ -159,6 +167,11 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
     if (!draft.preparedOn || draft.materials.some(row => !row.date || !row.name.trim() || !(Number(row.quantity) > 0) || row.unitPrice === null)
         || draft.adjustments.some(row => !row.reason.trim() || !(Number(row.amount) > 0))) {
       message.warning("请填完整制单日期、领料和其他补扣明细");
+      return;
+    }
+    if (draft.historicalRefunds.some(row => !row.originMonth || row.originMonth >= month || !(Number(row.amount) > 0) || !row.reference.trim())
+        || historicalByMonth.size !== draft.historicalRefunds.length) {
+      message.warning("请填写历史返还的原扣款月、金额和依据，同一原扣款月在本期合并录入");
       return;
     }
     const availableCarry = new Set(statement.carryovers.map(row => row.key));
@@ -243,7 +256,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
     </section>
 
     <section className="page-panel reconciliation-panel">
-      <Collapse items={[
+      <Collapse defaultActiveKey={draft.historicalRefunds.length ? ["deposit"] : []} items={[
         { key: "deposit", label: "质保金扣款和返还", children: <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Space wrap>
             <label>扣款比例 <InputNumber aria-label="质保金扣款比例" min={0} max={100} precision={2} addonAfter="%" value={draft.holdRate} disabled={!editable}
@@ -257,7 +270,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
               { title: "原扣款月", dataIndex: "originMonth" }, { title: "应返账期", dataIndex: "dueMonth" },
               { title: locked ? "返还前余额" : "待返余额", dataIndex: "remaining", align: "right", render: money },
               { title: "本期实际返还", render: (_, row) => locked ? money(row.amount) : <InputNumber aria-label={`${row.originMonth} 质保金返还金额`}
-                min={0} max={row.remaining} precision={2} disabled={!editable} placeholder="0.00"
+                min={0} max={refundableAmount(row)} precision={2} disabled={!editable || refundableAmount(row) === 0} placeholder="0.00"
                 value={draft.refunds.find(item => item.originId === row.originId)?.amount ?? null} onChange={amount => change({ refunds: [
                   ...draft.refunds.filter(item => item.originId !== row.originId), ...(amount && amount > 0 ? [{ originId: row.originId, amount }] : []),
                 ] })}/> },
@@ -274,6 +287,30 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
               </Space>)}
             </Space>,
           }]}/>}
+          {(draft.historicalRefunds.length > 0 || !locked) && <div className="settlement-historical-refunds">
+            <div className="settlement-historical-refund-heading">
+              <Typography.Text strong>历史账单返还</Typography.Text>
+              {!locked && <Button size="small" disabled={!editable} onClick={() => change({ historicalRefunds: [...draft.historicalRefunds, { originMonth: "", amount: null, reference: "" }] })}>添加历史返还</Button>}
+            </div>
+            {draft.historicalRefunds.map((row, index) => <div className="settlement-historical-refund" key={index}>
+              {locked ? <>
+                <Space wrap><Typography.Text>原扣款月 {row.originMonth}</Typography.Text><Typography.Text strong>返还 {money(row.amount)}</Typography.Text></Space>
+                <Typography.Text type="secondary">{row.reference}</Typography.Text>
+              </> : <>
+                <Space wrap>
+                  <label>原扣款月 <Input type="month" aria-label="历史返还原扣款月" value={row.originMonth} max={month}
+                    style={{ width: 155 }} disabled={!editable} onChange={event => updateHistoricalRefund(index, { originMonth: event.target.value })}/></label>
+                  <label>返还金额 <InputNumber aria-label="历史返还金额" prefix="¥" min={0.01} max={999999999999.99}
+                    precision={2} value={row.amount} disabled={!editable} onChange={amount => updateHistoricalRefund(index, { amount })}/></label>
+                  <Button size="small" disabled={!editable} onClick={() => change({ historicalRefunds: draft.historicalRefunds.filter((_, offset) => offset !== index) })}>移除</Button>
+                </Space>
+                <label className="settlement-historical-refund-reference">原账单依据
+                  <Input.TextArea aria-label="历史返还原账单依据" autoSize={{ minRows: 1 }} maxLength={180} value={row.reference}
+                    disabled={!editable} onChange={event => updateHistoricalRefund(index, { reference: event.target.value })}/>
+                </label>
+              </>}
+            </div>)}
+          </div>}
         </Space> },
         { key: "materials", label: `领料扣款 · ${draft.materials.length} 笔`, children: <Space direction="vertical" style={{ width: "100%" }}>
           {draft.materials.map((row, index) => <Space wrap key={index}>
