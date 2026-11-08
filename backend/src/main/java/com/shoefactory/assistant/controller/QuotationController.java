@@ -31,9 +31,10 @@ public class QuotationController {
             @RequestParam(required=false) String developmentNos,
             @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(defaultValue="false") boolean unadoptedOnly,
             @RequestParam(defaultValue="1") long page,
             @RequestParam(defaultValue="20") long size) {
-        return ApiResponse.ok(service.list(customerId,developmentNo,developmentNos,startDate,endDate,page,size));
+        return ApiResponse.ok(service.list(customerId,developmentNo,developmentNos,startDate,endDate,unadoptedOnly,page,size));
     }
     @GetMapping("/development-options")
     public ApiResponse<java.util.List<DevelopmentNoOptionResponse>> developmentOptions(@RequestParam(required=false) Long customerId) {

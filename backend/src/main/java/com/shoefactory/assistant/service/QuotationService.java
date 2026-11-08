@@ -38,12 +38,12 @@ public class QuotationService {
     }
     @Transactional(readOnly = true)
     public PageResponse<QuotationResponse> list(Long customerId, String style, String developmentNos,
-                                              LocalDate startDate, LocalDate endDate, long page, long size) {
+                                              LocalDate startDate, LocalDate endDate, boolean unadoptedOnly, long page, long size) {
         if (startDate!=null && endDate!=null && startDate.isAfter(endDate)) throw new BusinessException("开始日期不能晚于结束日期");
         var styles = developmentNos==null ? List.<String>of() : Arrays.stream(developmentNos.split(","))
                 .map(CustomerPriceService::normalize).filter(value->!value.isBlank()).distinct().toList();
         var result = quotations.listLatest(new Page<>(Math.max(1,page),Math.max(1,Math.min(size,100))),
-                customerId,CustomerPriceService.normalize(style),styles,startDate,endDate);
+                customerId,CustomerPriceService.normalize(style),styles,startDate,endDate,unadoptedOnly);
         var names = customers.list().stream().collect(Collectors.toMap(CustomerConfig::getId,CustomerConfig::getName));
         var currentPrices = prices.prices();
         return PageResponse.from(result,result.getRecords().stream().map(q -> response(q,q.getVersionNo(),

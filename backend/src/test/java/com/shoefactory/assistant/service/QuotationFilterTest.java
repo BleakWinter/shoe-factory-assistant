@@ -33,39 +33,43 @@ class QuotationFilterTest {
         configuration.addMapper(ShoeQuotationMapper.class);
     }
 
-    private BoundSql query(String method,Long customerId,List<String> styles,LocalDate startDate,LocalDate endDate) {
+    private BoundSql query(String method,Long customerId,List<String> styles,LocalDate startDate,LocalDate endDate,boolean unadoptedOnly) {
         Map<String,Object> params = new HashMap<>();
         params.put("customerId",customerId);params.put("style","");params.put("styles",styles);
         params.put("startDate",startDate);params.put("endDate",endDate);
+        params.put("unadoptedOnly",unadoptedOnly);
         return configuration.getMappedStatement(ShoeQuotationMapper.class.getName()+"."+method).getBoundSql(params);
     }
 
-    @Test void actualMapperFiltersLatestVersionsByExactStylesAndInclusiveQuotationDates() {
+    @Test void actualMapperFiltersLatestVersionsByStylesDatesAndAdoption() {
         var date = LocalDate.of(2026,10,11);
-        var bound = query("listLatest",2L,List.of("JCD-253-1-01","RV-253-1-01"),date,date);
+        var bound = query("listLatest",2L,List.of("JCD-253-1-01","RV-253-1-01"),date,date,true);
         String sql = bound.getSql().replaceAll("\\s+"," ");
         assertTrue(sql.contains("q.development_no IN ( ? , ? )"),sql);
         assertFalse(sql.contains("LIKE"));
         assertTrue(sql.contains("q.quotation_date>=?"),sql);
         assertTrue(sql.contains("q.quotation_date<=?"),sql);
+        assertTrue(sql.contains("AND q.adopted_at IS NULL"),sql);
         assertFalse(sql.contains("q.created_at>="));
         assertTrue(sql.contains("WHERE newer.version_group=q.version_group AND newer.version_no>q.version_no)"),sql);
-        // 最新版本判断不受日期筛选影响，不能用符合日期的旧版本代替最新版本。
+        // 最新版本判断独立于日期和采用状态，避免筛选时回退到旧版本。
         var inner = sql.substring(sql.indexOf("WHERE newer."),sql.indexOf(")"));
         assertFalse(inner.contains("quotation_date"));
+        assertFalse(inner.contains("adopted_at"));
         assertEquals(5,bound.getParameterMappings().size());
         assertEquals("JCD-253-1-01",bound.getAdditionalParameter(bound.getParameterMappings().get(1).getProperty()));
         assertEquals("RV-253-1-01",bound.getAdditionalParameter(bound.getParameterMappings().get(2).getProperty()));
     }
 
     @Test void clearedDatesAndStylesRemoveRestrictionsAndOneDateBoundWorks() {
-        String all = query("listLatest",null,List.of(),null,null).getSql();
+        String all = query("listLatest",null,List.of(),null,null,false).getSql();
         assertFalse(all.contains("quotation_date"));assertFalse(all.contains("development_no IN"));
         assertFalse(all.contains("q.customer_id="));
+        assertFalse(all.contains("adopted_at"));
         var date = LocalDate.of(2026,10,11);
-        String start = query("listLatest",null,List.of(),date,null).getSql();
+        String start = query("listLatest",null,List.of(),date,null,false).getSql();
         assertTrue(start.contains("q.quotation_date>=?"));assertFalse(start.contains("q.quotation_date<=?"));
-        String end = query("listLatest",null,List.of(),null,date).getSql();
+        String end = query("listLatest",null,List.of(),null,date,false).getSql();
         assertTrue(end.contains("q.quotation_date<=?"));assertFalse(end.contains("q.quotation_date>=?"));
     }
 
@@ -76,25 +80,26 @@ class QuotationFilterTest {
         assertEquals(List.of("JCD-253-1-01","JCD-253-1-02"),options.get(0).getChildren().get(0).getChildren()
                 .stream().map(option->option.getValue()).toList());
         verifyNoInteractions(prices);
-        String sql = query("listLatestDevelopmentNos",2L,List.of(),null,null).getSql();
+        String sql = query("listLatestDevelopmentNos",2L,List.of(),null,null,false).getSql();
         assertTrue(sql.contains("FROM shoe_quotation"));assertTrue(sql.contains("q.customer_id=?"));
         assertTrue(sql.contains("newer.version_no>q.version_no"));assertFalse(sql.contains("quotation_date"));
     }
 
     @Test void listNormalizesMultipleFullStylesBeforePassingThemToMapper() {
         var date = LocalDate.of(2026,10,11);
-        when(mapper.listLatest(any(),any(),anyString(),anyList(),any(),any())).thenAnswer(call->{
+        when(mapper.listLatest(any(),any(),anyString(),anyList(),any(),any(),anyBoolean())).thenAnswer(call->{
             assertEquals(2L,call.<Long>getArgument(1));assertEquals("",call.getArgument(2));
             assertEquals(List.of("JCD-253-1-01","RV-253-1-01"),call.getArgument(3));
             assertEquals(date,call.getArgument(4));assertEquals(date,call.getArgument(5));
+            assertTrue(call.<Boolean>getArgument(6));
             return call.getArgument(0);
         });
-        assertEquals(0,service.list(2L,null," jcd-253-1-01, RV-253-1-01, jcd-253-1-01, ",date,date,1,20).getTotal());
+        assertEquals(0,service.list(2L,null," jcd-253-1-01, RV-253-1-01, jcd-253-1-01, ",date,date,true,1,20).getTotal());
     }
 
     @Test void reversedDatesDoNotQueryOrWritePrices() {
         var date = LocalDate.of(2026,10,11);
-        assertThrows(BusinessException.class,()->service.list(null,null,null,date,date.minusDays(1),1,20));
+        assertThrows(BusinessException.class,()->service.list(null,null,null,date,date.minusDays(1),false,1,20));
         verifyNoInteractions(mapper,prices);
     }
 }

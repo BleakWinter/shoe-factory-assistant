@@ -1,7 +1,7 @@
 import request from "../utils/request";
 import type { DevelopmentNoOption } from "../types/order";
 import type { Decimal, Quotation, QuotationDraft, QuotationPage } from "../types/quotation";
-export async function fetchQuotations(params: { customerId?: number; developmentNos?: string; startDate?: string; endDate?: string; page: number; size: number }) {
+export async function fetchQuotations(params: { customerId?: number; developmentNos?: string; startDate?: string; endDate?: string; unadoptedOnly?: boolean; page: number; size: number }) {
   return (await request.get<QuotationPage>("/quotations", { params })).data;
 }
 export async function fetchQuotationDevelopmentNoOptions(customerId?: number) {

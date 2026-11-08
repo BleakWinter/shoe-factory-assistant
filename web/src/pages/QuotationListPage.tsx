@@ -1,5 +1,5 @@
 import { CopyOutlined, PrinterOutlined } from "@ant-design/icons";
-import { App, Button, Cascader, Image, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Cascader, Checkbox, Image, Input, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchQuotation, fetchQuotationDevelopmentNoOptions, fetchQuotations } from "../api/quotationApi";
@@ -19,6 +19,7 @@ export default function QuotationListPage() {
   const [developmentNoOptions, setDevelopmentNoOptions] = useState<DevelopmentNoOption[]>([]);
   const [optionLoading, setOptionLoading] = useState(false);
   const [startDate, setStartDate] = useState(today), [endDate, setEndDate] = useState(today);
+  const [unadoptedOnly, setUnadoptedOnly] = useState(false);
   const [page, setPage] = useState(1), [rows, setRows] = useState<Quotation[]>([]), [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false), [copying, setCopying] = useState<number>();
   const [selectedIds, setSelectedIds] = useState<number[]>([]), [printLoading, setPrintLoading] = useState(false);
@@ -36,19 +37,19 @@ export default function QuotationListPage() {
     const current = ++sequence.current; setLoading(true);
     try {
       const developmentNos = developmentNoPaths.map(path => path[path.length - 1]).filter(Boolean).join(",");
-      const data = await fetchQuotations({ customerId, developmentNos, startDate: startDate || undefined, endDate: endDate || undefined, page, size: 20 });
+      const data = await fetchQuotations({ customerId, developmentNos, startDate: startDate || undefined, endDate: endDate || undefined, unadoptedOnly, page, size: 20 });
       if (current === sequence.current) { setRows(data.records); setTotal(data.total); }
     }
     catch(error) { if (current === sequence.current) { setRows([]); setTotal(0); message.error(error instanceof Error ? error.message : "报价加载失败"); } }
     finally { if (current === sequence.current) setLoading(false); }
-  }, [customerId, developmentNoPaths, startDate, endDate, page, message]);
+  }, [customerId, developmentNoPaths, startDate, endDate, unadoptedOnly, page, message]);
   useEffect(() => { void load(); return () => { sequence.current++; }; }, [load]);
   useEffect(() => { void loadOptions(); return () => { optionSequence.current++; }; }, [loadOptions]);
-  useEffect(() => { setSelectedIds([]); }, [customerId, developmentNoPaths, startDate, endDate]);
+  useEffect(() => { setSelectedIds([]); }, [customerId, developmentNoPaths, startDate, endDate, unadoptedOnly]);
   useEffect(() => () => { printSequence.current++; }, []);
   const finishPrint = useCallback(() => { printBusy.current = false; setPrintLoading(false); setPrintQuotes([]); }, []);
   function resetFilters() {
-    setCustomerId(undefined); setDevelopmentNoPaths([]); setPage(1);
+    setCustomerId(undefined); setDevelopmentNoPaths([]); setUnadoptedOnly(false); setPage(1);
     const date = today(); setStartDate(date); setEndDate(date);
   }
   async function copy(row: Quotation) {
@@ -100,6 +101,8 @@ export default function QuotationListPage() {
           onChange={e => { setEndDate(e.target.value); setPage(1); }}/>
         <Button disabled={printLoading} onClick={() => { setStartDate(""); setEndDate(""); setPage(1); }}>全部时间</Button>
       </Space>
+      <Checkbox checked={unadoptedOnly} disabled={printLoading}
+        onChange={event => { setUnadoptedOnly(event.target.checked); setPage(1); }}>仅看未应用到客户标价</Checkbox>
       <Button disabled={printLoading} onClick={resetFilters}>重置</Button>
       <Typography.Text type="secondary">每份报价显示最新版本</Typography.Text></Space>
       <div className="quotation-selection-bar"><Space wrap>

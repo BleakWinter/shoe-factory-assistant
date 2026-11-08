@@ -25,12 +25,14 @@ public interface ShoeQuotationMapper extends BaseMapper<ShoeQuotation> {
             </if>
             <if test="startDate != null">AND q.quotation_date&gt;=#{startDate}</if>
             <if test="endDate != null">AND q.quotation_date&lt;=#{endDate}</if>
+            <if test="unadoptedOnly">AND q.adopted_at IS NULL</if>
             ORDER BY q.created_at DESC,q.id DESC
             </script>
             """)
     Page<ShoeQuotation> listLatest(Page<ShoeQuotation> page, @Param("customerId") Long customerId,
                                    @Param("style") String style, @Param("styles") List<String> styles,
-                                   @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+                                   @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate,
+                                   @Param("unadoptedOnly") boolean unadoptedOnly);
 
     @Select("""
             <script>
