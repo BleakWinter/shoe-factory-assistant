@@ -80,14 +80,14 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   const { statement } = view;
   const deferred = new Set(draft.deferredKeys);
   const carryKeys = new Set(draft.carryKeys);
-  const allCurrent = [...statement.current, ...statement.pending.filter(row => row.shippingDate.slice(0, 7) === month && row.unitPrice !== null)];
+  const currentPending = statement.pending.filter(row => row.shippingDate.slice(0, 7) === month);
+  const allCurrent = [...statement.current, ...currentPending.filter(row => row.unitPrice !== null)];
   const current = locked ? statement.current : allCurrent.filter(row => !deferred.has(row.key));
-  const pending = locked ? statement.pending : [
-    ...statement.pending.filter(row => row.shippingDate.slice(0, 7) !== month || row.unitPrice === null),
+  const unconfirmedCurrent = locked ? [] : currentPending.filter(row => row.unitPrice === null && !deferred.has(row.key));
+  const deferredCurrent = locked ? [] : [
+    ...currentPending.filter(row => row.unitPrice === null && deferred.has(row.key)),
     ...allCurrent.filter(row => deferred.has(row.key)),
   ];
-  const unconfirmedCurrent = locked ? [] : pending.filter(row => row.shippingDate.slice(0, 7) === month
-    && row.unitPrice === null && !deferred.has(row.key));
   const quotedCurrent = unconfirmedCurrent.filter(row => row.quotedPrice !== null);
   const quoteEstimate = quotedCurrent.reduce((sum, row) => sum + cents(row.quotedPrice) * row.quantity, 0);
   const goods = sumCents(current, row => row.amount);
@@ -149,7 +149,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
       return;
     }
     const availableCarry = new Set(statement.carryovers.map(row => row.key));
-    const availableCurrent = new Set([...allCurrent, ...statement.pending.filter(row => row.shippingDate.slice(0, 7) === month)].map(row => row.key));
+    const availableCurrent = new Set([...allCurrent, ...currentPending].map(row => row.key));
     const cleaned = { ...draft, carryKeys: draft.carryKeys.filter(key => availableCarry.has(key)),
       deferredKeys: draft.deferredKeys.filter(key => availableCurrent.has(key)), refunds: validRefunds };
     if (cleaned.carryKeys.length !== draft.carryKeys.length || cleaned.deferredKeys.length !== draft.deferredKeys.length
@@ -181,7 +181,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
     </Space> },
     { title: "操作", width: 164, render: (_, row) => <Space wrap size={4}>
       {row.quotationId && <Button type="link" size="small" href={`/price-configs/quotations/${row.quotationId}`} target="_blank" rel="noopener noreferrer">查看报价</Button>}
-      {!locked && row.shippingDate.slice(0, 7) === month && <Button type="link" size="small" disabled={!editable}
+      {!locked && <Button type="link" size="small" disabled={!editable}
         onClick={() => toggleDeferred(row.key)}>{deferred.has(row.key) ? "取消暂缓" : "暂缓"}</Button>}
     </Space> },
   ];
@@ -206,13 +206,18 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
       <Table size="small" rowKey="key" columns={currentColumns} dataSource={current} pagination={pagination} scroll={{ x: 950 }}/>
     </section>
     <section className="page-panel reconciliation-panel">
-      <div className="reconciliation-panel-heading"><div><Typography.Title level={4}>待请款</Typography.Title>
-        <Typography.Text type="secondary">{locked ? "确认月结时留待后续请款的记录" : "本期待批价的出货可按已有报价预估。标为暂缓后移出本期预估。"}</Typography.Text></div>
+      <div className="reconciliation-panel-heading"><div><Typography.Title level={4}>{locked ? "本期转待请款" : "本期待定价款号"}</Typography.Title>
+        <Typography.Text type="secondary">{locked ? "本期出货中转到后续账期请款的明细" : "当前账单需要报价或确认客户单价的出货"}</Typography.Text></div>
         <Space wrap>
           {unconfirmedCurrent.length > 0 && <Button disabled={!editable} onClick={deferUnconfirmed}>暂缓本期全部未确认项</Button>}
-          <Button href={`/unpriced-styles?month=${month}&customerId=${customerId}`} target="_blank" rel="noopener noreferrer">查看待定价款号</Button>
+          <Button href={`/unpriced-styles?month=${month}&customerId=${customerId}`} target="_blank" rel="noopener noreferrer">查看本月定价进度</Button>
         </Space></div>
-      <Table size="small" rowKey="key" columns={pendingColumns} dataSource={pending} pagination={pagination} scroll={{ x: 1180 }}/>
+      <Table size="small" rowKey="key" columns={pendingColumns} dataSource={locked ? currentPending : unconfirmedCurrent}
+        pagination={pagination} scroll={{ x: 1180 }} locale={{ emptyText: locked ? "本期没有转待请款的明细" : "本期没有待定价出货" }}/>
+      {deferredCurrent.length > 0 && <Collapse style={{ marginTop: 12 }} items={[{
+        key: "deferred", label: `本期已暂缓 · ${deferredCurrent.length} 笔`,
+        children: <Table size="small" rowKey="key" columns={pendingColumns} dataSource={deferredCurrent} pagination={pagination} scroll={{ x: 1180 }}/>,
+      }]}/>}
     </section>
     <section className="page-panel reconciliation-panel">
       <div className="reconciliation-panel-heading"><div><Typography.Title level={4}>跨月补结</Typography.Title>
