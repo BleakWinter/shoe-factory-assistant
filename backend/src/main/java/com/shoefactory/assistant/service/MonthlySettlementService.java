@@ -182,14 +182,16 @@ public class MonthlySettlementService {
         if (validate && !carryovers.stream().map(Shipment::key).collect(Collectors.toSet()).containsAll(selected)) {
             throw new BusinessException("部分补结明细已入账或单价已变更，请刷新后重新选择");
         }
-        List<Refund> refunds = refunds(period, draft.refunds(), history, validate);
+        List<Refund> refunds = refunds(period, draft, history, validate);
         Totals totals = totals(shippedPairs, current, carryovers, refunds, draft, selected);
         return new Snapshot(current, pending, carryovers, refunds, totals);
     }
 
-    private List<Refund> refunds(YearMonth period, List<RefundInput> inputs, List<ClosedBill> history, boolean validate) {
+    private List<Refund> refunds(YearMonth period, Draft draft, List<ClosedBill> history, boolean validate) {
         Map<Long, BigDecimal> requested = new HashMap<>();
-        for (RefundInput input : inputs) {
+        Set<Long> omitted = Set.copyOf(draft.omittedRefundIds());
+        for (RefundInput input : draft.refunds()) {
+            if (omitted.contains(input.originId())) throw new BusinessException("本期已移除的质保金不能同时计入返还");
             if (requested.put(input.originId(), input.amount()) != null) throw new BusinessException("同一笔质保金只能录入一次返还");
         }
         Map<Long, BigDecimal> paid = new HashMap<>();
@@ -254,7 +256,7 @@ public class MonthlySettlementService {
 
     private Draft defaultDraft(CustomerConfig customer) {
         return new Draft(LocalDate.now(), "DAWEI".equals(customer.getCode()) ? BigDecimal.TEN : ZERO,
-                null, List.of(), List.of(), List.of(), List.of(), List.of());
+                null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     private View lockedView(MonthlySettlement bill) {

@@ -130,6 +130,7 @@ export interface SettlementDraft {
   materials: SettlementMaterial[];
   adjustments: SettlementAdjustment[];
   refunds: { originId: number; amount: number }[];
+  omittedRefundIds: number[];
 }
 
 export interface SettlementRefund {

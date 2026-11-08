@@ -73,7 +73,7 @@ class MonthlySettlementServiceTest {
         assertNull(service.get(SEPTEMBER, CUSTOMER).confirmedAt());
         Draft initial = saved.draft();
         View september = close(SEPTEMBER, new Draft(initial.preparedOn(), initial.holdRate(), initial.holdBase(),
-                List.of("1:12"), initial.carryKeys(), initial.materials(), initial.adjustments(), initial.refunds()));
+                List.of("1:12"), initial.carryKeys(), initial.materials(), initial.adjustments(), initial.refunds(), List.of()));
         assertEquals(amount("5000.00"), september.statement().totals().goods());
         assertEquals(150, september.statement().totals().shippedPairs());
         var unapproved = september.statement().pending().get(0);
@@ -88,7 +88,7 @@ class MonthlySettlementServiceTest {
         assertEquals(unapproved.key(), october.statement().carryovers().get(0).key());
         Draft octDraft = october.draft();
         View closedOctober = close(OCTOBER, new Draft(octDraft.preparedOn(), octDraft.holdRate(), null,
-                List.of(), List.of(unapproved.key()), List.of(), List.of(), List.of()));
+                List.of(), List.of(unapproved.key()), List.of(), List.of(), List.of(), List.of()));
         assertEquals(amount("8000.00"), closedOctober.statement().totals().carryover());
         assertEquals(0, closedOctober.statement().totals().shippedPairs());
         assertTrue(service.get(NOVEMBER, CUSTOMER).statement().carryovers().isEmpty());
@@ -124,9 +124,26 @@ class MonthlySettlementServiceTest {
         assertEquals(amount("500.00"), due.remaining());
         Draft original = november.draft();
         View closed = close(NOVEMBER, new Draft(original.preparedOn(), original.holdRate(), null, List.of(), List.of(),
-                List.of(), List.of(), List.of(new RefundInput(due.originId(), amount("300.00")))));
+                List.of(), List.of(), List.of(new RefundInput(due.originId(), amount("300.00"))), List.of()));
         assertEquals(amount("300.00"), closed.statement().totals().refund());
         assertEquals(amount("200.00"), service.get("2026-12", CUSTOMER).statement().refunds().get(0).remaining());
+    }
+
+    @Test void omittingARefundSkipsThisBillWithoutRecordingPayment() {
+        close(SEPTEMBER, service.get(SEPTEMBER, CUSTOMER).draft());
+        View november = service.get(NOVEMBER, CUSTOMER);
+        long originId = november.statement().refunds().get(0).originId();
+        Draft original = november.draft();
+        Draft conflicting = new Draft(original.preparedOn(), original.holdRate(), null, List.of(), List.of(), List.of(), List.of(),
+                List.of(new RefundInput(originId, amount("100.00"))), List.of(originId));
+        assertThrows(BusinessException.class, () -> service.save(NOVEMBER, CUSTOMER, new SaveRequest(0, conflicting)));
+
+        Draft omitted = new Draft(original.preparedOn(), original.holdRate(), null, List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(originId));
+        View closed = close(NOVEMBER, omitted);
+        assertEquals(List.of(originId), closed.draft().omittedRefundIds());
+        assertEquals(amount("0.00"), closed.statement().totals().refund());
+        assertEquals(amount("500.00"), service.get("2026-12", CUSTOMER).statement().refunds().get(0).remaining());
     }
 
     @Test void confirmationRejectsAChangedPriceAndRequiresReviewingTheFreshPreview() {
@@ -154,7 +171,7 @@ class MonthlySettlementServiceTest {
         View confirmed = close(SEPTEMBER, new Draft(draft.preparedOn(), draft.holdRate(), amount("4000"), List.of(), List.of(),
                 List.of(new Material(LocalDate.of(2026, 9, 1), "贴标", amount("3.5000"), "卷", amount("1.2300"), "MAT-1")),
                 List.of(new Adjustment(AdjustmentType.CREDIT, "退回材料", amount("20.00")),
-                        new Adjustment(AdjustmentType.DEBIT, "打天皮", amount("10.00"))), List.of()));
+                        new Adjustment(AdjustmentType.DEBIT, "打天皮", amount("10.00"))), List.of(), List.of()));
         assertEquals(amount("4.31"), confirmed.statement().totals().materials());
         assertEquals(amount("4605.69"), confirmed.statement().totals().receivable());
     }

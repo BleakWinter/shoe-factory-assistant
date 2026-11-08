@@ -3,7 +3,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localToday } from "../api/manualOrderApi";
 import { confirmMonthlySettlement, fetchMonthlySettlement, recordMonthlySettlementReceipt, saveMonthlySettlement } from "../api/reconciliationApi";
-import type { MonthlySettlement, SettlementAdjustment, SettlementDraft, SettlementMaterial, SettlementShipment } from "../types/reconciliation";
+import type { MonthlySettlement, SettlementAdjustment, SettlementDraft, SettlementMaterial, SettlementRefund, SettlementShipment } from "../types/reconciliation";
 
 const yuan = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" });
 const money = (value: number | null) => value === null ? "—" : yuan.format(value);
@@ -44,8 +44,9 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   const [error, setError] = useState("");
   const sequence = useRef(0);
   const apply = useCallback((result: MonthlySettlement) => {
-    setView(result);
-    setDraft(result.draft);
+    const loaded = { ...result.draft, omittedRefundIds: result.draft.omittedRefundIds ?? [] };
+    setView({ ...result, draft: loaded });
+    setDraft(loaded);
     setReceipt(result.receivedOn || "");
   }, []);
   const load = useCallback(async () => {
@@ -98,6 +99,9 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   const hold = Number((BigInt(holdBase) * BigInt(cents(draft.holdRate)) + 5000n) / 10000n);
   const materials = draft.materials.reduce((total, row) => total + materialCents(row), 0);
   const availableRefunds = new Map(statement.refunds.map(row => [row.originId, row]));
+  const omittedRefundIds = new Set(draft.omittedRefundIds);
+  const visibleRefunds = statement.refunds.filter(row => !omittedRefundIds.has(row.originId));
+  const omittedRefunds = statement.refunds.filter(row => omittedRefundIds.has(row.originId));
   const validRefunds = draft.refunds.filter(row => {
     const available = availableRefunds.get(row.originId);
     return available && row.amount <= available.remaining;
@@ -112,6 +116,15 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
   };
 
   function change(patch: Partial<SettlementDraft>) { setDraft(value => value && { ...value, ...patch }); }
+  function omitRefund(row: SettlementRefund) {
+    if (!draft) return;
+    const remove = () => change({ omittedRefundIds: [...draft.omittedRefundIds, row.originId],
+      refunds: draft.refunds.filter(input => input.originId !== row.originId) });
+    const amount = draft.refunds.find(input => input.originId === row.originId)?.amount;
+    if (amount) modal.confirm({ title: `从本期移除 ${row.originMonth} 质保金？`, okText: "移除",
+      content: `移除会清空已填写的本期返还金额 ${money(amount)}。`, onOk: remove });
+    else remove();
+  }
   function toggleDeferred(key: string) {
     change({ deferredKeys: deferred.has(key) ? draft!.deferredKeys.filter(value => value !== key) : [...deferred, key] });
   }
@@ -239,7 +252,7 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
               placeholder="默认本期货款" onChange={holdBase => change({ holdBase })}/></label>
             <Typography.Text type="secondary">本期基数 {money(totals.holdBase)} · 扣款 {money(totals.hold)}</Typography.Text>
           </Space>
-          <Table size="small" rowKey="originId" dataSource={statement.refunds} pagination={pagination} scroll={{ x: 550 }}
+          {visibleRefunds.length > 0 && <Table size="small" rowKey="originId" dataSource={visibleRefunds} pagination={pagination} scroll={{ x: 630 }}
             columns={[
               { title: "原扣款月", dataIndex: "originMonth" }, { title: "应返账期", dataIndex: "dueMonth" },
               { title: locked ? "返还前余额" : "待返余额", dataIndex: "remaining", align: "right", render: money },
@@ -248,7 +261,19 @@ export default function MonthlySettlementPanel({ month, customerId, onDirtyChang
                 value={draft.refunds.find(item => item.originId === row.originId)?.amount ?? null} onChange={amount => change({ refunds: [
                   ...draft.refunds.filter(item => item.originId !== row.originId), ...(amount && amount > 0 ? [{ originId: row.originId, amount }] : []),
                 ] })}/> },
-            ]}/>
+              ...(!locked ? [{ title: "操作", width: 98, render: (_: unknown, row: SettlementRefund) =>
+                <Button type="link" size="small" disabled={!editable} onClick={() => omitRefund(row)}>本期移除</Button> }] : []),
+            ]}/>}
+          {!locked && omittedRefunds.length > 0 && <Collapse size="small" items={[{
+            key: "omitted-refunds", label: `本期已移除 · ${omittedRefunds.length} 笔`,
+            children: <Space direction="vertical">
+              {omittedRefunds.map(row => <Space key={row.originId} wrap>
+                <Typography.Text>{row.originMonth} 质保金余额 {money(row.remaining)}</Typography.Text>
+                <Button type="link" size="small" disabled={!editable}
+                  onClick={() => change({ omittedRefundIds: draft.omittedRefundIds.filter(id => id !== row.originId) })}>恢复待返</Button>
+              </Space>)}
+            </Space>,
+          }]}/>}
         </Space> },
         { key: "materials", label: `领料扣款 · ${draft.materials.length} 笔`, children: <Space direction="vertical" style={{ width: "100%" }}>
           {draft.materials.map((row, index) => <Space wrap key={index}>

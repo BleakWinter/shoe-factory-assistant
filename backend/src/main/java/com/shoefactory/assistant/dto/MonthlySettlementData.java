@@ -31,7 +31,12 @@ public final class MonthlySettlementData {
             @NotNull @Size(max = 10000) List<@NotBlank @Pattern(regexp = "[0-9]+:[0-9]+") String> carryKeys,
             @NotNull @Size(max = 500) List<@NotNull @Valid Material> materials,
             @NotNull @Size(max = 500) List<@NotNull @Valid Adjustment> adjustments,
-            @NotNull @Size(max = 500) List<@NotNull @Valid RefundInput> refunds) {}
+            @NotNull @Size(max = 500) List<@NotNull @Valid RefundInput> refunds,
+            @Size(max = 500) List<@NotNull @Positive Long> omittedRefundIds) {
+        public Draft {
+            if (omittedRefundIds == null) omittedRefundIds = List.of();
+        }
+    }
 
     public record SaveRequest(@PositiveOrZero int revision, @NotNull @Valid Draft draft) {}
     public record ConfirmRequest(@Positive int revision, @NotBlank @Size(max = 64) String previewToken) {}
