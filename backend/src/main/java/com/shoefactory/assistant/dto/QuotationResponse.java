@@ -13,11 +13,12 @@ public record QuotationResponse(
         BigDecimal laborCost, Boolean includeOutsole, String roundingMode, Boolean manualPrice,
         BigDecimal finalPrice, BigDecimal materialAmount, BigDecimal auxiliaryAmount,
         BigDecimal outsoleAmount, BigDecimal calculatedAmount, BigDecimal currentPrice,
-        String note, LocalDateTime adoptedAt, LocalDateTime createdAt,
+        String note, LocalDateTime adoptedAt, String signedImageUrl, LocalDateTime createdAt,
         List<ShoeQuotationItem> items, List<Version> versions
 ) {
     public record Version(Long id, Integer versionNo, BigDecimal finalPrice,
                           LocalDateTime createdAt, LocalDateTime adoptedAt) {}
     public record Reference(Long sourceDetailId, String imageUrl, String colorMaterial, BigDecimal currentPrice) {}
     public record Image(String imageKey, String imageUrl) {}
+    public record SignedPhotoReuse(Long id, Integer versionNo) {}
 }

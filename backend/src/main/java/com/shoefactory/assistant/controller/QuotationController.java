@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 
 @RestController
@@ -50,16 +51,29 @@ public class QuotationController {
     public ApiResponse<QuotationResponse> create(@Valid @RequestBody QuotationSaveRequest request) { return ApiResponse.ok(service.create(request)); }
     @PostMapping("/{id}/versions")
     public ApiResponse<QuotationResponse> version(@PathVariable Long id,@Valid @RequestBody QuotationSaveRequest request) { return ApiResponse.ok(service.createVersion(id,request)); }
+    @PostMapping("/{id}/signed-photo-reuse")
+    public ApiResponse<QuotationResponse.SignedPhotoReuse> signedPhotoReuse(@PathVariable Long id, @Valid @RequestBody QuotationSaveRequest request) {
+        return ApiResponse.ok(service.signedPhotoReuse(id,request));
+    }
     @PostMapping("/{id}/adopt")
-    public ApiResponse<QuotationResponse> adopt(@PathVariable Long id) { return ApiResponse.ok(service.adopt(id)); }
+    public ApiResponse<QuotationResponse> adopt(@PathVariable Long id, @RequestPart(value="file",required=false) MultipartFile file,
+            @RequestParam(required=false) Long reuseSignedPhotoFrom) {
+        return ApiResponse.ok(service.adopt(id,file,reuseSignedPhotoFrom));
+    }
+    @GetMapping("/{id}/signed-image")
+    public ResponseEntity<UrlResource> signedImage(@PathVariable Long id) throws IOException {
+        return imageResponse(service.signedImage(id),ResponseEntity.ok().cacheControl(CacheControl.noStore()));
+    }
     @GetMapping("/reference")
     public ApiResponse<QuotationResponse.Reference> reference(@RequestParam Long customerId,@RequestParam String developmentNo) { return ApiResponse.ok(service.reference(customerId,developmentNo)); }
     @PostMapping(value="/images",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<QuotationResponse.Image> image(@RequestPart("file") MultipartFile file) { return ApiResponse.ok(images.upload(file)); }
     @GetMapping("/images/{year}/{month}/{file}")
     public ResponseEntity<UrlResource> image(@PathVariable String year,@PathVariable String month,@PathVariable String file) throws IOException {
-        var path=images.require(year + "/" + month + "/" + file);
-        return ResponseEntity.ok().contentType(file.endsWith(".png") ? MediaType.IMAGE_PNG : MediaType.IMAGE_JPEG)
+        return imageResponse(images.require(year + "/" + month + "/" + file),ResponseEntity.ok());
+    }
+    private ResponseEntity<UrlResource> imageResponse(Path path, ResponseEntity.BodyBuilder response) throws IOException {
+        return response.contentType(path.getFileName().toString().endsWith(".png") ? MediaType.IMAGE_PNG : MediaType.IMAGE_JPEG)
                 .contentLength(Files.size(path)).header("X-Content-Type-Options","nosniff").body(new UrlResource(path.toUri()));
     }
     @GetMapping("/{id}/excel")

@@ -52,6 +52,12 @@ public interface ShoeQuotationMapper extends BaseMapper<ShoeQuotation> {
     ShoeQuotation lockById(@Param("id") Long id);
 
     @Select("""
+            SELECT * FROM shoe_quotation WHERE version_group=#{group} AND version_no < #{beforeVersion}
+            AND adopted_at IS NOT NULL AND signed_image_key IS NOT NULL ORDER BY version_no DESC LIMIT 1
+            """)
+    ShoeQuotation latestSignedBefore(@Param("group") String group, @Param("beforeVersion") int beforeVersion);
+
+    @Select("""
             SELECT d.* FROM order_record_detail d JOIN order_record o ON o.id=d.order_id
             WHERE o.customer_id=#{customerId} AND d.development_no=#{style}
             ORDER BY (d.style_image_path IS NOT NULL AND d.style_image_path!='') DESC,d.created_at DESC,d.id DESC LIMIT 1

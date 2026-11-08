@@ -1,9 +1,11 @@
 import { ArrowLeftOutlined, CheckOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, HolderOutlined, PlusOutlined, PrinterOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, App, Button, Checkbox, Dropdown, Image, Input, InputNumber, Modal, Select, Space, Spin, Tag, Typography } from "antd";
+import { Alert, App, Button, Checkbox, Dropdown, Image, Input, InputNumber, Modal, Select, Space, Spin, Tag, Typography, Upload } from "antd";
+import type { UploadFile } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
-import { adoptQuotation, exportQuotationExcel, fetchQuotation, fetchQuotationReference, saveQuotation, uploadQuotationImage } from "../api/quotationApi";
+import { adoptQuotation, exportQuotationExcel, fetchQuotation, fetchQuotationReference, fetchSignedPhotoReuse, saveQuotation, uploadQuotationImage } from "../api/quotationApi";
+import type { SignedPhotoReuse } from "../api/quotationApi";
 import QuotationPreview from "../components/QuotationPreview";
 import { useCustomers } from "../hooks/useCustomers";
 import type { Decimal, Quotation, QuotationDraft, QuotationItem, QuoteCategory } from "../types/quotation";
@@ -12,6 +14,7 @@ import { adoptionIssue, calculateQuotation, decimalText, itemAmount, newQuotatio
 import { quotationPrintCapacityIssue, quotationItemLimit } from "../utils/quotationPrint";
 
 type EditorDraft = Omit<QuotationDraft, "items"> & { items: (QuotationItem & { rowKey: number })[] };
+type PrintJob = { signedImageUrl?: string };
 
 export default function QuotationEditorPage() {
   const { id } = useParams(), location = useLocation(), navigate = useNavigate(), customers = useCustomers();
@@ -20,12 +23,18 @@ export default function QuotationEditorPage() {
   const [loading, setLoading] = useState(false), [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [currentPrice, setCurrentPrice] = useState<Decimal>(null);
   const [priceStatus, setPriceStatus] = useState<"loading" | "ready" | "error">("ready"), [priceRefresh, setPriceRefresh] = useState(0);
-  const [preview, setPreview] = useState(false), [printing, setPrinting] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [printJob, setPrintJob] = useState<PrintJob>();
+  const [adoptOpen, setAdoptOpen] = useState(false);
+  const [signedPhoto, setSignedPhoto] = useState<UploadFile>();
+  const [reusablePhoto, setReusablePhoto] = useState<SignedPhotoReuse>();
   const [rowDrag, setRowDrag] = useState<{ sourceKey: number; targetKey?: number }>();
   const nextRowKey = useRef(0);
   const dirtyRef = useRef(false), busyRef = useRef(false), allowNavigation = useRef(false), fileInput = useRef<HTMLInputElement>(null);
   const savedRef = useRef<Quotation>();
   const justSaved = useRef<Quotation>();
+  const activePrint = useRef<PrintJob>();
+  const printRoot = useRef<HTMLDivElement>(null);
   const routeSequence = useRef(0), referenceSequence = useRef(0);
   const totals = calculateQuotation(draft), customerName = customers.find(c => c.id === draft.customerId)?.name;
   function markDirty(value: boolean) { dirtyRef.current = value; setDirty(value); }
@@ -37,7 +46,7 @@ export default function QuotationEditorPage() {
     setRowDrag(undefined);
   }
   function draftContent(): QuotationDraft {
-    return { ...draft, items: draft.items.map(({ rowKey, ...item }) => item) };
+    return { ...draft, finalPrice: draft.manualPrice ? draft.finalPrice : totals.finalPrice, items: draft.items.map(({ rowKey, ...item }) => item) };
   }
   const blocker = useBlocker(() => !allowNavigation.current && (dirtyRef.current || busyRef.current));
   useBeforeUnload(event => { if (dirtyRef.current || busyRef.current) { event.preventDefault(); event.returnValue = ""; } });
@@ -51,6 +60,7 @@ export default function QuotationEditorPage() {
   useEffect(() => {
     const sequence = ++routeSequence.current; allowNavigation.current = false;
     setLoadError(""); replaceSaved(undefined); markDirty(false); setPreview(false);
+    setAdoptOpen(false); setSignedPhoto(undefined); setReusablePhoto(undefined);
     if (!id) {
       const copy = (location.state as { copy?: QuotationDraft } | null)?.copy;
       const params = new URLSearchParams(location.search), customer = Number(params.get("customerId"));
@@ -81,10 +91,20 @@ export default function QuotationEditorPage() {
     }, 350);
     return () => { window.clearTimeout(timer); referenceSequence.current++; };
   }, [draft.customerId, draft.developmentNo, priceRefresh, message]);
+  function finishPrint() {
+    activePrint.current = undefined;
+    document.body.classList.remove("quotation-printing");
+    setPrintJob(undefined);
+  }
   useEffect(() => {
-    const finish = () => { document.body.classList.remove("quotation-printing"); setPrinting(false); };
-    window.addEventListener("afterprint", finish);
-    return () => { window.removeEventListener("afterprint", finish); document.body.classList.remove("quotation-printing"); };
+    window.addEventListener("afterprint", finishPrint);
+    return () => {
+      window.removeEventListener("afterprint", finishPrint);
+      if (activePrint.current) {
+        activePrint.current = undefined;
+        document.body.classList.remove("quotation-printing");
+      }
+    };
   }, []);
   function update(patch: Partial<EditorDraft>) {
     if ("customerId" in patch || "developmentNo" in patch) setPriceStatus("loading");
@@ -107,10 +127,10 @@ export default function QuotationEditorPage() {
     if (draft.items.length >= quotationItemLimit) { message.info(`每份报价最多支持 ${quotationItemLimit} 个项目`); return; }
     update({ items: [...draft.items, { rowKey: nextRowKey.current++, category, partName: "", materialName: "", quantity: null, unit: "双", unitPrice: null, remark: "" }] });
   }
-  async function persist(): Promise<Quotation> {
+  async function persist(forceNewVersion = false): Promise<Quotation> {
     const source = savedRef.current;
-    if (source && !dirtyRef.current) return source;
-    const quote = await saveQuotation({ ...draftContent(), finalPrice: draft.manualPrice ? draft.finalPrice : totals.finalPrice }, source);
+    if (source && !dirtyRef.current && !forceNewVersion) return source;
+    const quote = await saveQuotation(draftContent(), source);
     replaceSaved(quote); replaceDraft(quote); setCurrentPrice(quote.currentPrice); markDirty(false);
     return quote;
   }
@@ -123,21 +143,45 @@ export default function QuotationEditorPage() {
     catch(error) { message.error(error instanceof Error ? error.message : "保存失败"); }
     finally { markBusy(false); }
   }
-  function adopt() {
+  async function adopt() {
+    if (busyRef.current) return;
     const issue = adoptionIssue(draft); if (issue) { message.warning(issue); return; }
     if (priceStatus !== "ready") { message.warning(priceStatus === "loading" ? "正在读取当前客户单价，请稍等" : "当前客户单价读取失败，请刷新后再采用"); return; }
     if (saved && !dirty && saved.versionNo !== saved.latestVersionNo) { message.warning("历史报价请先另存为新版本，再采用价格"); return; }
-    const confirmation = modal.confirm({ title: "采用为客户单价", okText: "确认采用", cancelText: "继续编辑", okButtonProps: { "aria-label": "确认采用" }, content: <div className="quotation-adopt-confirm">
-      <p>{customerName} · {draft.developmentNo}</p><p>当前单价：{currentPrice === null ? "未配置" : `¥ ${priceText(currentPrice)}`} → <strong>¥ {priceText(totals.finalPrice)} / 双</strong></p>
-      <p>确认后，出货查询和未确认的结算单使用新单价。已确认的结算单保留当时的价格。{dirty || !saved ? "当前报价会先保存为新版本。" : ""}</p></div>,
-      onOk: async () => {
-        markBusy(true);
-        try { const quote = await persist(); const adopted = await adoptQuotation(quote.id); replaceSaved(adopted); replaceDraft(adopted); setCurrentPrice(adopted.currentPrice); showSaved(adopted); message.success("已采用为客户单价"); }
-        catch(error) { message.error(error instanceof Error ? error.message : "采用失败"); throw error; }
-        finally { markBusy(false); }
-      } });
-    // 使用 hook 的 Promise 模式，失败时保留确认框供重试，错误由上方提示处理。
-    void confirmation.then(() => undefined, () => undefined);
+    setReusablePhoto(undefined);
+    if (saved && (dirty || !saved.signedImageUrl) && saved.versions.some(version => version.adoptedAt)) {
+      markBusy(true);
+      try { setReusablePhoto(await fetchSignedPhotoReuse(draftContent(), saved) ?? undefined); }
+      catch { message.warning("暂时无法核对原签字照片，请上传照片后确认"); }
+      finally { markBusy(false); }
+    }
+    setAdoptOpen(true);
+  }
+  function cancelAdoption() {
+    if (busyRef.current) return;
+    setAdoptOpen(false);
+    setSignedPhoto(undefined);
+    setReusablePhoto(undefined);
+    // 如果采用失败前已保存报价，关闭弹窗时回到该版本。
+    if (savedRef.current) showSaved(savedRef.current);
+  }
+  async function confirmAdoption() {
+    const photoSource = signedPhoto?.originFileObj ?? reusablePhoto?.id;
+    if (busyRef.current || photoSource === undefined) return;
+    markBusy(true);
+    try {
+      const quote = await persist(Boolean(savedRef.current?.signedImageUrl));
+      const adopted = await adoptQuotation(quote.id, photoSource);
+      replaceSaved(adopted);
+      replaceDraft(adopted);
+      setCurrentPrice(adopted.currentPrice);
+      setAdoptOpen(false);
+      setSignedPhoto(undefined);
+      setReusablePhoto(undefined);
+      showSaved(adopted);
+      message.success("已采用为客户单价，签字照片已归档");
+    } catch(error) { message.error(error instanceof Error ? error.message : "采用失败"); }
+    finally { markBusy(false); }
   }
   async function referenceImage() {
     if (!draft.customerId || !draft.developmentNo.trim()) { message.warning("请先选择客户并填写款号"); return; }
@@ -176,20 +220,42 @@ export default function QuotationEditorPage() {
     } catch(error) { message.error(error instanceof Error ? error.message : "导出失败"); }
     finally { markBusy(false); }
   }
-  async function print() {
-    const issue = quotationPrintCapacityIssue(draft); if (issue) { message.warning(issue); return; }
-    setPrinting(true); document.body.classList.add("quotation-printing");
-    // 等待打印副本和图片就绪，浏览器打印可选择“另存为 PDF”。
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".quotation-print-root img"));
-    await Promise.all(images.map(image => image.decode().catch(() => undefined)));
-    await document.fonts.ready;
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    window.print(); document.body.classList.remove("quotation-printing"); setPrinting(false);
+  async function print(signedImageUrl?: string) {
+    if (activePrint.current) return;
+    if (!signedImageUrl) {
+      const issue = quotationPrintCapacityIssue(draft);
+      if (issue) { message.warning(issue); return; }
+    }
+    const job = { signedImageUrl };
+    const sequence = routeSequence.current;
+    activePrint.current = job;
+    setPrintJob(job);
+    document.body.classList.add("quotation-printing");
+    try {
+      // 等待打印副本和图片就绪，浏览器打印可选择“另存为 PDF”。
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      if (activePrint.current !== job || sequence !== routeSequence.current || !printRoot.current) return;
+      const images = Array.from(printRoot.current.querySelectorAll("img"));
+      await Promise.all(images.map(image => signedImageUrl ? image.decode() : image.decode().catch(() => undefined)));
+      await document.fonts.ready;
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      if (activePrint.current === job && sequence === routeSequence.current) window.print();
+    } catch {
+      if (activePrint.current === job && sequence === routeSequence.current) {
+        message.error(signedImageUrl ? "签字照片打印失败，请确认照片能正常打开后重试" : "报价单打印失败，请重试");
+      }
+    } finally {
+      if (activePrint.current === job) finishPrint();
+    }
   }
   if (loading) return <div className="page-panel quotation-loading"><Spin tip="加载报价…"/></div>;
   if (loadError) return <div className="workspace"><Alert type="error" showIcon message={loadError}/><Button onClick={() => navigate("/price-configs/quotations")}>返回报价列表</Button></div>;
   const history = saved && saved.versionNo !== saved.latestVersionNo;
+  const signedImageUrl = saved?.signedImageUrl;
+  const printMenu = { items: [
+    { key: "quotation", label: "打印报价单", onClick: () => void print() },
+    { key: "signed", label: "打印签字照片", disabled: !signedImageUrl, onClick: () => { if (signedImageUrl) void print(signedImageUrl); } },
+  ] };
   const draggedIndex = rowDrag ? draft.items.findIndex(item => item.rowKey === rowDrag.sourceKey) : -1;
   function section(category: QuoteCategory, title: string, amount: bigint | null, help: string) {
     const rows = draft.items.map((item, index) => ({ item, index })).filter(({ item }) => item.category === category);
@@ -282,13 +348,57 @@ export default function QuotationEditorPage() {
       <Checkbox checked={draft.manualPrice} disabled={busy} onChange={event => update({ manualPrice: event.target.checked, finalPrice: totals.finalPrice })}>手动调整最终报价</Checkbox>
       <div className="quotation-current-price"><span>当前客户单价</span><strong>{priceStatus === "loading" ? "读取中…" : priceStatus === "error" ? "读取失败" : currentPrice === null ? "未配置" : `¥ ${priceText(currentPrice)}`}</strong></div>
       {priceStatus === "error" && <Button size="small" type="link" disabled={busy} onClick={() => setPriceRefresh(value => value + 1)}>刷新客户单价</Button>}
-      <p className="quotation-save-hint">保存报价留存成本与版本。确认采用后更新客户单价，待请款可在结算单中补结。</p>
+      <p className="quotation-save-hint">保存报价留存成本与版本。上传客户签字的报价单照片并确认后，才会更新客户单价。</p>
       {saved?.adoptedAt && <p className="quotation-adopted">V{saved.versionNo} 曾采用于 {formatDateTime(saved.adoptedAt)}</p>}
+      {signedImageUrl ? <Space direction="vertical" size={4} style={{ marginTop: 8 }}>
+        <Typography.Text type="secondary">客户签字报价单</Typography.Text>
+        <Image src={signedImageUrl} width={100} height={72} style={{ objectFit: "contain" }} alt="客户签字报价单"/>
+      </Space> : saved?.adoptedAt && <Typography.Text type="secondary">历史采用记录暂无签字照片</Typography.Text>}
     </aside></div>
     <footer className="page-panel quotation-footer"><span>{dirty ? "当前修改尚未保存" : saved ? `V${saved.versionNo} · ${formatDateTime(saved.createdAt)}` : "可先保存草稿，稍后继续补齐"}</span>
-      <Space wrap><Button aria-label="打印 / PDF" icon={<PrinterOutlined/>} disabled={busy} onClick={() => void print()}>打印 / PDF</Button><Button aria-label={saved ? "保存新版本" : "保存报价"} icon={<SaveOutlined/>} loading={busy} disabled={busy} onClick={() => void save()}>{saved ? "保存新版本" : "保存报价"}</Button><Button aria-label="采用为客户单价" type="primary" icon={<CheckOutlined/>} disabled={busy} onClick={adopt}>采用为客户单价</Button></Space></footer>
-    <Modal open={preview} title="报价单预览" width={980} onCancel={() => setPreview(false)} footer={<Space><Button aria-label="关闭" onClick={() => setPreview(false)}>关闭</Button><Button type="primary" icon={<PrinterOutlined/>} onClick={() => void print()}>打印 / 另存 PDF</Button></Space>}>
+      <Space wrap><Dropdown menu={printMenu} trigger={["click"]} disabled={busy || Boolean(printJob)}>
+        <Button aria-label="打印 / PDF" icon={<PrinterOutlined/>} loading={Boolean(printJob)} disabled={busy}>打印 / PDF</Button>
+      </Dropdown><Button aria-label={saved ? "保存新版本" : "保存报价"} icon={<SaveOutlined/>} loading={busy} disabled={busy} onClick={() => void save()}>{saved ? "保存新版本" : "保存报价"}</Button><Button aria-label="采用为客户单价" type="primary" icon={<CheckOutlined/>} disabled={busy} onClick={() => void adopt()}>采用为客户单价</Button></Space></footer>
+    <Modal open={adoptOpen} title="采用为客户单价" okText="确认采用" cancelText="继续编辑"
+      okButtonProps={{ disabled: !signedPhoto && !reusablePhoto, "aria-label": "确认采用" }} cancelButtonProps={{ disabled: busy }}
+      confirmLoading={busy} closable={!busy} maskClosable={false} keyboard={!busy}
+      onOk={() => void confirmAdoption()} onCancel={cancelAdoption}>
+      <div className="quotation-adopt-confirm">
+        <p>{customerName} · {draft.developmentNo}</p>
+        <p>当前单价：{currentPrice === null ? "未配置" : `¥ ${priceText(currentPrice)}`} → <strong>¥ {priceText(totals.finalPrice)} / 双</strong></p>
+        <p>确认后，出货查询和未确认的结算单使用新单价。已确认的结算单保留当时的价格。</p>
+        {saved?.signedImageUrl
+          ? <Alert type="info" showIcon message={`确认后将生成 V${saved.latestVersionNo + 1}。V${saved.versionNo} 保留原照片。`}/>
+          : (dirty || !saved) && <p>当前报价会先保存为新版本。</p>}
+        {reusablePhoto && !signedPhoto && <p>将沿用 V{reusablePhoto.versionNo} 的签字照片。也可以上传新照片。</p>}
+        <p>{reusablePhoto ? "可上传客户签字的报价单照片（PNG 或 JPG，最大 10 MB）。"
+          : "请上传一张客户在纸质报价单上签字后的照片（必填，PNG 或 JPG，最大 10 MB）。"}</p>
+        <Upload accept="image/png,image/jpeg" maxCount={1} listType="picture" disabled={busy}
+          fileList={signedPhoto ? [signedPhoto] : []}
+          beforeUpload={file => {
+            if (!/^(image\/(png|jpeg))$/.test(file.type) || !file.size || file.size > 10 * 1024 * 1024) {
+              setSignedPhoto(undefined);
+              message.warning("请选择 10 MB 以内的 PNG 或 JPG 签字报价单照片");
+              return Upload.LIST_IGNORE;
+            }
+            setSignedPhoto({ uid: file.uid, name: file.name, type: file.type, originFileObj: file });
+            return false;
+          }} onRemove={() => { setSignedPhoto(undefined); }}>
+          <Button icon={<UploadOutlined/>} disabled={busy}>{signedPhoto ? "更换签字照片" : "选择签字照片"}</Button>
+        </Upload>
+      </div>
+    </Modal>
+    <Modal open={preview} title="报价单预览" width={980} onCancel={() => setPreview(false)} footer={<Space>
+      <Button aria-label="关闭" onClick={() => setPreview(false)}>关闭</Button>
+      <Dropdown menu={printMenu} trigger={["click"]} disabled={Boolean(printJob)}>
+        <Button type="primary" icon={<PrinterOutlined/>} loading={Boolean(printJob)}>打印 / 另存 PDF</Button>
+      </Dropdown>
+    </Space>}>
       {dirty && <Alert type="info" message="预览包含当前未保存的修改。" style={{ marginBottom: 16 }}/>}<QuotationPreview draft={draft} customerName={customerName}/></Modal>
-    {printing && createPortal(<div className="quotation-print-root"><QuotationPreview draft={draft} customerName={customerName}/></div>, document.body)}
+    {printJob && createPortal(<div className="quotation-print-root" ref={printRoot}>
+      {printJob.signedImageUrl
+        ? <img className="quotation-signed-print-image" src={printJob.signedImageUrl} alt="客户签字报价单"/>
+        : <QuotationPreview draft={draft} customerName={customerName}/>}
+    </div>, document.body)}
   </div>;
 }

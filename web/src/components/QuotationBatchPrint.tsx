@@ -4,7 +4,10 @@ import { createPortal } from "react-dom";
 import type { Quotation } from "../types/quotation";
 import QuotationPreview from "./QuotationPreview";
 
-export default function QuotationBatchPrint({ quotations, onFinish }: { quotations: Quotation[]; onFinish: () => void }) {
+export type QuotationBatchPrintJob = { quotations: Quotation[]; mode: "quotation" | "signed" };
+
+export default function QuotationBatchPrint({ job, onFinish }: { job: QuotationBatchPrintJob; onFinish: () => void }) {
+  const { quotations, mode } = job;
   const root = useRef<HTMLDivElement>(null);
   const { message } = App.useApp();
   useEffect(() => {
@@ -20,7 +23,12 @@ export default function QuotationBatchPrint({ quotations, onFinish }: { quotatio
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         if (!active) return;
         const images = Array.from(root.current!.querySelectorAll<HTMLImageElement>("img"));
-        await Promise.all(images.map(image => image.decode().catch(() => undefined)));
+        await Promise.all(images.map((image, index) => image.decode().catch(() => {
+          if (mode === "signed") {
+            const quote = quotations[index];
+            throw new Error(`${quote.developmentNo || "未填款号"}（V${quote.versionNo}）的签字照片加载失败，请重试`);
+          }
+        })));
         await document.fonts.ready;
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         if (active) window.print();
@@ -30,10 +38,12 @@ export default function QuotationBatchPrint({ quotations, onFinish }: { quotatio
     }
     void print();
     return () => { active = false; window.removeEventListener("afterprint", finish); document.body.classList.remove("quotation-printing"); };
-  }, [quotations, onFinish, message]);
+  }, [quotations, mode, onFinish, message]);
   return createPortal(<div className="quotation-print-root" ref={root}>
     {quotations.map(quote => <section className="quotation-print-page" key={quote.id}>
-      <QuotationPreview draft={quote} customerName={quote.customerName ?? undefined}/>
+      {mode === "signed"
+        ? <img className="quotation-signed-print-image" src={quote.signedImageUrl ?? undefined} alt="客户签字报价单"/>
+        : <QuotationPreview draft={quote} customerName={quote.customerName ?? undefined}/>}
     </section>)}
   </div>, document.body);
 }

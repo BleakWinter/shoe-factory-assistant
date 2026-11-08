@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** 一个已保存的报价版本。报价内容不原地覆盖，采用时间单独记录。 */
+/** 一个已保存的报价版本。报价内容不原地覆盖，采用时间和签字照片单独记录。 */
 @TableName("shoe_quotation")
 public class ShoeQuotation {
     @TableId(type = IdType.AUTO)
@@ -31,6 +31,7 @@ public class ShoeQuotation {
     private BigDecimal calculatedAmount;
     private String note;
     private LocalDateTime adoptedAt;
+    private String signedImageKey;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -73,6 +74,8 @@ public class ShoeQuotation {
     public void setNote(String value) { note = value; }
     public LocalDateTime getAdoptedAt() { return adoptedAt; }
     public void setAdoptedAt(LocalDateTime value) { adoptedAt = value; }
+    public String getSignedImageKey() { return signedImageKey; }
+    public void setSignedImageKey(String value) { signedImageKey = value; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime value) { createdAt = value; }
 }

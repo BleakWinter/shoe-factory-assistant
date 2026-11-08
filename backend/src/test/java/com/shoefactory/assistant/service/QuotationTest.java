@@ -1,5 +1,6 @@
 package com.shoefactory.assistant.service;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.shoefactory.assistant.common.BusinessException;
 import com.shoefactory.assistant.config.FileStorageProperties;
 import com.shoefactory.assistant.dto.QuotationSaveRequest;
@@ -12,12 +13,16 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.math.BigDecimal;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -49,6 +54,13 @@ class QuotationTest {
         when(quotations.selectList(any())).thenAnswer(call->headers.values().stream().sorted(Comparator.comparing(ShoeQuotation::getVersionNo).reversed()).toList());
         when(quotations.lockLatest(anyString())).thenAnswer(call->headers.values().stream().max(Comparator.comparing(ShoeQuotation::getVersionNo)).orElse(null));
         when(quotations.lockById(anyLong())).thenAnswer(call->headers.get(call.getArgument(0)));
+        when(quotations.latestSignedBefore(anyString(),anyInt())).thenAnswer(call -> {
+            String group = call.getArgument(0);
+            int beforeVersion = call.getArgument(1);
+            return headers.values().stream().filter(q -> group.equals(q.getVersionGroup()) && q.getVersionNo() < beforeVersion
+                    && q.getAdoptedAt() != null && q.getSignedImageKey() != null)
+                    .max(Comparator.comparing(ShoeQuotation::getVersionNo)).orElse(null);
+        });
         when(items.insert(any(ShoeQuotationItem.class))).thenAnswer(call->{ rows.add(call.getArgument(0)); return 1; });
         when(items.selectList(any())).thenAnswer(call->{
             com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?> wrapper=call.getArgument(0);
@@ -75,6 +87,25 @@ class QuotationTest {
     }
     private QuotationSaveRequest sample(Integer expected,String mode,boolean manual,String finalPrice) {
         return request(expected,false,mode,manual,finalPrice,List.of(item("MATERIAL","1","24.595"),item("FEE","1","1.5"),item("FEE","1","5"),item("OUTSOLE",null,null)));
+    }
+    private static MockMultipartFile signedPhoto() throws IOException {
+        var output = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(2,2,BufferedImage.TYPE_INT_RGB),"png",output);
+        return new MockMultipartFile("file","signed.png","image/png",output.toByteArray());
+    }
+    private void recordAdoptionUpdates() {
+        when(quotations.update(isNull(),any())).thenAnswer(call -> {
+            LambdaUpdateWrapper<ShoeQuotation> update = call.getArgument(1);
+            assertTrue(update.getSqlSet().contains("signed_image_key"));
+            assertTrue(update.getSqlSet().contains("adopted_at"));
+            update.getSqlSegment();
+            var params = update.getParamNameValuePairs().values();
+            var id = params.stream().filter(Long.class::isInstance).map(Long.class::cast).findFirst().orElseThrow();
+            var adopted = headers.get(id);
+            adopted.setSignedImageKey(params.stream().filter(String.class::isInstance).map(String.class::cast).findFirst().orElseThrow());
+            adopted.setAdoptedAt(params.stream().filter(LocalDateTime.class::isInstance).map(LocalDateTime.class::cast).findFirst().orElseThrow());
+            return 1;
+        });
     }
     @Test void originalWorkbookExampleAndRoundingKeepPrecision() {
         var quote=QuotationCalculator.calculate(sample(null,"CEIL",false,null));
@@ -111,19 +142,86 @@ class QuotationTest {
         assertThrows(BusinessException.class,()->service.createVersion(first.id(),sample(1,"CEIL",false,null)));
         assertEquals(2,headers.size());
     }
-    @Test void adoptingOnlyLatestCompleteVersionWritesExactCustomerAndStyle() {
+    @Test void adoptingOnlyLatestCompleteVersionArchivesPhotoAndWritesExactCustomerAndStyle() throws IOException {
         var first=service.create(sample(null,"CEIL",false,null));
         var second=service.createVersion(first.id(),sample(1,"CENT",false,null));
-        assertThrows(BusinessException.class,()->service.adopt(first.id()));
+        var photo = signedPhoto();
+        assertThrows(BusinessException.class,()->service.adopt(first.id(),photo,null));
         verify(prices,never()).adoptQuotationPrice(any(),any(),any());
-        service.adopt(second.id());
+        recordAdoptionUpdates();
+        var adopted = service.adopt(second.id(),photo,null);
+        var repeated = assertThrows(BusinessException.class,() -> service.adopt(second.id(),photo,null));
+        assertEquals("此版本已归档签字照片，请先另存为新版本再采用",repeated.getMessage());
         verify(prices).adoptQuotationPrice(2L,"195-13-23",decimal("79.10"));
+        assertNotNull(adopted.adoptedAt());
+        assertEquals("/api/quotations/" + second.id() + "/signed-image?v=" + headers.get(second.id()).getSignedImageKey(),adopted.signedImageUrl());
+        assertArrayEquals(photo.getBytes(),Files.readAllBytes(service.signedImage(second.id())));
+        var third=service.createVersion(second.id(),sample(2,"CENT",false,null));
+        assertNull(third.signedImageUrl());
+        var newAdoption = service.adopt(third.id(),photo,null);
+        assertEquals(adopted.finalPrice(),newAdoption.finalPrice());
+        assertNotEquals(service.signedImage(second.id()),service.signedImage(third.id()));
+        assertEquals(adopted.signedImageUrl(),service.get(second.id()).signedImageUrl());
+        assertEquals(adopted.adoptedAt(),service.get(second.id()).adoptedAt());
     }
-    @Test void incompleteDraftCanSaveButCannotAdoptEvenWithManualFinal() {
+    @Test void matchingDraftReusesTheExistingFileOnlyWhenAdopted() throws IOException {
+        var initial = sample(null,"CEIL",false,null);
+        var first = service.create(initial);
+        var draft = new QuotationSaveRequest(1,initial.customerId(),initial.developmentNo(),initial.lastNo(),initial.colorMaterial(),
+                initial.quotationDate(),null,null,decimal("48.0000"),false,"CEIL",false,null,"内部跟进备注",initial.items());
+        assertNull(service.signedPhotoReuse(first.id(),draft));
+        recordAdoptionUpdates();
+        var photo = signedPhoto();
+        service.adopt(first.id(),photo,null);
+
+        var reusable = service.signedPhotoReuse(first.id(),draft);
+        assertEquals(first.id(),reusable.id());
+        assertEquals(1,reusable.versionNo());
+        var second = service.createVersion(first.id(),draft);
+        assertNull(second.signedImageUrl());
+        assertThrows(BusinessException.class,() -> service.adopt(second.id(),photo,first.id()));
+        service.adopt(second.id(),null,first.id());
+        assertEquals(service.signedImage(first.id()),service.signedImage(second.id()));
+
+        var changedPrice = sample(2,"CEIL",true,"81.00");
+        assertNull(service.signedPhotoReuse(second.id(),changedPrice));
+        var lines = new ArrayList<>(initial.items());
+        lines.set(0,item("MATERIAL","2","12.2975"));
+        var changedItems = request(2,false,"CEIL",false,null,lines);
+        assertNull(service.signedPhotoReuse(second.id(),changedItems));
+        var third = service.createVersion(second.id(),changedItems);
+        assertEquals(second.finalPrice(),third.finalPrice());
+        assertThrows(BusinessException.class,() -> service.adopt(third.id(),null,second.id()));
+        assertNull(service.get(third.id()).signedImageUrl());
+        verify(prices,times(2)).adoptQuotationPrice(any(),any(),any());
+    }
+    @Test void missingOrInvalidSignedPhotoCannotChangeCustomerPrice() {
+        var quote = service.create(sample(null,"CEIL",false,null));
+        assertThrows(BusinessException.class,() -> service.adopt(quote.id(),null,null));
+        assertThrows(BusinessException.class,() -> service.adopt(quote.id(),new MockMultipartFile("file",new byte[0]),null));
+        var fake = new MockMultipartFile("file","fake.png","image/png",new byte[]{1,2,3});
+        assertThrows(BusinessException.class,() -> service.adopt(quote.id(),fake,null));
+        verify(prices,never()).adoptQuotationPrice(any(),any(),any());
+        verify(quotations,never()).update(isNull(),any());
+    }
+    @Test void signedPhotoIsRemovedWhenAdoptionRollsBack() throws IOException {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            String key = images.uploadSigned(signedPhoto());
+            Path photo = images.requireSigned(key);
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+            assertFalse(Files.exists(photo));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+    @Test void incompleteDraftCanSaveButCannotAdoptEvenWithManualFinal() throws IOException {
         var draft=request(null,false,"CEIL",true,"80",List.of(item("MATERIAL",null,null)));
         var quote=service.create(draft);
         assertNull(quote.calculatedAmount()); assertEquals(decimal("80.00"),quote.finalPrice());
-        assertThrows(BusinessException.class,()->service.adopt(quote.id()));
+        var photo = signedPhoto();
+        assertThrows(BusinessException.class,()->service.adopt(quote.id(),photo,null));
         verify(prices,never()).adoptQuotationPrice(any(),any(),any());
     }
     @Test void quotedIdentityCannotBeChangedAcrossVersions() {

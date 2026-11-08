@@ -33,6 +33,6 @@ export interface Quotation extends QuotationDraft {
   id: number; versionGroup: string; versionNo: number; latestVersionNo: number;
   customerName: string | null; materialAmount: Decimal; auxiliaryAmount: Decimal;
   outsoleAmount: Decimal; calculatedAmount: Decimal; currentPrice: Decimal;
-  createdAt: string; adoptedAt: string | null; versions: QuotationVersion[];
+  createdAt: string; adoptedAt: string | null; signedImageUrl: string | null; versions: QuotationVersion[];
 }
 export interface QuotationPage { records: Quotation[]; total: number; page: number; size: number }

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS shoe_quotation (
     calculated_amount decimal(28,8) DEFAULT NULL COMMENT '取整前成本合计快照（元/双）；NULL 表示未填完整',
     note varchar(2000) DEFAULT NULL COMMENT '整份报价的备注或报价条件',
     adopted_at datetime DEFAULT NULL COMMENT '本版本最近一次采用为客户单价的时间；NULL 表示未采用',
+    signed_image_key varchar(128) DEFAULT NULL COMMENT '客户签字报价单照片的相对存储路径；历史采用记录可为空',
     created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '报价版本保存时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_quotation_version (version_group,version_no),
@@ -44,3 +45,14 @@ CREATE TABLE IF NOT EXISTS shoe_quotation_item (
     PRIMARY KEY (id),
     KEY idx_quotation_items (quotation_id,sort_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='鞋款报价明细表；保存各报价版本的材料与费用项目';
+
+-- 已有报价库重复执行本脚本即可升级，保留历史报价和采用记录。
+SET @sfa_quotation_signed_image_ddl = IF(
+    EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'shoe_quotation' AND COLUMN_NAME = 'signed_image_key'),
+    'SELECT 1',
+    'ALTER TABLE shoe_quotation ADD COLUMN signed_image_key varchar(128) DEFAULT NULL COMMENT ''客户签字报价单照片的相对存储路径；历史采用记录可为空'''
+);
+PREPARE sfa_quotation_signed_image_stmt FROM @sfa_quotation_signed_image_ddl;
+EXECUTE sfa_quotation_signed_image_stmt;
+DEALLOCATE PREPARE sfa_quotation_signed_image_stmt;

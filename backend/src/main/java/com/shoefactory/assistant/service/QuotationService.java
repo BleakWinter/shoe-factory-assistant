@@ -15,6 +15,9 @@ import com.shoefactory.assistant.util.DevelopmentNoOptionBuilder;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.*;
@@ -103,30 +106,43 @@ public class QuotationService {
     private QuotationResponse save(QuotationSaveRequest request, String group, int version) {
         if (request.customerId() != null) customers.require(request.customerId());
         var result = QuotationCalculator.calculate(request);
-        var quotation = new ShoeQuotation();
+        var quotation = quotationContent(request,result);
         quotation.setVersionGroup(group); quotation.setVersionNo(version);
+        quotation.setImageKey(resolveImage(request));
+        quotation.setCreatedAt(LocalDateTime.now());
+        try { quotations.insert(quotation); }
+        catch (DuplicateKeyException ex) { throw new BusinessException("报价已有新版本，请刷新后再保存",ex); }
+        for (var item : itemContent(request,result)) {
+            item.setQuotationId(quotation.getId());
+            items.insert(item);
+        }
+        // 此处绝不写客户款价，只有 adopt 才会更新当前单价。
+        return get(quotation.getId());
+    }
+    private static ShoeQuotation quotationContent(QuotationSaveRequest request, QuotationCalculator.Result result) {
+        var quotation = new ShoeQuotation();
         quotation.setCustomerId(request.customerId()); quotation.setDevelopmentNo(CustomerPriceService.normalize(request.developmentNo()));
         quotation.setLastNo(trim(request.lastNo())); quotation.setColorMaterial(trim(request.colorMaterial()));
-        quotation.setQuotationDate(request.quotationDate()); quotation.setImageKey(resolveImage(request));
+        quotation.setQuotationDate(request.quotationDate()); quotation.setImageKey(trim(request.imageKey()));
         quotation.setLaborCost(request.laborCost()); quotation.setIncludeOutsole(request.includeOutsole());
         quotation.setRoundingMode(request.roundingMode()); quotation.setManualPrice(request.manualPrice());
         quotation.setFinalPrice(result.finalPrice()); quotation.setMaterialAmount(result.materials());
         quotation.setAuxiliaryAmount(result.auxiliary()); quotation.setOutsoleAmount(result.outsole());
         quotation.setCalculatedAmount(result.calculated()); quotation.setNote(trim(request.note()));
-        quotation.setCreatedAt(LocalDateTime.now());
-        try { quotations.insert(quotation); }
-        catch (DuplicateKeyException ex) { throw new BusinessException("报价已有新版本，请刷新后再保存",ex); }
+        return quotation;
+    }
+    private static List<ShoeQuotationItem> itemContent(QuotationSaveRequest request, QuotationCalculator.Result result) {
+        var rows = new ArrayList<ShoeQuotationItem>(request.items().size());
         for (int index=0; index<request.items().size(); index++) {
             var source = request.items().get(index);
             var item = new ShoeQuotationItem();
-            item.setQuotationId(quotation.getId()); item.setCategory(source.category()); item.setSortNo(index);
+            item.setCategory(source.category()); item.setSortNo(index);
             item.setPartName(trim(source.partName())); item.setMaterialName(trim(source.materialName()));
             item.setQuantity(source.quantity()); item.setUnit(trim(source.unit())); item.setUnitPrice(source.unitPrice());
             item.setAmount(result.itemAmounts().get(index)); item.setRemark(trim(source.remark()));
-            items.insert(item);
+            rows.add(item);
         }
-        // 此处绝不写客户款价，只有 adopt 才会更新当前单价。
-        return get(quotation.getId());
+        return rows;
     }
     private String resolveImage(QuotationSaveRequest request) {
         if (hasText(request.imageKey())) { images.require(request.imageKey()); return request.imageKey(); }
@@ -139,22 +155,85 @@ public class QuotationService {
         }
         return hasText(detail.getStyleImagePath()) ? images.copyReference(storage.resolvePath(detail.getStyleImagePath())).imageKey() : null;
     }
+    @Transactional(readOnly = true)
+    public QuotationResponse.SignedPhotoReuse signedPhotoReuse(Long sourceId, QuotationSaveRequest request) {
+        ShoeQuotation source = require(sourceId);
+        if (request.expectedVersion() == null || (!hasText(request.imageKey()) && request.sourceDetailId() != null)) return null;
+        var previous = quotations.latestSignedBefore(source.getVersionGroup(),request.expectedVersion()+1);
+        if (previous == null) return null;
+        var result = QuotationCalculator.calculate(request);
+        if (!sameSignedContent(quotationContent(request,result),itemContent(request,result),previous,loadItems(previous.getId()))) return null;
+        try { images.requireSigned(previous.getSignedImageKey()); }
+        catch (BusinessException ex) { return null; }
+        return new QuotationResponse.SignedPhotoReuse(previous.getId(),previous.getVersionNo());
+    }
     @Transactional
-    public QuotationResponse adopt(Long id) {
+    public QuotationResponse adopt(Long id, MultipartFile signedImage, Long reuseSignedPhotoFrom) {
         ShoeQuotation quotation = require(id);
         ShoeQuotation latest = quotations.lockLatest(quotation.getVersionGroup());
         if (!id.equals(latest.getId())) throw new BusinessException("历史报价请先另存为新版本，再采用为客户单价");
         quotation = quotations.lockById(id);
+        if (hasText(quotation.getSignedImageKey())) throw new BusinessException("此版本已归档签字照片，请先另存为新版本再采用");
         if (quotation.getCustomerId() == null || !hasText(quotation.getDevelopmentNo()) || quotation.getQuotationDate() == null) throw new BusinessException("请补齐客户、款号和报价日期后再采用价格");
         if (quotation.getCalculatedAmount() == null || quotation.getFinalPrice() == null) throw new BusinessException("请补齐用量、单价、加工费及最终报价后再采用价格");
-        for (var item : loadItems(id)) {
+        var quotationItems = loadItems(id);
+        for (var item : quotationItems) {
             if ("OUTSOLE".equals(item.getCategory()) && !Boolean.TRUE.equals(quotation.getIncludeOutsole())) continue;
             if (!hasText(item.getPartName()) || !hasText(item.getMaterialName()) || !hasText(item.getUnit())) throw new BusinessException("请补齐报价项目的部位、材料 / 工序及单位");
         }
+        String signedImageKey;
+        if (reuseSignedPhotoFrom == null) {
+            signedImageKey = images.uploadSigned(signedImage);
+        } else {
+            if (signedImage != null) throw new BusinessException("请选择上传新照片或沿用原签字照片");
+            var previous = quotations.latestSignedBefore(quotation.getVersionGroup(),quotation.getVersionNo());
+            if (previous == null || !reuseSignedPhotoFrom.equals(previous.getId())
+                    || !sameSignedContent(quotation,quotationItems,previous,loadItems(previous.getId()))) {
+                throw new BusinessException("无法沿用原签字照片，请上传客户签字的新版报价单照片");
+            }
+            signedImageKey = previous.getSignedImageKey();
+            images.requireSigned(signedImageKey);
+        }
         prices.adoptQuotationPrice(quotation.getCustomerId(),quotation.getDevelopmentNo(),quotation.getFinalPrice());
-        quotations.update(null,new LambdaUpdateWrapper<ShoeQuotation>().eq(ShoeQuotation::getId,id)
-                .set(ShoeQuotation::getAdoptedAt,LocalDateTime.now()));
+        int updated = quotations.update(null,new LambdaUpdateWrapper<ShoeQuotation>().eq(ShoeQuotation::getId,id)
+                .set(ShoeQuotation::getAdoptedAt,LocalDateTime.now())
+                .set(ShoeQuotation::getSignedImageKey,signedImageKey));
+        if (updated != 1) throw new BusinessException("报价采用记录保存失败，请重试");
         return get(id);
+    }
+    private static boolean sameSignedContent(ShoeQuotation quote, List<ShoeQuotationItem> quoteItems,
+            ShoeQuotation previous, List<ShoeQuotationItem> previousItems) {
+        if (!Objects.equals(quote.getCustomerId(),previous.getCustomerId())
+                || !Objects.equals(quote.getDevelopmentNo(),previous.getDevelopmentNo())
+                || !Objects.equals(quote.getLastNo(),previous.getLastNo())
+                || !Objects.equals(quote.getColorMaterial(),previous.getColorMaterial())
+                || !Objects.equals(quote.getQuotationDate(),previous.getQuotationDate())
+                || !Objects.equals(quote.getImageKey(),previous.getImageKey())
+                || !Objects.equals(quote.getIncludeOutsole(),previous.getIncludeOutsole())
+                || !sameAmount(quote.getLaborCost(),previous.getLaborCost())
+                || !sameAmount(quote.getFinalPrice(),previous.getFinalPrice())
+                || !new QuotationPrintLayout(quote.getNote()).sameProfile(new QuotationPrintLayout(previous.getNote()))
+                || quoteItems.size() != previousItems.size()) return false;
+        for (int i = 0; i < quoteItems.size(); i++) {
+            var item = quoteItems.get(i);
+            var old = previousItems.get(i);
+            if (!Objects.equals(item.getCategory(),old.getCategory())
+                    || !Objects.equals(item.getPartName(),old.getPartName())
+                    || !Objects.equals(item.getMaterialName(),old.getMaterialName())
+                    || !Objects.equals(item.getUnit(),old.getUnit())
+                    || !Objects.equals(item.getRemark(),old.getRemark())
+                    || !sameAmount(item.getQuantity(),old.getQuantity())
+                    || !sameAmount(item.getUnitPrice(),old.getUnitPrice())) return false;
+        }
+        return true;
+    }
+    private static boolean sameAmount(BigDecimal first, BigDecimal second) {
+        return first == null || second == null ? first == second : first.compareTo(second) == 0;
+    }
+    public Path signedImage(Long id) {
+        String key = require(id).getSignedImageKey();
+        if (!hasText(key)) throw new BusinessException("此报价版本暂无客户签字照片");
+        return images.requireSigned(key);
     }
     private ShoeQuotation require(Long id) {
         ShoeQuotation quotation = quotations.selectById(id);
@@ -167,10 +246,13 @@ public class QuotationService {
     }
     private QuotationResponse response(ShoeQuotation q, Integer latestVersion, String customerName,
             java.math.BigDecimal currentPrice, List<ShoeQuotationItem> rows, List<QuotationResponse.Version> versions) {
+        String signedImageUrl = hasText(q.getSignedImageKey())
+                ? "/api/quotations/" + q.getId() + "/signed-image?v=" + q.getSignedImageKey() : null;
         return new QuotationResponse(q.getId(),q.getVersionGroup(),q.getVersionNo(),latestVersion,q.getCustomerId(),customerName,
                 q.getDevelopmentNo(),q.getLastNo(),q.getColorMaterial(),q.getQuotationDate(),q.getImageKey(),images.url(q.getImageKey()),
                 q.getLaborCost(),q.getIncludeOutsole(),q.getRoundingMode(),q.getManualPrice(),q.getFinalPrice(),q.getMaterialAmount(),
-                q.getAuxiliaryAmount(),q.getOutsoleAmount(),q.getCalculatedAmount(),currentPrice,q.getNote(),q.getAdoptedAt(),q.getCreatedAt(),rows,versions);
+                q.getAuxiliaryAmount(),q.getOutsoleAmount(),q.getCalculatedAmount(),currentPrice,q.getNote(),q.getAdoptedAt(),
+                signedImageUrl,q.getCreatedAt(),rows,versions);
     }
     private static String trim(String text) { return text == null || text.isBlank() ? null : text.trim(); }
     private static boolean hasText(String text) { return text != null && !text.isBlank(); }

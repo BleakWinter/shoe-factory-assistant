@@ -17,6 +17,7 @@ final class QuotationPrintLayout {
         var source = match.find() ? TEMPLATE.path("sourceProfiles").path(match.group(1)+"/"+match.group(2).trim()) : null;
         profile = source != null && !source.isMissingNode() ? source : TEMPLATE.path("base");
     }
+    boolean sameProfile(QuotationPrintLayout other) { return profile.equals(other.profile); }
     private static JsonNode load() {
         try (var input = QuotationPrintLayout.class.getResourceAsStream("/quotation-print-layout.json")) {
             if (input == null) throw new IllegalStateException("缺少报价打印版式");

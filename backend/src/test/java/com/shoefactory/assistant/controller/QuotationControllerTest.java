@@ -1,11 +1,14 @@
 package com.shoefactory.assistant.controller;
 
+import com.shoefactory.assistant.common.BusinessException;
+import com.shoefactory.assistant.common.GlobalExceptionHandler;
 import com.shoefactory.assistant.dto.QuotationSaveRequest;
 import com.shoefactory.assistant.service.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.math.BigDecimal;
@@ -45,6 +48,18 @@ class QuotationControllerTest {
     @Test void referenceRouteIsDistinctFromVersionIdRoute() throws Exception {
         mvc.perform(get("/api/quotations/reference").param("customerId","2").param("developmentNo","195-13-23")).andExpect(status().isOk());
         verify(service).reference(2L,"195-13-23"); verifyNoMoreInteractions(service);
+    }
+    @Test void adoptionReadsSignedPhotoFromMultipartAndRejectsMissingFile() throws Exception {
+        var adoptionMvc = MockMvcBuilders.standaloneSetup(new QuotationController(service,mock(QuotationImageStore.class),mock(QuotationExcelService.class)))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var file = new MockMultipartFile("file","signed.png","image/png",new byte[]{1,2,3});
+        adoptionMvc.perform(multipart("/api/quotations/10/adopt").file(file)).andExpect(status().isOk());
+        verify(service).adopt(10L,file,null);
+        adoptionMvc.perform(multipart("/api/quotations/10/adopt").param("reuseSignedPhotoFrom","9")).andExpect(status().isOk());
+        verify(service).adopt(10L,null,9L);
+        when(service.adopt(10L,null,null)).thenThrow(new BusinessException("请选择客户签字报价单照片"));
+        adoptionMvc.perform(post("/api/quotations/10/adopt")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请选择客户签字报价单照片"));
     }
     @Test void listAcceptsUnadoptedFilterWithMultipleStylesAndQuotationDateRange() throws Exception {
         mvc.perform(get("/api/quotations").param("customerId","2")

@@ -1,5 +1,5 @@
 import { CopyOutlined, PrinterOutlined } from "@ant-design/icons";
-import { App, Button, Cascader, Checkbox, Image, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Cascader, Checkbox, Dropdown, Image, Input, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchQuotation, fetchQuotationDevelopmentNoOptions, fetchQuotations } from "../api/quotationApi";
@@ -10,6 +10,7 @@ import { formatDateTime } from "../utils/format";
 import { priceText, quotationDraft, today } from "../utils/quotation";
 import PriceConfigToolbar from "../components/PriceConfigToolbar";
 import QuotationBatchPrint from "../components/QuotationBatchPrint";
+import type { QuotationBatchPrintJob } from "../components/QuotationBatchPrint";
 import { quotationPrintCapacityIssue } from "../utils/quotationPrint";
 
 export default function QuotationListPage() {
@@ -23,7 +24,7 @@ export default function QuotationListPage() {
   const [page, setPage] = useState(1), [rows, setRows] = useState<Quotation[]>([]), [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false), [copying, setCopying] = useState<number>();
   const [selectedIds, setSelectedIds] = useState<number[]>([]), [printLoading, setPrintLoading] = useState(false);
-  const [printQuotes, setPrintQuotes] = useState<Quotation[]>([]);
+  const [printJob, setPrintJob] = useState<QuotationBatchPrintJob>();
   const printSequence = useRef(0), printBusy = useRef(false);
   const sequence = useRef(0);
   const optionSequence = useRef(0);
@@ -47,7 +48,7 @@ export default function QuotationListPage() {
   useEffect(() => { void loadOptions(); return () => { optionSequence.current++; }; }, [loadOptions]);
   useEffect(() => { setSelectedIds([]); }, [customerId, developmentNoPaths, startDate, endDate, unadoptedOnly]);
   useEffect(() => () => { printSequence.current++; }, []);
-  const finishPrint = useCallback(() => { printBusy.current = false; setPrintLoading(false); setPrintQuotes([]); }, []);
+  const finishPrint = useCallback(() => { printBusy.current = false; setPrintLoading(false); setPrintJob(undefined); }, []);
   function resetFilters() {
     setCustomerId(undefined); setDevelopmentNoPaths([]); setUnadoptedOnly(false); setPage(1);
     const date = today(); setStartDate(date); setEndDate(date);
@@ -58,7 +59,7 @@ export default function QuotationListPage() {
     catch(error) { message.error(error instanceof Error ? error.message : "复制失败"); }
     finally { setCopying(undefined); }
   }
-  async function printSelected() {
+  async function printSelected(mode: QuotationBatchPrintJob["mode"]) {
     if (!selectedIds.length || printBusy.current) return;
     const current = ++printSequence.current, ids = [...selectedIds];
     printBusy.current = true; setPrintLoading(true);
@@ -71,11 +72,19 @@ export default function QuotationListPage() {
         if (current !== printSequence.current) return;
         quotes.push(...batch);
       }
-      for (const quote of quotes) {
-        const issue = quotationPrintCapacityIssue(quote);
-        if (issue) { message.warning(`${quote.developmentNo || "未填款号"}（V${quote.versionNo}）：${issue}`); return; }
+      let printable = quotes;
+      if (mode === "signed") {
+        printable = quotes.filter(quote => quote.signedImageUrl);
+        if (!printable.length) { message.warning("所选报价均未归档签字照片"); return; }
+        const skipped = quotes.length - printable.length;
+        if (skipped) message.warning(`已跳过 ${skipped} 份没有签字照片的报价`);
+      } else {
+        for (const quote of quotes) {
+          const issue = quotationPrintCapacityIssue(quote);
+          if (issue) { message.warning(`${quote.developmentNo || "未填款号"}（V${quote.versionNo}）：${issue}`); return; }
+        }
       }
-      started = true; setPrintQuotes(quotes);
+      started = true; setPrintJob({ mode, quotations: printable });
     } catch(error) {
       if (current === printSequence.current) message.error(error instanceof Error ? error.message : "报价加载失败，请重试批量打印");
     } finally {
@@ -106,10 +115,15 @@ export default function QuotationListPage() {
       <Button disabled={printLoading} onClick={resetFilters}>重置</Button>
       <Typography.Text type="secondary">每份报价显示最新版本</Typography.Text></Space>
       <div className="quotation-selection-bar"><Space wrap>
-        <Button type="primary" icon={<PrinterOutlined/>} aria-label="批量打印" loading={printLoading} disabled={!selectedIds.length || loading} onClick={() => void printSelected()}>批量打印</Button>
+        <Dropdown trigger={["click"]} disabled={!selectedIds.length || loading || printLoading} menu={{ items: [
+          { key: "quotation", label: "打印报价单", onClick: () => void printSelected("quotation") },
+          { key: "signed", label: "打印签字照片", onClick: () => void printSelected("signed") },
+        ] }}>
+          <Button type="primary" icon={<PrinterOutlined/>} aria-label="批量打印" loading={printLoading} disabled={!selectedIds.length || loading}>批量打印</Button>
+        </Dropdown>
         <Typography.Text>已选 {selectedIds.length} 份</Typography.Text>
         <Button disabled={!selectedIds.length || printLoading} onClick={() => setSelectedIds([])}>清空选择</Button>
-      </Space><Typography.Text type="secondary">支持跨页勾选，每份报价从新的一页开始打印</Typography.Text></div>
+      </Space><Typography.Text type="secondary">支持跨页勾选，每份报价单或签字照片从新的一页开始打印</Typography.Text></div>
       <Table rowKey="id" dataSource={rows} loading={loading} scroll={{ x: 1000 }}
         rowSelection={{ selectedRowKeys: selectedIds, preserveSelectedRowKeys: true, onChange: keys => setSelectedIds(keys.map(Number)), getCheckboxProps: () => ({ disabled: printLoading || loading }) }}
         pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, disabled: printLoading, onChange: setPage }} columns={[
@@ -124,6 +138,6 @@ export default function QuotationListPage() {
         { title: "保存时间", dataIndex: "createdAt", render: formatDateTime },
         { title: "操作", width: 205, render: (_, row) => <Space><Button onClick={() => navigate(`/price-configs/quotations/${row.id}`)}>编辑</Button><Button icon={<CopyOutlined/>} loading={copying === row.id} onClick={() => void copy(row)}>复制</Button></Space> },
       ]}/></div>
-    {printQuotes.length > 0 && <QuotationBatchPrint quotations={printQuotes} onFinish={finishPrint}/>}
+    {printJob && <QuotationBatchPrint job={printJob} onFinish={finishPrint}/>}
   </div>;
 }

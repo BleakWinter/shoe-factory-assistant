@@ -2757,6 +2757,7 @@ a {
   body.quotation-printing #root, body.quotation-printing .ant-modal-root { display: none !important; }
   body.quotation-printing .quotation-print-root { display: block; page: quotation-page; }
   body.quotation-printing .quotation-print-root, body.quotation-printing .quotation-print-root * { visibility: visible; }
+  .quotation-signed-print-image { display: block; box-sizing: border-box; width: 100%; height: 295mm; padding: 10mm; object-fit: contain; break-inside: avoid; }
   body.quotation-printing .quotation-preview-scroll { overflow: visible; padding: 0; background: none; }
   body.quotation-printing .quotation-paper { margin: 0; zoom: 1 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.quotation-printing .quotation-paper tr { break-inside: avoid; }
