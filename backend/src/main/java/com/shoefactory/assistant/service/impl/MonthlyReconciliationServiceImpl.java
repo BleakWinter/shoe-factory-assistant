@@ -47,6 +47,7 @@ public class MonthlyReconciliationServiceImpl implements MonthlyReconciliationSe
             BigDecimal price=data.pricesByDetailId().get(source.getId());
             MonthlyReconciliationResponse.Detail row=new MonthlyReconciliationResponse.Detail();
             row.setTaskItemId(item.getId()); row.setShippingTaskId(task.getId()); row.setTaskNo(task.getTaskNo());
+            row.setSourceDetailId(source.getId());
             row.setShippingDate(date); row.setOrderNo(order==null?source.getCustomerOrderNo():order.getOrderNo());
             row.setDevelopmentNo(source.getDevelopmentNo()); row.setColorMaterial(source.getUpperMaterial());
             row.setOrderQuantity(LedgerDataService.quantity(source)); row.setShippingQuantity(quantity);

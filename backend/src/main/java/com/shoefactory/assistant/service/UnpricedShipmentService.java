@@ -63,12 +63,23 @@ public class UnpricedShipmentService {
 
     private record StyleKey(Long customerId, String developmentNo) {}
 
-    private record QuotationHistory(QuotationSummary latest, QuotationSummary latestPriced) {
+    record QuotationHistory(QuotationSummary latest, QuotationSummary latestPriced) {
         QuotationStatus status() { return latestPriced == null ? QuotationStatus.DRAFT : QuotationStatus.QUOTED; }
     }
 
     private Map<StyleKey, QuotationHistory> quotationHistories(List<Detail> details) {
-        var keys = details.stream().map(this::styleKey)
+        return quotationHistories(details.stream().map(this::styleKey).collect(Collectors.toSet()));
+    }
+
+    Map<String, QuotationHistory> priceProgress(Long customerId, Collection<String> styles) {
+        var keys = styles.stream().map(CustomerPriceService::normalize)
+                .map(style -> new StyleKey(customerId, style)).collect(Collectors.toSet());
+        return quotationHistories(keys).entrySet().stream()
+                .collect(Collectors.toMap(entry -> entry.getKey().developmentNo(), Map.Entry::getValue));
+    }
+
+    private Map<StyleKey, QuotationHistory> quotationHistories(Set<StyleKey> requestedKeys) {
+        var keys = requestedKeys.stream()
                 .filter(key -> key.customerId() != null && !key.developmentNo().isBlank())
                 .collect(Collectors.toSet());
         if (keys.isEmpty()) return Map.of();

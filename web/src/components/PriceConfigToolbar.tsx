@@ -18,7 +18,7 @@ export default function PriceConfigToolbar({ activeTab, loading, onRefresh, onCr
       <Typography.Title level={3}>价格配置</Typography.Title>
       <Typography.Text type="secondary">{isQuotation
         ? "在系统里算成本、保存报价；确认采用后才会更新客户标价。"
-        : "同一款号按客户分别定价；修改配置价格后，该客户历史统计和月度对账同步更新。"}</Typography.Text>
+        : "同一款号按客户分别定价。出货查询使用当前价，已确认的结算单保留当时的价格。"}</Typography.Text>
     </div>
     <div className="price-config-actions">
       <Tabs className="price-config-tabs" activeKey={activeTab}

@@ -129,7 +129,7 @@ export default function QuotationEditorPage() {
     if (saved && !dirty && saved.versionNo !== saved.latestVersionNo) { message.warning("历史报价请先另存为新版本，再采用价格"); return; }
     const confirmation = modal.confirm({ title: "采用为客户单价", okText: "确认采用", cancelText: "继续编辑", okButtonProps: { "aria-label": "确认采用" }, content: <div className="quotation-adopt-confirm">
       <p>{customerName} · {draft.developmentNo}</p><p>当前单价：{currentPrice === null ? "未配置" : `¥ ${priceText(currentPrice)}`} → <strong>¥ {priceText(totals.finalPrice)} / 双</strong></p>
-      <p>确认后，该客户此款号的历史统计和月度对账都会按新单价重新计算。{dirty || !saved ? "当前报价会先保存为新版本。" : ""}</p></div>,
+      <p>确认后，出货查询和未确认的结算单使用新单价。已确认的结算单保留当时的价格。{dirty || !saved ? "当前报价会先保存为新版本。" : ""}</p></div>,
       onOk: async () => {
         markBusy(true);
         try { const quote = await persist(); const adopted = await adoptQuotation(quote.id); replaceSaved(adopted); replaceDraft(adopted); setCurrentPrice(adopted.currentPrice); showSaved(adopted); message.success("已采用为客户单价"); }
@@ -282,7 +282,7 @@ export default function QuotationEditorPage() {
       <Checkbox checked={draft.manualPrice} disabled={busy} onChange={event => update({ manualPrice: event.target.checked, finalPrice: totals.finalPrice })}>手动调整最终报价</Checkbox>
       <div className="quotation-current-price"><span>当前客户单价</span><strong>{priceStatus === "loading" ? "读取中…" : priceStatus === "error" ? "读取失败" : currentPrice === null ? "未配置" : `¥ ${priceText(currentPrice)}`}</strong></div>
       {priceStatus === "error" && <Button size="small" type="link" disabled={busy} onClick={() => setPriceRefresh(value => value + 1)}>刷新客户单价</Button>}
-      <p className="quotation-save-hint">保存报价只留存成本与版本。确认采用后，客户单价和历史对账会同步更新。</p>
+      <p className="quotation-save-hint">保存报价留存成本与版本。确认采用后更新客户单价，待请款可在结算单中补结。</p>
       {saved?.adoptedAt && <p className="quotation-adopted">V{saved.versionNo} 曾采用于 {formatDateTime(saved.adoptedAt)}</p>}
     </aside></div>
     <footer className="page-panel quotation-footer"><span>{dirty ? "当前修改尚未保存" : saved ? `V${saved.versionNo} · ${formatDateTime(saved.createdAt)}` : "可先保存草稿，稍后继续补齐"}</span>

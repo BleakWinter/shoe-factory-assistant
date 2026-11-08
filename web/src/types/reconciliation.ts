@@ -90,3 +90,81 @@ export interface UnpricedMonthDetails {
   groups: UnpricedStyleGroup[];
   quotationCounts: UnpricedQuotationCounts;
 }
+
+export interface SettlementShipment {
+  key: string;
+  taskNo: string | null;
+  shippingDate: string;
+  orderNo: string | null;
+  developmentNo: string | null;
+  colorMaterial: string | null;
+  quantity: number;
+  unitPrice: number | null;
+  amount: number | null;
+  priceStatus: "NOT_QUOTED" | "DRAFT" | "QUOTED" | "CONFIRMED";
+  quotationId: number | null;
+  quotedPrice: number | null;
+}
+
+export interface SettlementMaterial {
+  date: string;
+  name: string;
+  quantity: number | null;
+  unit: string;
+  unitPrice: number | null;
+  reference: string;
+}
+
+export interface SettlementAdjustment {
+  type: "CREDIT" | "DEBIT";
+  reason: string;
+  amount: number | null;
+}
+
+export interface SettlementDraft {
+  preparedOn: string;
+  holdRate: number;
+  holdBase: number | null;
+  deferredKeys: string[];
+  carryKeys: string[];
+  materials: SettlementMaterial[];
+  adjustments: SettlementAdjustment[];
+  refunds: { originId: number; amount: number }[];
+}
+
+export interface SettlementRefund {
+  originId: number;
+  originMonth: string;
+  dueMonth: string;
+  remaining: number;
+  amount: number;
+}
+
+export interface SettlementTotals {
+  shippedPairs: number;
+  goods: number;
+  carryover: number;
+  holdBase: number;
+  hold: number;
+  refund: number;
+  materials: number;
+  credits: number;
+  debits: number;
+  receivable: number;
+}
+
+export interface MonthlySettlement {
+  month: string;
+  revision: number;
+  confirmedAt: string | null;
+  receivedOn: string | null;
+  draft: SettlementDraft;
+  statement: {
+    current: SettlementShipment[];
+    pending: SettlementShipment[];
+    carryovers: SettlementShipment[];
+    refunds: SettlementRefund[];
+    totals: SettlementTotals;
+  };
+  previewToken: string | null;
+}

@@ -1,5 +1,5 @@
 import { ReloadOutlined } from "@ant-design/icons";
-import { Alert, App, Button, Input, Select, Statistic, Table, Typography } from "antd";
+import { Alert, App, Button, Input, Segmented, Select, Statistic, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +8,7 @@ import {
 } from "../api/reconciliationApi";
 import { useCustomers } from "../hooks/useCustomers";
 import { localToday } from "../api/manualOrderApi";
+import MonthlySettlementPanel from "../components/MonthlySettlementPanel";
 import type {
   MonthlyReconciliation,
   MonthlyReconciliationDetail,
@@ -15,6 +16,11 @@ import type {
 
 function currentMonth() {
   return localToday().slice(0,7);
+}
+
+function previousMonth() {
+  const [year, month] = currentMonth().split("-").map(Number);
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
 }
 
 function formatAmount(value?: number) {
@@ -33,9 +39,12 @@ function formatText(value?: string) {
 }
 
 export default function MonthlyReconciliationPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const navigate = useNavigate();
-  const [month, setMonth] = useState(currentMonth());
+  const [mode, setMode] = useState<"settlement" | "shipments">("settlement");
+  const [month, setMonth] = useState(previousMonth);
+  const [shipmentMonth, setShipmentMonth] = useState(currentMonth);
+  const [settlementDirty, setSettlementDirty] = useState(false);
   const [customerId,setCustomerId]=useState<number>();
   const customers=useCustomers();
   const [reconciliation,setReconciliation]=useState<MonthlyReconciliation>();
@@ -46,14 +55,14 @@ export default function MonthlyReconciliationPage() {
   },[customers]);
 
   const loadReconciliation = useCallback(async () => {
-    if (!month || !customerId) {
+    if (!shipmentMonth || !customerId) {
       return;
     }
     setLoading(true);
     const sequence=++requestSequence.current;
     setReconciliation(undefined);
     try {
-      const result=await fetchMonthlyReconciliation(month, customerId);
+      const result=await fetchMonthlyReconciliation(shipmentMonth, customerId);
       if(sequence===requestSequence.current)setReconciliation(result);
     } catch (error) {
       if(sequence!==requestSequence.current)return;
@@ -61,11 +70,17 @@ export default function MonthlyReconciliationPage() {
     } finally {
       if(sequence===requestSequence.current)setLoading(false);
     }
-  }, [customerId, message, month]);
+  }, [customerId, message, shipmentMonth]);
 
   useEffect(() => {
-    void loadReconciliation();
-  }, [loadReconciliation]);
+    if (mode === "shipments") void loadReconciliation();
+    return () => { requestSequence.current++; };
+  }, [loadReconciliation, mode]);
+
+  function changeScope(change: () => void) {
+    if (settlementDirty) modal.confirm({ title: "放弃未保存的结算修改？", onOk: change });
+    else change();
+  }
 
   const detailColumns = useMemo<ColumnsType<MonthlyReconciliationDetail>>(
     () => [
@@ -162,16 +177,20 @@ export default function MonthlyReconciliationPage() {
         <div>
           <Typography.Title level={3}>月度对账</Typography.Title>
           <Typography.Text type="secondary">
-            按出货日期查询每月出货明细和货款，方便手工填写 Excel 对账单。
+            {mode === "settlement" ? "按账单所属月核对货款、跨月补结和扣款。" : "按实际出货日期查询每月出货明细和当前货款。"}
           </Typography.Text>
         </div>
         <div className="reconciliation-filters">
           <label>
-            <span>月份</span>
+            <span>{mode === "settlement" ? "账单所属月" : "出货月份"}</span>
             <Input
               type="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
+              value={mode === "settlement" ? month : shipmentMonth}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (mode === "settlement") changeScope(() => setMonth(value));
+                else setShipmentMonth(value);
+              }}
             />
           </label>
           <label>
@@ -180,19 +199,24 @@ export default function MonthlyReconciliationPage() {
               showSearch
               value={customerId}
               options={customers.map(c=>({label:c.recipientName,value:c.id}))}
-              onChange={setCustomerId}
+              onChange={value => changeScope(() => setCustomerId(value))}
             />
           </label>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadReconciliation()}>
+          {mode === "shipments" && <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadReconciliation()}>
             刷新
-          </Button>
+          </Button>}
         </div>
       </div>
+
+      <div><Segmented<"settlement" | "shipments"> value={mode} options={[{ label: "结算单", value: "settlement" }, { label: "出货查询", value: "shipments" }]}
+        onChange={value => changeScope(() => setMode(value))}/></div>
+      {mode === "settlement" ? month && customerId && <MonthlySettlementPanel key={`${customerId}:${month}`}
+        month={month} customerId={customerId} onDirtyChange={setSettlementDirty}/> : <>
 
       <Alert
         type="info"
         showIcon
-        message="按实际出货日期归入月份，出货数量取对应订单明细的全部数量；价格按当前客户配置计算，修改价格后历史对账同步更新。"
+        message="出货查询按实际出货日期汇总，金额随当前客户标价更新。已确认的结算金额请查看「结算单」。"
       />
 
       <div className="reconciliation-summary-grid">
@@ -213,7 +237,7 @@ export default function MonthlyReconciliationPage() {
           showIcon
           message={`${reconciliation?.missingPriceCount || 0} 条出货明细尚未配置单价，暂未计入货款合计`}
           action={
-            <Button size="small" onClick={() => navigate(`/unpriced-styles?month=${month}&customerId=${customerId}`)}>
+            <Button size="small" onClick={() => navigate(`/unpriced-styles?month=${shipmentMonth}&customerId=${customerId}`)}>
               查看待定价款号
             </Button>
           }
@@ -260,6 +284,7 @@ export default function MonthlyReconciliationPage() {
           )}
         />
       </div>
+      </>}
     </div>
   );
 }

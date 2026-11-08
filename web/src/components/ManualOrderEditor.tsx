@@ -52,7 +52,7 @@ export default function ManualOrderEditor({open,view,onClose,onSaved}: {
         </Form.Item>
         <Form.Item name="deliveryDate" label="交货日期"><Input type="date"/></Form.Item>
       </div>
-      <Alert type="info" showIcon message="订单保存后计入订单统计；确认出货后才计入已出货和月度对账。价格统一从该客户的款号价格配置读取，修改价格后历史对账也会更新。"/>
+      <Alert type="info" showIcon message="保存订单后计入订单统计，确认出货后进入月度对账。结算草稿使用当前客户单价，确认月结后固定当期金额。"/>
       <Form.List name="items" rules={[{validator:async(_,rows)=>{if(!rows?.length)throw new Error("请至少添加一条订单明细");}}]}>
         {(fields,{add,remove},{errors})=><>
           <div className="manual-line-header">款号 / 颜色材料 / 订单双数 / 备注</div>

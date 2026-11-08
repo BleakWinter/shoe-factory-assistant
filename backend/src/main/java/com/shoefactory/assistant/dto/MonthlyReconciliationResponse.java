@@ -33,6 +33,7 @@ public class MonthlyReconciliationResponse {
     public static class Detail {
         private Long taskItemId;
         private Long shippingTaskId;
+        private Long sourceDetailId;
         private String taskNo;
         private LocalDate shippingDate;
         private String orderNo;
@@ -50,6 +51,8 @@ public class MonthlyReconciliationResponse {
         public void setTaskItemId(Long taskItemId) { this.taskItemId = taskItemId; }
         public Long getShippingTaskId() { return shippingTaskId; }
         public void setShippingTaskId(Long shippingTaskId) { this.shippingTaskId = shippingTaskId; }
+        public Long getSourceDetailId() { return sourceDetailId; }
+        public void setSourceDetailId(Long sourceDetailId) { this.sourceDetailId = sourceDetailId; }
         public String getTaskNo() { return taskNo; }
         public void setTaskNo(String taskNo) { this.taskNo = taskNo; }
         public LocalDate getShippingDate() { return shippingDate; }
