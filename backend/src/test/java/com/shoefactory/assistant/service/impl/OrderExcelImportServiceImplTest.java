@@ -30,6 +30,7 @@ class OrderExcelImportServiceImplTest {
         Path workbookPath = tempDir.resolve("order.xlsx");
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             populateOrderSheet(workbook.createSheet("订单 "));
+            workbook.getCreationHelper().createFormulaEvaluator().evaluateAll();
             try (OutputStream outputStream = Files.newOutputStream(workbookPath)) {
                 workbook.write(outputStream);
             }
@@ -47,10 +48,12 @@ class OrderExcelImportServiceImplTest {
         OrderRecord summary = service.readOrderSummary(workbookPath, storedFile);
         assertEquals("JCC-2607", summary.getOrderNo());
         assertEquals(43, summary.getTotalQuantity());
+        assertEquals(5, summary.getTotalCartonCount());
 
         OrderImportResult importResult = service.importOrderDetails(workbookPath, storedFile, "SFTEST");
         assertEquals(2, importResult.getDetails().size());
         assertEquals(43, importResult.getOrder().getTotalQuantity());
+        assertEquals(5, importResult.getOrder().getTotalCartonCount());
     }
 
     @Test
@@ -71,6 +74,48 @@ class OrderExcelImportServiceImplTest {
 
         assertEquals(1, details.size());
         assertEquals("JCD-401-1-01", details.get(0).getCompanyStyleNo());
+    }
+
+    @Test
+    void readsPackingContinuationRowsBeforeTotal() throws Exception {
+        Path workbookPath = tempDir.resolve("packing-continuation.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("装箱单");
+            populatePackingHeader(sheet.createRow(0));
+            populatePackingDetailRow(sheet.createRow(1));
+            Row continuation = sheet.createRow(2);
+            continuation.createCell(5).setCellValue(12);
+            continuation.createCell(6).setCellFormula("F3");
+            continuation.createCell(7).setCellValue(2);
+            continuation.createCell(8).setCellFormula("G3*H3");
+            continuation.createCell(9).setCellValue("101");
+            continuation.createCell(10).setCellValue("102");
+
+            Row nextStyle = sheet.createRow(3);
+            populatePackingDetailRow(nextStyle);
+            nextStyle.getCell(1).setCellValue("JCD-401-1-02");
+            nextStyle.getCell(9).setCellValue("103");
+            nextStyle.getCell(10).setCellValue("103");
+
+            Row total = sheet.createRow(4);
+            total.createCell(7).setCellFormula("SUM(H2:H4)");
+            total.createCell(8).setCellFormula("SUM(I2:I4)");
+            workbook.getCreationHelper().createFormulaEvaluator().evaluateAll();
+            try (OutputStream outputStream = Files.newOutputStream(workbookPath)) {
+                workbook.write(outputStream);
+            }
+        }
+
+        OrderExcelImportServiceImpl service = new OrderExcelImportServiceImpl(fileStorageUtil());
+        var details = service.importPackingDetails(workbookPath, packingOrder(), "SFTEST");
+
+        assertEquals(3, details.size());
+        assertEquals("JCD-401-1-01", details.get(1).getCompanyStyleNo());
+        assertEquals("TEST", details.get(1).getCustomerName());
+        assertEquals("101", details.get(1).getCartonStart());
+        assertEquals(24, details.get(1).getTotalPairs());
+        assertEquals("JCD-401-1-02", details.get(2).getCompanyStyleNo());
+        assertEquals(4, details.stream().mapToInt(detail -> detail.getCartonCount()).sum());
     }
 
     @Test
@@ -126,8 +171,8 @@ class OrderExcelImportServiceImplTest {
 
         Row total = sheet.createRow(7);
         total.createCell(6).setCellValue("合计");
-        total.createCell(40).setCellValue(5);
-        total.createCell(41).setCellValue(43);
+        total.createCell(40).setCellFormula("SUM(AO6:AO7)");
+        total.createCell(41).setCellFormula("SUM(AP6:AP7)");
     }
 
     private void populateDetailRow(Row row, String developmentNo, int quantity, int cartons) {
@@ -137,9 +182,10 @@ class OrderExcelImportServiceImplTest {
         row.createCell(10).setCellValue("DV2026007");
         row.createCell(22).setCellValue("Jeffrey Campbell");
         row.createCell(24).setCellValue(quantity);
-        row.createCell(39).setCellValue(quantity);
-        row.createCell(40).setCellValue(cartons);
-        row.createCell(41).setCellValue(quantity);
+        int rowNumber = row.getRowNum() + 1;
+        row.createCell(39).setCellFormula("Y" + rowNumber);
+        row.createCell(40).setCellFormula(cartons + "+0");
+        row.createCell(41).setCellFormula("AN" + rowNumber);
     }
 
     private OrderRecord packingOrder() {
