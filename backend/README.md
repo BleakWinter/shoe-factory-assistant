@@ -41,3 +41,30 @@ app:
   file-storage:
     libre-office-command: C:/Program Files/LibreOffice/program/soffice.exe
 ```
+
+## 货期预警日报
+
+启用前在目标库执行 [`sql/add_delivery_report_send.sql`](../sql/add_delivery_report_send.sql)，并确认后端能访问 `data-service`。Java 读取待出货明细，按客户、订单和交期分组，汇总到款号。邮件正文覆盖逾期、今日、未来 7 天及交期待确认的订单。微信群文案和 PNG 覆盖逾期、今日及未来 3 天到期的订单。图片通过内网返回字节，直接作为邮件附件。
+
+给后端进程或容器配置这些环境变量：
+
+| 环境变量 | 用途 |
+| --- | --- |
+| `APP_DELIVERY_REPORT_ENABLED=true` | 启用定时任务和手动接口，默认关闭 |
+| `SPRING_MAIL_USERNAME` | QQ 发件账号 |
+| `SPRING_MAIL_PASSWORD` | QQ SMTP 授权码 |
+| `APP_DELIVERY_REPORT_TRIGGER_TOKEN` | 手动发送令牌 |
+| `APP_DELIVERY_REPORT_RECIPIENT` | 可选收件地址，默认发送到发件账号 |
+| `APP_DELIVERY_REPORT_RENDER_URL` | 可选绘图地址，默认 `http://data-service:8000/reports/delivery/render` |
+| `APP_DELIVERY_REPORT_CRON` | 可选，默认每天北京时间 08:30，填 `-` 可只开手动接口 |
+
+现有 Docker 容器的环境变量可以在首次创建或重建时通过 `--env-file` 传入。使用宿主机上的 Spring 配置文件时，也可在挂载后通过 `SPRING_CONFIG_ADDITIONAL_LOCATION` 指定。Java 容器需要与 Python 容器接到同一个自定义网络。
+
+手动试发：
+
+```bash
+curl --fail-with-body -X POST 'http://localhost:8080/api/reports/delivery/send?test=true' \
+  -H "X-Report-Token: $APP_DELIVERY_REPORT_TRIGGER_TOKEN"
+```
+
+去掉 `test=true` 可手动发送当天正式日报。它与定时任务共用数据库发送记录，同一天已经发送时返回 `ALREADY_SENT`。试发主题带「试发」，不占用当天正式发送记录。结果 `SENT` 表示 SMTP 已接收。生成失败或 SMTP 认证失败可重试。若发送结果为 `UNKNOWN`，或中断后记录停留在 `SENDING`，先核对收件箱和后端日志。确认未发送后，可把该日期的记录改为 `FAILED`，再手动发一次。

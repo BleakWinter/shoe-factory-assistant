@@ -10,6 +10,16 @@ spring:
       max-request-size: 120MB
   profiles:
     default: dev
+  mail:
+    host: smtp.qq.com
+    port: 465
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: true
+      mail.smtp.ssl.checkserveridentity: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
 
 mybatis-plus:
   configuration:
@@ -19,5 +29,9 @@ mybatis-plus:
       id-type: auto
 
 app:
+  delivery-report:
+    render-url: http://data-service:8000/reports/delivery/render
+    enabled: false
+    cron: '0 30 8 * * *'
   file-storage:
     root-path: ${user.dir}/backend/src/main/resources/files
