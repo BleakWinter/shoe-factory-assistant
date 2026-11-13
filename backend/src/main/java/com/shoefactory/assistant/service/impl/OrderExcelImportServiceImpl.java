@@ -25,6 +25,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFDrawing;
 import org.apache.poi.xssf.usermodel.XSSFPicture;
 import org.apache.poi.xssf.usermodel.XSSFPictureData;
@@ -36,9 +37,9 @@ import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,6 +53,12 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
 
     private static final LocalDate MIN_SUPPORTED_DATE = LocalDate.of(2000, 1, 1);
     private static final LocalDate MAX_SUPPORTED_DATE = LocalDate.of(2100, 12, 31);
+    private static final double MAX_DATE_SERIAL_EXCLUSIVE = DateUtil.getExcelDate(MAX_SUPPORTED_DATE.plusDays(1));
+    private static final List<DateTimeFormatter> ORDER_DATE_FORMATS = List.of(
+            DateTimeFormatter.ofPattern("uuuu-M-d").withResolverStyle(ResolverStyle.STRICT),
+            DateTimeFormatter.ofPattern("M-d-uuuu").withResolverStyle(ResolverStyle.STRICT),
+            DateTimeFormatter.ofPattern("M-d-uu").withResolverStyle(ResolverStyle.STRICT)
+    );
 
     private final DataFormatter formatter = new DataFormatter(Locale.CHINA);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -302,6 +309,60 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         return matcher.find() ? matcher.group(1) : "";
     }
 
+    private LocalDate resolveHeaderDeliveryDate(Sheet sheet, int headerRowIndex, List<CellRangeAddress> mergedRegions) {
+        LocalDate deliveryDate = dateValue(findOrderMetadataCell(
+                sheet, headerRowIndex, mergedRegions, OrderExcelColumn.DELIVERY_DATE.getAliases()), null);
+        if (deliveryDate == null) {
+            return null;
+        }
+        LocalDate orderDate = dateValue(findOrderMetadataCell(
+                sheet, headerRowIndex, mergedRegions, List.of("订单日期")), null);
+        return orderDate != null && deliveryDate.isBefore(orderDate) ? null : deliveryDate;
+    }
+
+    private Cell findOrderMetadataCell(
+            Sheet sheet, int headerRowIndex, List<CellRangeAddress> mergedRegions, List<String> labels
+    ) {
+        Cell label = null;
+        for (int rowIndex = 0; rowIndex < headerRowIndex; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            for (Cell candidate : row) {
+                String labelText = normalizeHeader(text(row, candidate.getColumnIndex())).replace(":", "");
+                if (labels.contains(labelText)) {
+                    if (label != null) {
+                        return null;
+                    }
+                    label = candidate;
+                }
+            }
+        }
+        if (label == null) {
+            return null;
+        }
+        CellRangeAddress labelRange = mergedRegionAt(mergedRegions, label.getRowIndex(), label.getColumnIndex());
+        int labelEnd = labelRange == null ? label.getColumnIndex() : labelRange.getLastColumn();
+        return mergedValueCell(label.getRow(), labelEnd + 1, mergedRegions);
+    }
+
+    private Cell mergedValueCell(Row row, int column, List<CellRangeAddress> mergedRegions) {
+        CellRangeAddress range = mergedRegionAt(mergedRegions, row.getRowNum(), column);
+        return range == null
+                ? cell(row, column)
+                : cell(row.getSheet().getRow(range.getFirstRow()), range.getFirstColumn());
+    }
+
+    private CellRangeAddress mergedRegionAt(List<CellRangeAddress> mergedRegions, int rowIndex, int column) {
+        for (CellRangeAddress range : mergedRegions) {
+            if (range.isInRange(rowIndex, column)) {
+                return range;
+            }
+        }
+        return null;
+    }
+
     private List<OrderRecordDetail> buildOrderDetails(
             Sheet sheet,
             String fileNo,
@@ -311,6 +372,12 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             int firstDataRowIndex
     ) {
         Row header = sheet.getRow(columns.headerRowIndex());
+        List<CellRangeAddress> mergedRegions = sheet.getMergedRegions();
+        LocalDate headerDeliveryDate = resolveHeaderDeliveryDate(sheet, columns.headerRowIndex(), mergedRegions);
+        List<CellRangeAddress> detailDateRegions = mergedRegions.stream()
+                .filter(range -> range.getFirstRow() >= firstDataRowIndex
+                        && range.getFirstColumn() == columns.deliveryDate())
+                .toList();
         LocalDateTime now = LocalDateTime.now();
         List<OrderRecordDetail> details = new ArrayList<>();
         for (int rowIndex = firstDataRowIndex; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -321,9 +388,12 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             if (isBlankRow(row, columns) || isRepeatedHeaderRow(row, columns)) {
                 continue;
             }
-            details.add(buildOrderDetailRow(
+            OrderRecordDetail detail = buildOrderDetailRow(
                     sheet, header, fileNo, order, picturesByRow, columns, now, row, rowIndex, details.size() + 1
-            ));
+            );
+            Cell detailDateCell = mergedValueCell(row, columns.deliveryDate(), detailDateRegions);
+            detail.setDeliveryDate(dateValue(detailDateCell, headerDeliveryDate));
+            details.add(detail);
         }
         return details;
     }
@@ -343,7 +413,6 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         OrderRecordDetail detail = new OrderRecordDetail();
         detail.setLineNo(lineNo);
         detail.setCustomerName(blankToNull(firstText(text(row, columns.customer()), order.getCustomerName())));
-        detail.setDeliveryDate(dateValue(cell(row, columns.deliveryDate())));
         detail.setLastNo(blankToNull(text(row, columns.lastNo())));
         detail.setDevelopmentNo(DevelopmentNoUtil.normalize(text(row, columns.developmentNo())));
         detail.setCustomerOrderNo(blankToNull(text(row, columns.customerOrderNo())));
@@ -843,36 +912,31 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
         }
     }
 
-    private LocalDate dateValue(Cell cell) {
+    private LocalDate dateValue(Cell cell, LocalDate blankValue) {
         if (cell == null) {
-            return null;
+            return blankValue;
         }
-        if (cell.getCellType() == CellType.NUMERIC) {
-            double numericValue = cell.getNumericCellValue();
-            if (DateUtil.isCellDateFormatted(cell) || DateUtil.isValidExcelDate(numericValue)) {
-                return supportedDateOrNull(DateUtil.getJavaDate(numericValue)
-                        .toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDate());
+        CellType type = cell.getCellType() == CellType.FORMULA ? cell.getCachedFormulaResultType() : cell.getCellType();
+        return switch (type) {
+            case BLANK -> blankValue;
+            case NUMERIC -> isSupportedDateSerial(cell.getNumericCellValue())
+                    ? supportedDateOrNull(cell.getLocalDateTimeCellValue().toLocalDate()) : null;
+            case STRING -> {
+                String value = cell.getStringCellValue().replace('\u00A0', ' ').strip();
+                yield value.isEmpty() ? blankValue : parseDateText(value);
             }
-        }
-        String value = formatter.formatCellValue(cell);
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String normalized = value.trim()
+            default -> null;
+        };
+    }
+
+    private LocalDate parseDateText(String value) {
+        String normalized = value
                 .replace("年", "-")
                 .replace("月", "-")
                 .replace("日", "")
                 .replace("/", "-")
                 .replace(".", "-");
-        List<DateTimeFormatter> formatters = List.of(
-                DateTimeFormatter.ISO_LOCAL_DATE,
-                DateTimeFormatter.ofPattern("yyyy-M-d"),
-                DateTimeFormatter.ofPattern("M-d-yy"),
-                DateTimeFormatter.ofPattern("M-d-yyyy")
-        );
-        for (DateTimeFormatter dateFormatter : formatters) {
+        for (DateTimeFormatter dateFormatter : ORDER_DATE_FORMATS) {
             try {
                 LocalDate parsedDate = LocalDate.parse(normalized, dateFormatter);
                 if (isSupportedDate(parsedDate)) {
@@ -883,17 +947,18 @@ public class OrderExcelImportServiceImpl implements OrderExcelImportService {
             }
         }
         try {
-            double serial = Double.parseDouble(normalized);
-            if (DateUtil.isValidExcelDate(serial)) {
-                return supportedDateOrNull(DateUtil.getJavaDate(serial)
-                        .toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDate());
+            double serial = Double.parseDouble(value);
+            if (isSupportedDateSerial(serial)) {
+                return supportedDateOrNull(DateUtil.getLocalDateTime(serial).toLocalDate());
             }
         } catch (NumberFormatException ignored) {
             // Not an Excel serial date.
         }
         return null;
+    }
+
+    private boolean isSupportedDateSerial(double serial) {
+        return DateUtil.isValidExcelDate(serial) && serial < MAX_DATE_SERIAL_EXCLUSIVE;
     }
 
     private LocalDate supportedDateOrNull(LocalDate date) {

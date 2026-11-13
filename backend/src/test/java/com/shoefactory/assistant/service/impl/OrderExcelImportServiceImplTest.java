@@ -8,6 +8,7 @@ import com.shoefactory.assistant.util.FileStorageUtil;
 import com.shoefactory.assistant.util.StoredFile;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,8 +16,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,6 +58,74 @@ class OrderExcelImportServiceImplTest {
         assertEquals(2, importResult.getDetails().size());
         assertEquals(43, importResult.getOrder().getTotalQuantity());
         assertEquals(5, importResult.getOrder().getTotalCartonCount());
+    }
+
+    @Test
+    void inheritsDateNextToMergedHeaderLabelWhenDetailColumnIsAbsent() throws Exception {
+        OrderImportResult result = importOrderWith(sheet -> {
+            Row metadata = sheet.getRow(3);
+            metadata.createCell(14).setCellValue("出 货 日 期：");
+            metadata.createCell(16).setCellValue("12/21/2026");
+            sheet.addMergedRegion(new CellRangeAddress(3, 3, 14, 15));
+            sheet.addMergedRegion(new CellRangeAddress(3, 3, 16, 17));
+            sheet.getRow(5).getCell(10).setCellValue("2026-12-31");
+        });
+
+        assertEquals(2, result.getDetails().size());
+        assertEquals(LocalDate.of(2026, 12, 21), result.getDetails().get(0).getDeliveryDate());
+        assertEquals(LocalDate.of(2026, 12, 21), result.getDetails().get(1).getDeliveryDate());
+    }
+
+    @Test
+    void prefersDetailDateAndInheritsHeaderOnlyForBlankCells() throws Exception {
+        OrderImportResult result = importOrderWith(sheet -> {
+            sheet.getRow(3).createCell(13).setCellValue("出货日期");
+            sheet.getRow(3).createCell(14).setCellValue("2026-12-21");
+            sheet.getRow(4).createCell(11).setCellValue("出货日期");
+            var dateCell = sheet.getRow(5).createCell(11);
+            dateCell.setCellFormula("DATE(2026,12,7)");
+            var dateStyle = sheet.getWorkbook().createCellStyle();
+            dateStyle.setDataFormat(sheet.getWorkbook().createDataFormat().getFormat("m\"月\"d\"日\""));
+            dateCell.setCellStyle(dateStyle);
+            sheet.getRow(6).createCell(11).setCellFormula("\"\"");
+            sheet.shiftRows(7, 7, 1);
+            Row invalidDateRow = sheet.createRow(7);
+            populateDetailRow(invalidDateRow, "JCD-172-57-04", 10, 1);
+            invalidDateRow.createCell(11).setCellValue("2/30/2027");
+        });
+
+        assertEquals(3, result.getDetails().size());
+        assertEquals(LocalDate.of(2026, 12, 7), result.getDetails().get(0).getDeliveryDate());
+        assertEquals(LocalDate.of(2026, 12, 21), result.getDetails().get(1).getDeliveryDate());
+        assertNull(result.getDetails().get(2).getDeliveryDate());
+    }
+
+    @Test
+    void readsDetailDatesWhenHeaderSaysSeeBelow() throws Exception {
+        OrderImportResult result = importOrderWith(sheet -> {
+            sheet.getRow(3).createCell(14).setCellValue("出货时间：");
+            sheet.getRow(3).createCell(15).setCellValue("如下");
+            sheet.getRow(3).createCell(19).setCellValue("2026-12-31");
+            sheet.getRow(4).createCell(11).setCellValue("交期");
+            sheet.getRow(5).createCell(11).setCellValue(LocalDate.of(2026, 12, 7));
+        });
+
+        assertEquals(LocalDate.of(2026, 12, 7), result.getDetails().get(0).getDeliveryDate());
+        assertNull(result.getDetails().get(1).getDeliveryDate());
+    }
+
+    @Test
+    void leavesHeaderDateBeforeOrderDateForReview() throws Exception {
+        OrderImportResult result = importOrderWith(sheet -> {
+            Row orderDate = sheet.createRow(1);
+            orderDate.createCell(13).setCellValue("订 单 日 期：");
+            orderDate.createCell(14).setCellValue("11/6/2026");
+            sheet.getRow(3).createCell(13).setCellValue("出货日期：");
+            sheet.getRow(3).createCell(14).setCellValue("1/6/2026");
+        });
+
+        assertEquals(2, result.getDetails().size());
+        assertTrue(result.getDetails().stream().allMatch(detail -> detail.getDeliveryDate() == null));
     }
 
     @Test
@@ -137,6 +209,22 @@ class OrderExcelImportServiceImplTest {
         );
 
         assertTrue(error.getMessage().contains("未解析到明细行"));
+    }
+
+    private OrderImportResult importOrderWith(Consumer<Sheet> customize) throws Exception {
+        Path workbookPath = tempDir.resolve("order-dates.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("订单");
+            populateOrderSheet(sheet);
+            customize.accept(sheet);
+            workbook.getCreationHelper().createFormulaEvaluator().evaluateAll();
+            try (OutputStream outputStream = Files.newOutputStream(workbookPath)) {
+                workbook.write(outputStream);
+            }
+        }
+        StoredFile storedFile = new StoredFile("JCC-2607.xlsx", "xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Files.size(workbookPath), workbookPath);
+        return new OrderExcelImportServiceImpl(fileStorageUtil()).importOrderDetails(workbookPath, storedFile, "SFTEST");
     }
 
     private FileStorageUtil fileStorageUtil() {

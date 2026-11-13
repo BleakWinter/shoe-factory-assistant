@@ -14,7 +14,7 @@ public enum OrderExcelColumn {
     DEVELOPMENT_NO(7, 2, "开发编号", "开发号"),
     CUSTOMER(8, 1, "客人", "客户"),
     CUSTOMER_ORDER_NO(9, 1, "客人订单号", "客户订单号"),
-    DELIVERY_DATE(10, 0, "出货时间", "出货日期", "交期"),
+    DELIVERY_DATE(-1, 0, "出货时间", "出货日期", "交货日期", "交期"),
     PO(-1, 1, "PO", "PONO", "PO号", "PO号码"),
     CUSTOMER_STYLE_NO(12, 0, "客人型体号", "客户型体号"),
     ENGLISH_COLOR(13, 0, "英文颜色"),

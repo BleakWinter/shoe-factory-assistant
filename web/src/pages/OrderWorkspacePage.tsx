@@ -435,7 +435,7 @@ export default function OrderWorkspacePage() {
       { title: "楦头", dataIndex: "lastNo", width: 110, render: formatEmpty },
       { title: "客人", dataIndex: "customerName", width: 150, render: formatEmpty },
       { title: "客人订单号", dataIndex: "customerOrderNo", width: 170, render: formatEmpty },
-      { title: "出货时间", dataIndex: "deliveryDate", width: 120, render: formatEmpty },
+      { title: "约定出货日期", dataIndex: "deliveryDate", width: 120, render: (value?: string) => value || "交期待确认" },
       { title: "PO", dataIndex: "poNo", width: 110, render: formatEmpty },
       { title: "客人型体号", dataIndex: "customerStyleNo", width: 130, render: formatEmpty },
       { title: "英文颜色", dataIndex: "englishColor", width: 160, render: formatEmpty },

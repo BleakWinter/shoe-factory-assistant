@@ -247,10 +247,10 @@ export default function OrderDetailPage() {
             },
 
             {
-                title: "出货时间",
+                title: "约定出货日期",
                 dataIndex: "deliveryDate",
                 width: 120,
-                render: formatEmpty,
+                render: (value?: string) => value || "交期待确认",
             },
 
             {
