@@ -52,7 +52,11 @@ docker build -t "$DATA_SERVICE_IMAGE" data-service
 docker compose -f deploy/compose.backend.yml up -d --no-deps --pull never --wait data-service
 ```
 
-## Jenkins 后端发布
+## Jenkins 后端构建
+
+旧 Debian 的 Jenkins Pipeline 使用仓库根目录的 Jenkinsfile。在 Pipeline 配置中选择 Pipeline script from SCM、Git 和要构建的分支。构建节点需要能以 Jenkins 服务账户运行 rootless Podman，并已导入 Java 17 Maven 镜像，标签为 `localhost/shoe-ci-maven:java17`。点 Build Now 会拉取该分支的代码，运行 Maven 测试并归档 JAR。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
+
+## Jenkins Docker 发布草案
 
 在 Mac 上试跑 Jenkins LTS 时可使用 8082 端口，后端使用 8080：
 
@@ -64,7 +68,7 @@ export PATH="/usr/local/bin:$brew_root/bin:$PATH"
   --httpListenAddress=127.0.0.1 --httpPort=8082
 ```
 
-在 Jenkins 新建一个 Pipeline 作业，选择 Pipeline script from SCM，填写 Git 仓库地址、Git 凭据和发布分支 `main`，脚本路径填 `Jenkinsfile`。目标 Docker 所在节点使用 `shoe-factory-docker` 标签，在该节点的环境变量中设置 `DEPLOY_ROOT` 和 `BACKEND_ENV_FILE`。需要 Maven 镜像站的节点再设置 `MAVEN_SETTINGS_FILE=deploy/maven-public-settings.xml`。确认节点能执行 `docker version` 和 `docker compose version`。第一次先走默认的仅构建流程，确认构建后再勾选 `DEPLOY_BACKEND`。流水线使用 Git 提交号和构建号标记镜像，通过健康检查确认后端已能查询数据库。
+Docker 发布使用独立的 Pipeline 作业，脚本路径填 `deploy/Jenkinsfile.docker`。目标 Docker 所在节点使用 `shoe-factory-docker` 标签，在该节点的环境变量中设置 `DEPLOY_ROOT` 和 `BACKEND_ENV_FILE`。需要 Maven 镜像站的节点再设置 `MAVEN_SETTINGS_FILE=deploy/maven-public-settings.xml`。确认节点能执行 `docker version` 和 `docker compose version`。第一次先走默认的仅构建流程，确认构建后再勾选 `DEPLOY_BACKEND`。流水线使用 Git 提交号和构建号标记镜像，通过健康检查确认后端已能查询数据库。
 
 如果将来迁移到 Debian 的 x86 旧电脑，构建目标应为 `linux/amd64`。Jenkins 可以留在 Mac 或其他构建主机，旧电脑通过镜像仓库拉取镜像，再在目标机执行 Compose 发布。
 
