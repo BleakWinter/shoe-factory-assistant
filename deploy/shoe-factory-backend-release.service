@@ -1,0 +1,15 @@
+[Unit]
+Description=Publish the shoe factory backend from its Jenkins build artifact
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/shoe-factory-backend-release
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/shoe-factory-backend /srv/shoe-factory-backend-queue
+TimeoutStartSec=12min

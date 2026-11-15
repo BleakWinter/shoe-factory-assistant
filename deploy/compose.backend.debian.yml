@@ -1,0 +1,33 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?Set the image for this release}
+    container_name: ${BACKEND_CONTAINER:?Set the container name for this release}
+    restart: unless-stopped
+    mem_limit: 768m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    env_file: /srv/shoe-factory-backend/nacos.env
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod,nacos
+      JAVA_TOOL_OPTIONS: -Xmx320m
+      APP_DELIVERY_REPORT_ENABLED: "false"
+      APP_FILE_STORAGE_ROOT_PATH: /data/shoe-factory-assistant/files
+    labels:
+      org.shoe-factory.backend-jar: ${BACKEND_JAR_SHA256:?Set the JAR checksum}
+    volumes:
+      - /srv/shoe-factory-backend/logs:/app/logs
+      - /srv/shoe-factory-backend/files:/data/shoe-factory-assistant/files
+    networks:
+      - config
+      - data
+
+networks:
+  config:
+    external: true
+    name: shoe-factory-config_default
+  data:
+    external: true
+    name: shoe-factory-data

@@ -54,13 +54,23 @@ docker compose -f deploy/compose.backend.yml up -d --no-deps --pull never --wait
 
 ## Jenkins 后端构建
 
-旧 Debian 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。后端构建任务 `shoe-factory-backend-build` 的流水线脚本对应仓库根目录的 `Jenkinsfile`。在 Pipeline 配置中选择 Pipeline script from SCM、Git 和要构建的分支。构建节点需要能以 Jenkins 服务账户运行 rootless Podman，并已导入 Java 17 Maven 镜像，标签为 `localhost/shoe-ci-maven:java17`。点 Build Now 会拉取该分支的代码，运行 Maven 测试并归档 JAR。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
+旧 Debian 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。`shoe-factory-backend-build` 对应仓库根目录的 `Jenkinsfile`。点 **Build Now** 会拉取 GitHub `main`，在 rootless Podman 中运行 Maven 测试，归档 JAR，并在成功后自动发布到旧机测试环境。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
+
+旧机的 `shoe-factory-backend-release.path` 监视 Jenkins 的发布请求目录。对应的 systemd 服务运行 `deploy/release-backend.py`，核对 JAR 的 SHA-256，再用带 Java 17、LibreOffice 和中文字体的运行镜像打包。`deploy/compose.backend.debian.yml` 从仓库外的 `/srv/shoe-factory-backend/nacos.env` 读取 Nacos 凭据。后端以非 root 账户运行，文件和日志保存在 `/srv/shoe-factory-backend` 下。
+
+发布时先在 Docker 内网检查新容器的 `/api/customer-configs`，再核对它与 `shoe_factory_test` 的实际 TLS 会话。通过后切换并重载 Nginx 的 `/api` 上游。若新上游验证失败，恢复上一次的 Nginx 配置。
 
 ## 旧 Debian 的 Jenkins 前端发布
 
 `shoe-factory-frontend-deploy` 从 GitHub `main` 拉取代码，使用 Jenkins 账户的 rootless Podman 和 `localhost/shoe-ci-node:node24` 执行 `npm ci`、`npm run build`，再归档 `web/dist`。在 **Build with Parameters** 里勾选 `DEPLOY_FRONTEND` 才会更新网页。流水线脚本路径为 `deploy/Jenkinsfile.frontend`。
 
 旧机 Nginx 以只读方式挂载 `/srv/shoe-factory-frontend`，从其中的 `current` 目录链接提供网页。发布脚本 `deploy/publish-frontend.sh` 写入新的版本目录，切换 `current`，并用网页实际返回的 `index.html` 验证发布。验证失败会恢复到前一个版本。上一版的 `/assets/` 文件可继续通过 Nginx 访问。
+
+## 旧 Debian 的 MySQL
+
+`deploy/compose.mysql.yml` 独立运行 MySQL 8.4 LTS，数据保存在 `shoe-factory-mysql_mysql-data` 卷。首次部署生成两份仓库外的密码文件，权限设为 `600`，通过 `MYSQL_ROOT_PASSWORD_PATH` 和 `MYSQL_APP_PASSWORD_PATH` 指定。默认初始化 `shoe_factory_test` 数据库和同名应用账号，管理员 `root` 在容器内使用。
+
+首次启动前创建 Docker 网络 `shoe-factory-data`。应用容器加入该网络后使用 `mysql:3306` 连接。旧机的测试连接信息放在 Nacos 的 `shoe-factory-test` 命名空间，连接启用 TLS。恢复业务数据前，先用现用 MySQL 的逻辑备份演练导入和应用验收。
 
 ## Jenkins Docker 发布草案
 

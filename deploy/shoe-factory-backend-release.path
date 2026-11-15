@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch for shoe factory backend release requests
+
+[Path]
+PathExistsGlob=/srv/shoe-factory-backend-queue/requests/*.request
+
+[Install]
+WantedBy=multi-user.target

@@ -73,5 +73,35 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy backend') {
+            steps {
+                sh '''
+                    set -eu
+                    set -- backend/target/shoe-factory-backend-*.jar
+                    test "$#" -eq 1
+                    test -s "$1"
+                    digest=$(sha256sum "$1" | cut -d ' ' -f 1)
+                    queue=/srv/shoe-factory-backend-queue
+                    request="$BUILD_NUMBER-$digest"
+                    result="$queue/results/$request"
+                    test ! -e "$result"
+                    upload=$(mktemp "$queue/requests/.upload.XXXXXX")
+                    trap 'rm -f "$upload"' EXIT
+                    { printf '%s\\n' "$digest"; cat "$1"; } > "$upload"
+                    mv "$upload" "$queue/requests/$request.request"
+                    for attempt in $(seq 1 450); do
+                        if test -r "$result"; then
+                            cat "$result"
+                            test "$(head -n 1 "$result")" = SUCCESS
+                            exit $?
+                        fi
+                        sleep 2
+                    done
+                    echo 'Timed out waiting for the backend release result.' >&2
+                    exit 1
+                '''
+            }
+        }
     }
 }
