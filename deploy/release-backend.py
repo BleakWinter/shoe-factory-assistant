@@ -24,6 +24,7 @@ API = '/api/customer-configs'
 SITE = 'http://100.107.45.39'
 CONFIG_NETWORK = 'shoe-factory-config_default'
 DATABASE_NETWORK = 'shoe-factory-data'
+DATABASE = 'shoe_factory_assistant_prod'
 BASE_ENV = {
     'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8',
     'DOCKER_CONFIG': str(ROOT / 'docker-cli'),
@@ -63,8 +64,8 @@ def verified_db_session(ip):
         SELECT EXISTS (
           SELECT 1 FROM performance_schema.threads t
           JOIN performance_schema.status_by_thread s ON s.THREAD_ID = t.THREAD_ID
-          WHERE t.PROCESSLIST_USER = 'shoe_factory_test'
-            AND t.PROCESSLIST_DB = 'shoe_factory_test'
+          WHERE t.PROCESSLIST_USER = 'shoe_factory_app'
+            AND t.PROCESSLIST_DB = '{DATABASE}'
             AND t.PROCESSLIST_HOST = '{ip}'
             AND s.VARIABLE_NAME = 'Ssl_cipher' AND s.VARIABLE_VALUE <> ''
         );
@@ -150,8 +151,8 @@ def release(stage, digest):
         api_ip = ipaddress.IPv4Address(networks[CONFIG_NETWORK]['IPAddress'])
         db_ip = ipaddress.IPv4Address(networks[DATABASE_NETWORK]['IPAddress'])
         await_check(lambda: check_api(f'http://{api_ip}:8080') and verified_db_session(db_ip),
-                    'Backend did not become ready with a TLS session on shoe_factory_test.', 180)
-        print('Verified backend API and authenticated TLS connection to shoe_factory_test.', flush=True)
+                    f'Backend did not become ready with a TLS session on {DATABASE}.', 180)
+        print(f'Verified backend API and authenticated TLS connection to {DATABASE}.', flush=True)
 
         if previous_digest != digest:
             config = f'''# jar-sha256 {digest}

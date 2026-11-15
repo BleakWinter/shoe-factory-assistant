@@ -54,39 +54,23 @@ docker compose -f deploy/compose.backend.yml up -d --no-deps --pull never --wait
 
 ## Jenkins 后端构建
 
-旧 Debian 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。`shoe-factory-backend-build` 对应仓库根目录的 `Jenkinsfile`。点 **Build Now** 会拉取 GitHub `main`，在 rootless Podman 中运行 Maven 测试，归档 JAR，并在成功后自动发布到旧机测试环境。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
+homeserver 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。`shoe-factory-backend-build` 对应仓库根目录的 `Jenkinsfile`。点 **Build Now** 会拉取 GitHub `main`，在 rootless Podman 中运行 Maven 测试，归档 JAR，并在成功后自动发布到 homeserver 的生产环境。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
 
-旧机的 `shoe-factory-backend-release.path` 监视 Jenkins 的发布请求目录。对应的 systemd 服务运行 `deploy/release-backend.py`，核对 JAR 的 SHA-256，再用带 Java 17、LibreOffice 和中文字体的运行镜像打包。`deploy/compose.backend.debian.yml` 从仓库外的 `/srv/shoe-factory-backend/nacos.env` 读取 Nacos 凭据。后端以非 root 账户运行，文件和日志保存在 `/srv/shoe-factory-backend` 下。
+`shoe-factory-backend-release.path` 监视 Jenkins 的发布请求目录。对应的 systemd 服务运行 `deploy/release-backend.py`，核对 JAR 的 SHA-256，再用带 Java 17、LibreOffice 和中文字体的运行镜像打包。`deploy/compose.backend.debian.yml` 从仓库外的 `/srv/shoe-factory-backend/nacos.env` 读取 Nacos 凭据。后端以非 root 账户运行，宿主机 `/srv/shoe-factory-backend/files-prod` 挂载到容器的 `/data/shoe-factory-assistant/files`。
 
-发布时先在 Docker 内网检查新容器的 `/api/customer-configs`，再核对它与 `shoe_factory_test` 的实际 TLS 会话。通过后切换并重载 Nginx 的 `/api` 上游。若新上游验证失败，恢复上一次的 Nginx 配置。
+发布时先在 Docker 内网检查新容器的 `/api/customer-configs`，再核对 `shoe_factory_app` 连接 `shoe_factory_assistant_prod` 的实际 TLS 会话。通过后切换并重载 Nginx 的 `/api` 上游。若新上游验证失败，恢复上一次的 Nginx 配置。开发环境在 Mac 运行。
 
 ## 旧 Debian 的 Jenkins 前端发布
 
-`shoe-factory-frontend-deploy` 从 GitHub `main` 拉取代码，使用 Jenkins 账户的 rootless Podman 和 `localhost/shoe-ci-node:node24` 执行 `npm ci`、`npm run build`，再归档 `web/dist`。在 **Build with Parameters** 里勾选 `DEPLOY_FRONTEND` 才会更新网页。流水线脚本路径为 `deploy/Jenkinsfile.frontend`。
+`shoe-factory-frontend-deploy` 从 GitHub `main` 拉取代码，使用 Jenkins 账户的 rootless Podman 和 `localhost/shoe-ci-node:node24` 执行 `npm ci`、`npm run build`，再归档 `web/dist`。在 **Build with Parameters** 里勾选 `DEPLOY_FRONTEND` 才会更新网页。仓库版本为 `deploy/Jenkinsfile.frontend`，运行版本保存在 Jenkins 任务的 Pipeline 配置中。
 
 旧机 Nginx 以只读方式挂载 `/srv/shoe-factory-frontend`，从其中的 `current` 目录链接提供网页。发布脚本 `deploy/publish-frontend.sh` 写入新的版本目录，切换 `current`，并用网页实际返回的 `index.html` 验证发布。验证失败会恢复到前一个版本。上一版的 `/assets/` 文件可继续通过 Nginx 访问。
 
-## 旧 Debian 的 MySQL
+## homeserver 的 MySQL
 
-`deploy/compose.mysql.yml` 独立运行 MySQL 8.4 LTS，数据保存在 `shoe-factory-mysql_mysql-data` 卷。首次部署生成两份仓库外的密码文件，权限设为 `600`，通过 `MYSQL_ROOT_PASSWORD_PATH` 和 `MYSQL_APP_PASSWORD_PATH` 指定。默认初始化 `shoe_factory_test` 数据库和同名应用账号，管理员 `root` 在容器内使用。
+`deploy/compose.mysql.yml` 独立运行 MySQL 8.4 LTS，数据保存在 `shoe-factory-mysql_mysql-data` 卷。首次部署使用两份仓库外的密码文件，权限设为 `600`，通过 `MYSQL_ROOT_PASSWORD_PATH` 和 `MYSQL_APP_PASSWORD_PATH` 指定，并用 `MYSQL_DATABASE` 指定初始化库。管理员 `root` 在容器内使用。
 
-首次启动前创建 Docker 网络 `shoe-factory-data`。应用容器加入该网络后使用 `mysql:3306` 连接。旧机的测试连接信息放在 Nacos 的 `shoe-factory-test` 命名空间，连接启用 TLS。恢复业务数据前，先用现用 MySQL 的逻辑备份演练导入和应用验收。
-
-## Jenkins Docker 发布草案
-
-在 Mac 上试跑 Jenkins LTS 时可使用 8082 端口，后端使用 8080：
-
-```bash
-brew install jenkins-lts
-brew_root="$(brew --prefix)"
-export PATH="/usr/local/bin:$brew_root/bin:$PATH"
-"$brew_root/opt/openjdk@21/bin/java" -jar "$brew_root/opt/jenkins-lts/libexec/jenkins.war" \
-  --httpListenAddress=127.0.0.1 --httpPort=8082
-```
-
-Docker 发布使用独立的 Pipeline 作业，脚本路径填 `deploy/Jenkinsfile.docker`。目标 Docker 所在节点使用 `shoe-factory-docker` 标签，在该节点的环境变量中设置 `DEPLOY_ROOT` 和 `BACKEND_ENV_FILE`。需要 Maven 镜像站的节点再设置 `MAVEN_SETTINGS_FILE=deploy/maven-public-settings.xml`。确认节点能执行 `docker version` 和 `docker compose version`。第一次先走默认的仅构建流程，确认构建后再勾选 `DEPLOY_BACKEND`。流水线使用 Git 提交号和构建号标记镜像，通过健康检查确认后端已能查询数据库。
-
-如果将来迁移到 Debian 的 x86 旧电脑，构建目标应为 `linux/amd64`。Jenkins 可以留在 Mac 或其他构建主机，旧电脑通过镜像仓库拉取镜像，再在目标机执行 Compose 发布。
+首次启动前创建 Docker 网络 `shoe-factory-data`。应用容器加入该网络后使用 `mysql:3306` 连接。生产连接信息保存在 Nacos 的 `shoe-factory-prod` 命名空间，连接启用 TLS。`shoe_factory_app` 对 `shoe_factory_assistant_prod` 有 `SELECT`、`INSERT`、`UPDATE`、`DELETE` 权限。恢复业务数据前，先用现用 MySQL 的逻辑备份演练导入和应用验收。
 
 ## Nacos 配置中心
 
@@ -98,133 +82,13 @@ Docker 发布使用独立的 Pipeline 作业，脚本路径填 `deploy/Jenkinsfi
 
 启用配置中心时，后端需要 `SPRING_PROFILES_ACTIVE=prod,nacos` 和 `NACOS_SERVER_ADDR`、`NACOS_NAMESPACE`、`NACOS_USERNAME`、`NACOS_PASSWORD`。如果使用本机 Compose，将后端加入 Nacos 的 `shoe-factory-config_default` Docker 网络，连接地址填 `nacos:8848`。填写相应的命名空间 ID。通过 Nacos 管理的字段应从后端环境文件和 Compose 的 `environment` 移除，避免环境变量覆盖。文件存储路径要和容器内的数据卷挂载位置一致。修改配置后重启后端生效。
 
-## 原虚拟机部署
+## 多客户功能升级
 
-目标虚拟机：`192.168.10.62`
+部署多客户手工录单版本前，必须先备份目标业务数据库并执行 `sql/add_multi_customer_ledger.sql`，再部署后端与前端。数据库迁移需要手动执行。新库先执行 `sql/print_table.sql`，再执行升级脚本。操作和数据口径见 [多客户录单与对账](多客户录单与对账.md)。
 
-## 1. 部署内容
+## 业务文件归档
 
-后端上传 Spring Boot jar 到虚拟机，并用 Java 17 Docker 容器运行。
-
-前端执行本机构建后上传静态文件到虚拟机：
-
-```text
-/data/web/shoe-factory-assistant
-```
-
-Nginx 负责访问前端页面，并把 `/api` 代理到后端 `8080`。
-
-MySQL 使用虚拟机上已有数据库服务，不由部署脚本创建或管理。
-
-### 多客户功能升级注意
-
-部署多客户手工录单版本前，必须先备份目标业务数据库并执行 `sql/add_multi_customer_ledger.sql`，再部署后端与前端。部署脚本不会自动执行数据库迁移。新库先执行 `sql/print_table.sql`，再执行升级脚本。操作和数据口径见 [多客户录单与对账](多客户录单与对账.md)。
-
-## 2. 虚拟机依赖
-
-虚拟机需要安装：
-
-```bash
-docker
-```
-
-检查：
-
-```bash
-docker --version
-```
-
-## 3. 后端部署
-
-在 Windows 本机项目根目录执行：
-
-```powershell
-.\deploy\deploy-backend.ps1
-```
-
-Git Bash 里执行：
-
-```bash
-./deploy/deploy-backend.sh
-```
-
-脚本会执行：
-
-```text
-1. mvn -Pprod -Dmaven.test.skip=true package
-2. 上传 jar 到 /data/backend/shoe-factory-assistant/app.jar
-3. 拉取 eclipse-temurin:17-jre-jammy
-4. 如果容器不存在则创建，已存在则只重启
-```
-
-后端地址：
-
-```text
-http://192.168.10.62:8080
-```
-
-查看日志：
-
-```bash
-docker logs -f shoe-factory-backend
-tail -f /data/backend/shoe-factory-assistant/logs/backend.log
-tail -f /data/backend/shoe-factory-assistant/logs/backend-error.log
-```
-
-重启：
-
-```bash
-docker restart shoe-factory-backend
-```
-
-## 4. 前端部署
-
-在 Windows 本机项目根目录执行：
-
-```powershell
-.\deploy\deploy-frontend.ps1
-```
-
-Git Bash 里执行：
-
-```bash
-./deploy/deploy-frontend.sh
-```
-
-脚本会执行：
-
-```text
-1. npm run build
-2. 上传 web/dist 到 /data/web/shoe-factory-assistant
-3. 修复文件权限
-4. 重载或重启 Nginx
-```
-
-访问：
-
-```text
-http://192.168.10.62/
-```
-
-## 5. 数据库配置
-
-后端使用 `backend/src/main/resources/application-prod.yml`：
-
-```text
-jdbc:mysql://192.168.10.62:3306/shoe_factory_assistant_prod
-```
-
-如果数据库账号密码变化，修改 `application-prod.yml` 后重新部署后端。
-
-## 6. 文件位置
-
-上传文件、图片和 PDF 保存在虚拟机：
-
-```text
-/data/shoe-factory-assistant/files
-```
-
-应用会按下面结构保存：
+上传文件、图片和 PDF 使用容器内的 `/data/shoe-factory-assistant/files`。归档位置按年月和文件类型组织。
 
 ```text
 /data/shoe-factory-assistant/files/年份/月/original

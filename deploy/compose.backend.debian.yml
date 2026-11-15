@@ -13,13 +13,12 @@ services:
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod,nacos
       JAVA_TOOL_OPTIONS: -Xmx320m
-      APP_DELIVERY_REPORT_ENABLED: "false"
       APP_FILE_STORAGE_ROOT_PATH: /data/shoe-factory-assistant/files
     labels:
       org.shoe-factory.backend-jar: ${BACKEND_JAR_SHA256:?Set the JAR checksum}
     volumes:
       - /srv/shoe-factory-backend/logs:/app/logs
-      - /srv/shoe-factory-backend/files:/data/shoe-factory-assistant/files
+      - /srv/shoe-factory-backend/files-prod:/data/shoe-factory-assistant/files
     networks:
       - config
       - data
