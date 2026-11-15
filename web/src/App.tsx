@@ -32,6 +32,20 @@ const navLeafItems: NavLeafItem[] = [
   { path: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { path: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
   {
+    path: "/workshop/piecework",
+    label: "员工计件",
+    icon: <TeamOutlined />,
+    parentKey: "workshop-center",
+    parentLabel: "工厂管理",
+  },
+  {
+    path: "/workshop/progress",
+    label: "部门进度",
+    icon: <BarChartOutlined />,
+    parentKey: "workshop-center",
+    parentLabel: "工厂管理",
+  },
+  {
     path: "/unpriced-styles",
     label: "待定价款号",
     icon: <DollarOutlined />,
@@ -134,6 +148,15 @@ const navLeafItems: NavLeafItem[] = [
 const menuItems: MenuProps["items"] = [
   { key: "/orders", label: "订单列表", icon: <TableOutlined /> },
   { key: "/statistics", label: "数据统计", icon: <BarChartOutlined /> },
+  {
+    key: "workshop-center",
+    label: "工厂管理",
+    icon: <TeamOutlined />,
+    children: [
+      { key: "/workshop/piecework", label: "员工计件", icon: <AccountBookOutlined /> },
+      { key: "/workshop/progress", label: "部门进度", icon: <BarChartOutlined /> },
+    ],
+  },
   {
     key: "finance-center",
     label: "财务管理",

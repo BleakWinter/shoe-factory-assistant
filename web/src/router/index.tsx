@@ -17,6 +17,7 @@ import QuotationEditorPage from "../pages/QuotationEditorPage";
 import ShoeStatisticsPage from "../pages/ShoeStatisticsPage";
 import StyleConfigPage from "../pages/StyleConfigPage";
 import InnerBoxTypeConfigPage from "../pages/InnerBoxTypeConfigPage";
+import WorkshopPreviewPage from "../pages/WorkshopPreviewPage";
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +28,9 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/orders" replace /> },
       { path: "orders", element: <OrderWorkspacePage /> },
       { path: "statistics", element: <ShoeStatisticsPage /> },
+      { path: "workshop", element: <Navigate to="/workshop/piecework" replace /> },
+      { path: "workshop/piecework", element: <WorkshopPreviewPage /> },
+      { path: "workshop/progress", element: <WorkshopPreviewPage /> },
       { path: "monthly-reconciliation", element: <MonthlyReconciliationPage /> },
       { path: "unpriced-styles", element: <UnpricedStylesPage /> },
       { path: "orders/:id/details", element: <OrderDetailsRoute /> },
