@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '3'))
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    parameters {
+        booleanParam(name: 'DEPLOY_FRONTEND', defaultValue: false, description: '构建成功后更新旧机 Nginx 的鞋厂前端')
+    }
+
+    environment {
+        XDG_RUNTIME_DIR = '/run/jenkins'
+        FRONTEND_ROOT = '/srv/shoe-factory-frontend'
+        FRONTEND_URL = 'http://100.107.45.39/'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                deleteDir()
+                checkout scm
+                sh 'git log -1 --format="Building %h %s"'
+            }
+        }
+
+        stage('Build frontend') {
+            steps {
+                sh '''
+                    set -eu
+                    mkdir -p "$HOME/.npm"
+                    podman --cgroup-manager=cgroupfs run --rm --pull=never \\
+                        --network slirp4netns --userns keep-id \\
+                        -e NPM_CONFIG_CACHE=/npm-cache -e NODE_OPTIONS=--max-old-space-size=896 \\
+                        -v "$WORKSPACE:/build:rw" -v "$HOME/.npm:/npm-cache:rw" \\
+                        -w /build/web localhost/shoe-ci-node:node24 \\
+                        sh -ec 'node --version; npm ci --no-audit --no-fund; npm run build'
+                    test -s web/dist/index.html
+                '''
+                archiveArtifacts artifacts: 'web/dist/**', fingerprint: true
+            }
+        }
+
+        stage('Deploy frontend') {
+            when {
+                expression { params.DEPLOY_FRONTEND }
+            }
+            steps {
+                sh '''
+                    set -eu
+                    release="$(git rev-parse --short=12 HEAD)-$BUILD_NUMBER"
+                    bash deploy/publish-frontend.sh web/dist "$FRONTEND_ROOT" "$release" "$FRONTEND_URL"
+                '''
+            }
+        }
+    }
+}

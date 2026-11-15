@@ -19,5 +19,6 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /build/app.jar /app/app.jar
 
+ENV SPRING_PROFILES_ACTIVE=prod
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar", "--spring.profiles.active=prod"]
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

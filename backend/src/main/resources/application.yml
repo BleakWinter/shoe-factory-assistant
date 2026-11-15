@@ -10,6 +10,11 @@ spring:
       max-request-size: 120MB
   profiles:
     default: dev
+  cloud:
+    nacos:
+      config:
+        import-check:
+          enabled: false
   mail:
     host: smtp.qq.com
     port: 465

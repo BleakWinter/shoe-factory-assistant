@@ -1,0 +1,27 @@
+name: shoe-factory-config
+
+services:
+  nacos:
+    image: ${NACOS_IMAGE:-nacos/nacos-server:v3.3.0}
+    restart: unless-stopped
+    mem_limit: 896m
+    env_file: ${NACOS_SERVER_ENV_FILE:?Set NACOS_SERVER_ENV_FILE to the Nacos server environment file}
+    environment:
+      MODE: standalone
+      FUNCTION_MODE: microservice
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_ADMIN_ENABLE: "true"
+      NACOS_AUTH_CONSOLE_ENABLE: "true"
+      NACOS_CONSOLE_CONTEXTPATH: /nacos
+      JVM_XMS: 256m
+      JVM_XMX: 384m
+      JVM_XMN: 128m
+    volumes:
+      - data:/home/nacos/data
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  data:

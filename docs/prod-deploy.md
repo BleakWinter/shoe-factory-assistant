@@ -54,7 +54,13 @@ docker compose -f deploy/compose.backend.yml up -d --no-deps --pull never --wait
 
 ## Jenkins 后端构建
 
-旧 Debian 的 Jenkins Pipeline 使用仓库根目录的 Jenkinsfile。在 Pipeline 配置中选择 Pipeline script from SCM、Git 和要构建的分支。构建节点需要能以 Jenkins 服务账户运行 rootless Podman，并已导入 Java 17 Maven 镜像，标签为 `localhost/shoe-ci-maven:java17`。点 Build Now 会拉取该分支的代码，运行 Maven 测试并归档 JAR。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
+旧 Debian 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。后端构建任务 `shoe-factory-backend-build` 的流水线脚本对应仓库根目录的 `Jenkinsfile`。在 Pipeline 配置中选择 Pipeline script from SCM、Git 和要构建的分支。构建节点需要能以 Jenkins 服务账户运行 rootless Podman，并已导入 Java 17 Maven 镜像，标签为 `localhost/shoe-ci-maven:java17`。点 Build Now 会拉取该分支的代码，运行 Maven 测试并归档 JAR。构建工作区里开发和生产配置的数据库连接会替换成测试占位值。
+
+## 旧 Debian 的 Jenkins 前端发布
+
+`shoe-factory-frontend-deploy` 从 GitHub `main` 拉取代码，使用 Jenkins 账户的 rootless Podman 和 `localhost/shoe-ci-node:node24` 执行 `npm ci`、`npm run build`，再归档 `web/dist`。在 **Build with Parameters** 里勾选 `DEPLOY_FRONTEND` 才会更新网页。流水线脚本路径为 `deploy/Jenkinsfile.frontend`。
+
+旧机 Nginx 以只读方式挂载 `/srv/shoe-factory-frontend`，从其中的 `current` 目录链接提供网页。发布脚本 `deploy/publish-frontend.sh` 写入新的版本目录，切换 `current`，并用网页实际返回的 `index.html` 验证发布。验证失败会恢复到前一个版本。上一版的 `/assets/` 文件可继续通过 Nginx 访问。
 
 ## Jenkins Docker 发布草案
 
@@ -71,6 +77,16 @@ export PATH="/usr/local/bin:$brew_root/bin:$PATH"
 Docker 发布使用独立的 Pipeline 作业，脚本路径填 `deploy/Jenkinsfile.docker`。目标 Docker 所在节点使用 `shoe-factory-docker` 标签，在该节点的环境变量中设置 `DEPLOY_ROOT` 和 `BACKEND_ENV_FILE`。需要 Maven 镜像站的节点再设置 `MAVEN_SETTINGS_FILE=deploy/maven-public-settings.xml`。确认节点能执行 `docker version` 和 `docker compose version`。第一次先走默认的仅构建流程，确认构建后再勾选 `DEPLOY_BACKEND`。流水线使用 Git 提交号和构建号标记镜像，通过健康检查确认后端已能查询数据库。
 
 如果将来迁移到 Debian 的 x86 旧电脑，构建目标应为 `linux/amd64`。Jenkins 可以留在 Mac 或其他构建主机，旧电脑通过镜像仓库拉取镜像，再在目标机执行 Compose 发布。
+
+## Nacos 配置中心
+
+在旧 Debian 上用 `deploy/compose.nacos.yml` 启动单机配置中心。把 `NACOS_SERVER_ENV_FILE` 指向仓库外的环境文件，文件权限设为 `600`。文件需要 `NACOS_AUTH_TOKEN`（用 `openssl rand -base64 48` 生成）、`NACOS_AUTH_IDENTITY_KEY` 和 `NACOS_AUTH_IDENTITY_VALUE`。Compose 将配置数据保存在 `shoe-factory-config_data` 卷中。新实例需要初始化管理员密码。
+
+控制台通过旧机的 Tailscale Nginx 入口 `http://100.107.45.39/nacos/` 访问。Nginx 加入 `shoe-factory-config_default` 外部 Docker 网络，将 `/nacos/` 转发给 `nacos:8080`，并保留请求 URI 中的 `/nacos/` 前缀。客户端使用 Docker 内网的 `nacos:8848` 和 `9848`。
+
+在 Nacos 中为测试和正式环境分别使用独立的命名空间。创建 YAML 类型的 `shoe-factory-backend.yml`，Group 填 `SHOE_FACTORY`。配置中集中管理 `spring.datasource` 的 URL、用户名、密码、`app.file-storage.root-path` 及需要的 `app.delivery-report` 和 `spring.mail`。为后端创建只读账号，并授予对应配置的读取权限。
+
+启用配置中心时，后端需要 `SPRING_PROFILES_ACTIVE=prod,nacos` 和 `NACOS_SERVER_ADDR`、`NACOS_NAMESPACE`、`NACOS_USERNAME`、`NACOS_PASSWORD`。如果使用本机 Compose，将后端加入 Nacos 的 `shoe-factory-config_default` Docker 网络，连接地址填 `nacos:8848`。填写相应的命名空间 ID。通过 Nacos 管理的字段应从后端环境文件和 Compose 的 `environment` 移除，避免环境变量覆盖。文件存储路径要和容器内的数据卷挂载位置一致。修改配置后重启后端生效。
 
 ## 原虚拟机部署
 
