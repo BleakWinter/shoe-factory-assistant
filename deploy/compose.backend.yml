@@ -1,0 +1,90 @@
+name: shoe-factory
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-shoe-factory-backend:local}
+    container_name: shoe-factory-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    env_file:
+      - path: "${BACKEND_ENV_FILE:?Set BACKEND_ENV_FILE to the deployment environment file}"
+        format: raw
+    environment:
+      TZ: Asia/Shanghai
+      APP_FILE_STORAGE_ROOT_PATH: /data/shoe-factory-assistant/files
+    volumes:
+      - type: bind
+        source: "${DEPLOY_ROOT:?Set DEPLOY_ROOT to the host deployment directory}/backend/logs"
+        target: /app/logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${DEPLOY_ROOT}/files"
+        target: /data/shoe-factory-assistant/files
+        bind:
+          create_host_path: false
+    networks:
+      - default
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 4 http://127.0.0.1:8080/api/customer-configs | grep -q '\"success\":true'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 3s
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-nginx:1.27-alpine}
+    container_name: shoe-factory-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    volumes:
+      - type: bind
+        source: "${FRONTEND_DIR:-${DEPLOY_ROOT}/frontend}/conf/default.conf"
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${FRONTEND_DIR:-${DEPLOY_ROOT}/frontend}/html"
+        target: /usr/share/nginx/html
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${FRONTEND_DIR:-${DEPLOY_ROOT}/frontend}/logs"
+        target: /var/log/nginx
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+
+  data-service:
+    image: ${DATA_SERVICE_IMAGE:-shoe-factory-data-service:local-check}
+    container_name: data-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DATA_SERVICE_PORT:-8000}:8000"
+    networks:
+      - default
+      - data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=4).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+
+networks:
+  data:
+    external: true
+    name: shoe-factory-data

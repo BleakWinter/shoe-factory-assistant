@@ -58,7 +58,13 @@ app:
 | `APP_DELIVERY_REPORT_RENDER_URL` | 可选绘图地址，默认 `http://data-service:8000/reports/delivery/render` |
 | `APP_DELIVERY_REPORT_CRON` | 可选，默认每天北京时间 08:30，填 `-` 可只开手动接口 |
 
-现有 Docker 容器的环境变量可以在首次创建或重建时通过 `--env-file` 传入。使用宿主机上的 Spring 配置文件时，也可在挂载后通过 `SPRING_CONFIG_ADDITIONAL_LOCATION` 指定。Java 容器需要与 Python 容器接到同一个自定义网络。
+在首次创建或重建 Docker 容器时通过 `--env-file` 传入这些变量。把变量按 `KEY=value` 格式写入仓库外的环境变量文件，限制文件权限为 `600`。运行本机部署脚本时指定该文件的路径，沿用原容器的数据库和部署参数。
+
+```bash
+REPORT_ENV_FILE=/absolute/path/delivery-report.env bash deploy/deploy-backend-local-docker.sh
+```
+
+Java 容器需要与 Python 容器接到同一个自定义网络。新建 Java 容器时，如果 `shoe-factory-data` 网络已存在，脚本会自动接入。日常发布可直接运行脚本，重启容器会沿用创建时的环境变量。下次需要修改这些变量时，更新环境变量文件后重新创建容器。
 
 手动试发：
 
