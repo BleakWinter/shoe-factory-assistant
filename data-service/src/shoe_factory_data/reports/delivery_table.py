@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 
@@ -21,6 +22,13 @@ MUTED = "#556960"
 GREEN = "#1d463b"
 RED = "#a5392f"
 GRID = "#d5e1da"
+FILL_OVERDUE = "#fff1ed"
+FILL_THREE_DAYS = "#fce9d6"
+FILL_FIVE_DAYS = "#fbf6e2"
+TEXT_THREE_DAYS = "#a4521c"
+TEXT_FIVE_DAYS = "#7c5f12"
+MIN_GROUP_HEIGHT = 70
+TOP_PADDING = 20
 
 
 class DeliveryTableTooLarge(ValueError):
@@ -76,14 +84,24 @@ def cell_text(
         draw.text((x, top + i * LINE_HEIGHT), line, font=font, fill=color, anchor=f"{align}m")
 
 
-def delivery_label(group: DeliveryOrderGroup, report_year: int) -> str:
+def delivery_date_text(group: DeliveryOrderGroup, report_date: date) -> str:
     if group.delivery_date is None:
         return "交期待确认"
     due = group.delivery_date
-    label = f"{due.month}/{due.day}" if due.year == report_year else due.isoformat()
+    return f"{due.month}/{due.day}" if due.year == report_date.year else due.isoformat()
+
+
+def delivery_status_text(group: DeliveryOrderGroup, report_date: date) -> str | None:
+    if group.delivery_date is None:
+        return None
     if group.overdue_days:
-        label += f" · 逾期 {group.overdue_days} 天"
-    return label
+        return f"逾期 {group.overdue_days} 天"
+    remaining = (group.delivery_date - report_date).days
+    if remaining <= 0:
+        return "今日到期"
+    if remaining <= 7:
+        return f"剩余 {remaining} 天"
+    return None
 
 
 @dataclass(frozen=True)
@@ -96,11 +114,22 @@ class TableRow:
 @dataclass(frozen=True)
 class TableGroup:
     order: list[str]
-    delivery: list[str]
-    delivery_font: ImageFont.FreeTypeFont
-    overdue: bool
+    delivery_date: list[str]
+    delivery_status: list[str] | None
+    fill: str | None
+    text_color: str
     rows: list[TableRow]
     height: int
+
+
+def severity_style(remaining_days: int | None, overdue: bool) -> tuple[str | None, str]:
+    if overdue:
+        return FILL_OVERDUE, RED
+    if remaining_days is None or remaining_days > 5:
+        return None, INK
+    if remaining_days > 3:
+        return FILL_FIVE_DAYS, TEXT_FIVE_DAYS
+    return FILL_THREE_DAYS, TEXT_THREE_DAYS
 
 
 def layout_groups(report: DeliveryRenderRequest, fonts: DeliveryFonts) -> list[TableGroup]:
@@ -114,19 +143,25 @@ def layout_groups(report: DeliveryRenderRequest, fonts: DeliveryFonts) -> list[T
         if total_height + len(group.styles) * ROW_HEIGHT > MAX_HEIGHT:
             raise DeliveryTableTooLarge("日报超出单张图片高度，请分批提交 orderGroups")
         overdue = group.overdue_days > 0
-        delivery_font = fonts.status if overdue else fonts.body
+        remaining = None if group.delivery_date is None else (group.delivery_date - report.report_date).days
+        fill, text_color = severity_style(remaining, overdue)
         order = wrap(group.order_no, 0, fonts.body)
-        delivery = wrap(delivery_label(group, report.report_date.year), 2, delivery_font)
+        delivery_date = wrap(delivery_date_text(group, report.report_date), 2, fonts.body)
+        status_text = delivery_status_text(group, report.report_date)
+        delivery_status = wrap(status_text, 2, fonts.status) if status_text else None
         rows = []
         for item in group.styles:
             style = wrap(item.style_no, 1, fonts.body)
             pairs = wrap(f"{item.pending_pairs:,} 双", 3, fonts.body)
             rows.append(TableRow(style, pairs, max(ROW_HEIGHT, LINE_HEIGHT * max(len(style), len(pairs)) + 18)))
-        height = max(sum(row.height for row in rows), LINE_HEIGHT * max(len(order), len(delivery)) + 18)
+        text_lines = len(delivery_date) + (len(delivery_status) if delivery_status else 0)
+        height = max(sum(row.height for row in rows),
+                     LINE_HEIGHT * max(len(order), text_lines) + 12,
+                     MIN_GROUP_HEIGHT)
         total_height += height
         if total_height > MAX_HEIGHT:
             raise DeliveryTableTooLarge("日报超出单张图片高度，请分批提交 orderGroups")
-        groups.append(TableGroup(order, delivery, delivery_font, overdue, rows, height))
+        groups.append(TableGroup(order, delivery_date, delivery_status, fill, text_color, rows, height))
     return groups
 
 
@@ -152,29 +187,46 @@ def render_delivery_table(report: DeliveryRenderRequest, fonts: DeliveryFonts) -
                       font=fonts.body, fill=MUTED, anchor="mm")
         else:
             y = header_bottom
+            separators: list[int] = []
+            bounds: list[int] = []
             for group in groups:
                 bottom = y + group.height
-                if group.overdue:
-                    draw.rectangle((COLUMNS[0], y, COLUMNS[-1], bottom), fill="#fff1ed")
-                tone = RED if group.overdue else INK
-                cell_text(draw, group.order, 0, (y + bottom) // 2, fonts.body)
-                cell_text(draw, group.delivery, 2, (y + bottom) // 2, group.delivery_font, tone, align="m")
+                if group.fill:
+                    draw.rectangle((COLUMNS[0], y, COLUMNS[-1], bottom), fill=group.fill)
+                for i, line in enumerate(group.order):
+                    draw.text((COLUMNS[0] + CELL_PADDING, y + TOP_PADDING + i * LINE_HEIGHT),
+                              line, font=fonts.body, fill=INK, anchor="lm")
+                center_x = (COLUMNS[2] + COLUMNS[3]) // 2
+                for i, line in enumerate(group.delivery_date):
+                    draw.text((center_x, y + TOP_PADDING + i * LINE_HEIGHT),
+                              line, font=fonts.body, fill=group.text_color, anchor="mm")
+                if group.delivery_status:
+                    status_top = y + TOP_PADDING + len(group.delivery_date) * LINE_HEIGHT
+                    for i, line in enumerate(group.delivery_status):
+                        draw.text((center_x, status_top + i * LINE_HEIGHT),
+                                  line, font=fonts.status, fill=group.text_color, anchor="mm")
 
                 row_top = y
                 extra_height = group.height - sum(row.height for row in group.rows)
                 for i, row in enumerate(group.rows):
                     if i:
-                        draw.line((COLUMNS[1], row_top, COLUMNS[2], row_top), fill=GRID)
-                        draw.line((COLUMNS[3], row_top, COLUMNS[4], row_top), fill=GRID)
+                        separators.append(row_top)
                     row_height = row.height + (extra_height if i == len(group.rows) - 1 else 0)
                     middle = row_top + row_height // 2
                     cell_text(draw, row.style, 1, middle, fonts.body)
-                    cell_text(draw, row.pairs, 3, middle, fonts.body, tone, align="r")
+                    cell_text(draw, row.pairs, 3, middle, fonts.body, group.text_color, align="r")
                     row_top += row_height
-                draw.line((COLUMNS[0], bottom, COLUMNS[-1], bottom), fill=GRID)
+                bounds.append(bottom)
                 y = bottom
+
             for x in COLUMNS:
                 draw.line((x, header_bottom, x, table_bottom), fill=GRID)
+            for row_top in separators:
+                draw.line((COLUMNS[1], row_top, COLUMNS[2], row_top), fill=GRID)
+                draw.line((COLUMNS[3], row_top, COLUMNS[4], row_top), fill=GRID)
+            for bottom in bounds:
+                draw.line((COLUMNS[0], bottom, COLUMNS[-1], bottom), fill=GREEN, width=2)
+            draw.rectangle((COLUMNS[0], header_bottom, COLUMNS[-1], table_bottom), outline=GREEN)
 
         with BytesIO() as output:
             image.save(output, format="PNG")

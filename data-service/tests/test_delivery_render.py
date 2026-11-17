@@ -31,11 +31,20 @@ class DeliveryRenderTest(TestCase):
         group = {**self.group, "styles": [*self.group["styles"], {"styleNo": "JCD-409-5-02", "pendingPairs": 30}]}
         known = {**self.group, "deliveryDate": "2027-01-06", "overdueDays": 0}
         with self.render([known, group]) as image:
-            self.assertEqual(image.height, 321)
-            self.assertEqual(image.getpixel((33, 145)), (255, 255, 255))
-            self.assertEqual(image.getpixel((33, 200)), (255, 241, 237))
+            self.assertEqual(image.height, 338)
+            self.assertEqual(image.getpixel((33, 150)), (255, 255, 255))
+            self.assertEqual(image.getpixel((33, 220)), (255, 241, 237))
             self.assertEqual(image.getpixel((33, 242)), (255, 241, 237))
-            self.assertEqual(image.getpixel((257, 242)), (213, 225, 218))
+            self.assertEqual(image.getpixel((257, 259)), (213, 225, 218))
+
+    def test_tints_upcoming_groups_by_remaining_days(self):
+        three = {**self.group, "deliveryDate": "2026-11-15", "overdueDays": 0}
+        five = {**self.group, "deliveryDate": "2026-11-18", "overdueDays": 0}
+        seven = {**self.group, "deliveryDate": "2026-11-20", "overdueDays": 0}
+        with self.render([three, five, seven]) as image:
+            self.assertEqual(image.getpixel((33, 150)), (252, 233, 214))
+            self.assertEqual(image.getpixel((33, 220)), (251, 246, 226))
+            self.assertEqual(image.getpixel((33, 290)), (255, 255, 255))
 
     def test_renders_empty_report_and_unknown_date(self):
         with self.render([]) as empty, self.render([{**self.group, "deliveryDate": None, "overdueDays": 0}]) as unknown:
