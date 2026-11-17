@@ -96,7 +96,7 @@ class DeliveryReportMail {
         }
         body.append("\n微信群转发文案\n清化鞋业 · ").append(date).append(" 货期预警\n");
         if (share.orderGroups().isEmpty()) {
-            body.append("暂无逾期或未来 3 天到期订单。\n");
+            body.append("暂无逾期或未来 7 天到期订单。\n");
         }
         for (var group : share.orderGroups()) {
             appendOrder(body, group, date, false);

@@ -95,7 +95,7 @@ class DeliveryReportData {
     record Snapshot(LocalDate date, List<AlertGroup> groups) {
         DeliveryReport forSharing() {
             return new DeliveryReport(date, groups.stream().map(AlertGroup::order)
-                    .filter(group -> group.deliveryDate() != null && !group.deliveryDate().isAfter(date.plusDays(3)))
+                    .filter(group -> group.deliveryDate() != null && !group.deliveryDate().isAfter(date.plusDays(7)))
                     .toList());
         }
     }
