@@ -66,6 +66,30 @@ homeserver 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。`s
 
 旧机 Nginx 以只读方式挂载 `/srv/shoe-factory-frontend`，从其中的 `current` 目录链接提供网页。发布脚本 `deploy/publish-frontend.sh` 写入新的版本目录，切换 `current`，并用网页实际返回的 `index.html` 验证发布。验证失败会恢复到前一个版本。上一版的 `/assets/` 文件可继续通过 Nginx 访问。
 
+验证成功后只保留 `current`、`previous` 指向的发布版本，清除本任务生成的更早目录。回退成功后移除失败版。构建结束清理工作区，归档保留最近 3 份，npm 内容缓存超过 512 MiB 时清空。
+
+## homeserver 的 Jenkins 数据服务发布
+
+`shoe-factory-data-service-deploy` 对应 `deploy/Jenkinsfile.data-service`。点 **Build Now** 后从 GitHub `main` 拉取代码，在 Jenkins 的 rootless Podman 中构建 Python 镜像，运行现有渲染测试，成功后把带 Git 提交号和构建号的镜像交给 systemd 发布。构建机需预载 `docker.io/library/python:3.12-slim-bookworm`，并能访问 Debian 软件源与 PyPI。
+
+发布服务校验镜像归档及 SHA-256，在 `shoe-factory-config_default` 内网用样例请求生成 PNG。候选通过后才切换 `data-service` 容器，切换后再次检查 `http://data-service:8000/reports/delivery/render`。失败会恢复原容器。Java 可继续用同一地址渲染日报。
+
+Docker 保留运行镜像和 `localhost/shoe-factory-data-service:previous` 作为回滚版本。发布过程中的镜像包、验证容器和工作区会清理，Jenkins 保留最近 10 次构建记录，容器日志按三份 5 MiB 轮转。
+
+首次安装发布监听时，以 root 在 homeserver 执行以下命令，再用同一 GitHub 只读凭据建立 Jenkins Pipeline：
+
+```bash
+queue=/srv/shoe-factory-data-service-queue
+install -d -o root -g jenkins -m 0750 "$queue"
+install -d -o jenkins -g jenkins -m 0700 "$queue/requests"
+install -d -o root -g root -m 0700 "$queue/processing"
+install -d -o root -g jenkins -m 2750 "$queue/results"
+install -m 0755 deploy/release-data-service.py /usr/local/sbin/shoe-factory-data-service-release
+install -m 0644 deploy/shoe-factory-data-service-release.{path,service} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now shoe-factory-data-service-release.path
+```
+
 ## homeserver 的 MySQL
 
 `deploy/compose.mysql.yml` 独立运行 MySQL 8.4 LTS，数据保存在 `shoe-factory-mysql_mysql-data` 卷。首次部署使用两份仓库外的密码文件，权限设为 `600`，通过 `MYSQL_ROOT_PASSWORD_PATH` 和 `MYSQL_APP_PASSWORD_PATH` 指定，并用 `MYSQL_DATABASE` 指定初始化库。管理员 `root` 在容器内使用。
@@ -81,6 +105,8 @@ homeserver 的 Jenkins 任务采用 `shoe-factory-<组件>-<动作>` 命名。`s
 在 Nacos 中为测试和正式环境分别使用独立的命名空间。创建 YAML 类型的 `shoe-factory-backend.yml`，Group 填 `SHOE_FACTORY`。配置中集中管理 `spring.datasource` 的 URL、用户名、密码、`app.file-storage.root-path` 及需要的 `app.delivery-report` 和 `spring.mail`。为后端创建只读账号，并授予对应配置的读取权限。
 
 启用配置中心时，后端需要 `SPRING_PROFILES_ACTIVE=prod,nacos` 和 `NACOS_SERVER_ADDR`、`NACOS_NAMESPACE`、`NACOS_USERNAME`、`NACOS_PASSWORD`。如果使用本机 Compose，将后端加入 Nacos 的 `shoe-factory-config_default` Docker 网络，连接地址填 `nacos:8848`。填写相应的命名空间 ID。通过 Nacos 管理的字段应从后端环境文件和 Compose 的 `environment` 移除，避免环境变量覆盖。文件存储路径要和容器内的数据卷挂载位置一致。修改配置后重启后端生效。
+
+homeserver 的预警配置在 `shoe-factory-prod` 命名空间的 `shoe-factory-backend.yml` 中，Group 为 `SHOE_FACTORY`。`app.delivery-report.enabled` 控制预警功能，`app.delivery-report.cron` 设为 `"0 30 8 * * *"` 时每天北京时间 08:30 自动发送，设为 `"-"` 时暂停定时发送。容器环境文件中的 `APP_DELIVERY_REPORT_ENABLED` 和 `APP_DELIVERY_REPORT_CRON` 应移除，首次迁移后重新创建容器。当前关闭 Nacos 动态刷新，后续修改配置并发布后重启后端生效。
 
 ## 多客户功能升级
 

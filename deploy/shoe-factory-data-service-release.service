@@ -1,0 +1,15 @@
+[Unit]
+Description=Publish the shoe factory data-service from its tested Jenkins image
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/shoe-factory-data-service-release
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/shoe-factory-data-service-queue
+TimeoutStartSec=7min

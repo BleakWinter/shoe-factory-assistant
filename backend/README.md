@@ -58,6 +58,17 @@ app:
 | `APP_DELIVERY_REPORT_RENDER_URL` | 可选绘图地址，默认 `http://data-service:8000/reports/delivery/render` |
 | `APP_DELIVERY_REPORT_CRON` | 可选，默认每天北京时间 08:30，填 `-` 可只开手动接口 |
 
+homeserver 使用 Nacos 的 `shoe-factory-prod` 命名空间、`SHOE_FACTORY` Group 和 `shoe-factory-backend.yml` 管理预警开关与发送时间。
+
+```yaml
+app:
+  delivery-report:
+    enabled: true
+    cron: "0 30 8 * * *"
+```
+
+`enabled: false` 关闭预警功能，`cron: "-"` 暂停定时发送。当前 Nacos 导入使用 `refreshEnabled=false`，发布配置后重启后端生效。首次从环境变量迁移时，从容器环境文件移除 `APP_DELIVERY_REPORT_ENABLED` 和 `APP_DELIVERY_REPORT_CRON`，再重新创建容器，确保后端读取 Nacos 的值。
+
 在首次创建或重建 Docker 容器时通过 `--env-file` 传入这些变量。把变量按 `KEY=value` 格式写入仓库外的环境变量文件，限制文件权限为 `600`。运行本机部署脚本时指定该文件的路径，沿用原容器的数据库和部署参数。
 
 ```bash

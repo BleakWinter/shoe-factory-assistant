@@ -1,0 +1,86 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    environment {
+        XDG_RUNTIME_DIR = '/run/jenkins'
+        RELEASE_QUEUE = '/srv/shoe-factory-data-service-queue'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                deleteDir()
+                checkout scm
+                script {
+                    env.RELEASE_ID = "${sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()}-${env.BUILD_NUMBER}"
+                    env.RELEASE_IMAGE = "localhost/shoe-factory-data-service:ci-${env.RELEASE_ID}"
+                }
+            }
+        }
+
+        stage('Build and test') {
+            steps {
+                sh '''
+                    set -eu
+                    podman --cgroup-manager=cgroupfs build --network slirp4netns \\
+                        --pull=never --layers=false --force-rm --format docker -t "$RELEASE_IMAGE" data-service
+                    podman --cgroup-manager=cgroupfs run --rm --pull=never \\
+                        --network slirp4netns --user 0 \\
+                        -v "$WORKSPACE/data-service/tests:/tests:ro" "$RELEASE_IMAGE" \\
+                        sh -ec 'python -m pip install --no-cache-dir ".[test]" && python -m unittest discover -s /tests -v'
+                '''
+            }
+        }
+
+        stage('Deploy data-service') {
+            steps {
+                sh '''
+                    set -eu
+                    find "$RELEASE_QUEUE/requests" -maxdepth 1 -type f -name '.upload.*' -mtime +0 -delete
+                    upload=$(mktemp "$RELEASE_QUEUE/requests/.upload.XXXXXX")
+                    trap 'rm -f "$upload"' EXIT
+                    podman --cgroup-manager=cgroupfs save --format docker-archive "$RELEASE_IMAGE" > "$upload"
+                    checksum=$(sha256sum "$upload" | cut -d ' ' -f 1)
+                    request="$RELEASE_ID-$checksum"
+                    result="$RELEASE_QUEUE/results/$request"
+                    test ! -e "$result"
+                    mv -T "$upload" "$RELEASE_QUEUE/requests/$request.request"
+                    for attempt in $(seq 1 240); do
+                        if test -r "$result"; then
+                            cat "$result"
+                            test "$(head -n 1 "$result")" = SUCCESS
+                            exit $?
+                        fi
+                        sleep 2
+                    done
+                    echo 'Timed out waiting for the data-service release result.' >&2
+                    exit 1
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                try {
+                    sh '''
+                        set -eu
+                        if [ -n "${RELEASE_IMAGE:-}" ] && podman --cgroup-manager=cgroupfs image exists "$RELEASE_IMAGE"; then
+                            podman --cgroup-manager=cgroupfs image rm "$RELEASE_IMAGE"
+                        fi
+                    '''
+                } finally {
+                    deleteDir()
+                }
+            }
+        }
+    }
+}

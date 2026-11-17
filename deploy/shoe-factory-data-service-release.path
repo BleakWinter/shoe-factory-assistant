@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch for shoe factory data-service release requests
+
+[Path]
+PathExistsGlob=/srv/shoe-factory-data-service-queue/requests/*.request
+
+[Install]
+WantedBy=multi-user.target

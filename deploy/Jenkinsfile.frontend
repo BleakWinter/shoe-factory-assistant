@@ -57,4 +57,22 @@ pipeline {
             }
         }
     }
+
+    post {
+        always {
+            script {
+                try {
+                    sh '''
+                        set -eu
+                        cache="$HOME/.npm/_cacache"
+                        if [ -d "$cache" ] && [ "$(du -sk "$cache" | cut -f 1)" -gt 524288 ]; then
+                            rm -rf -- "$cache"
+                        fi
+                    '''
+                } finally {
+                    deleteDir()
+                }
+            }
+        }
+    }
 }
