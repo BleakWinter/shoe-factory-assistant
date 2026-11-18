@@ -1,0 +1,21 @@
+[Unit]
+Description=Homeserver monitoring and Tailscale website startup
+Wants=network-online.target tailscaled.service
+Requires=docker.service
+After=network-online.target docker.service tailscaled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/shoe-factory-monitoring
+ExecStartPre=/usr/bin/python3 /srv/shoe-factory-monitoring/wait-for-tailscale.py 100.107.45.39 --timeout 60
+ExecStart=/usr/bin/docker compose up -d --pull never
+ExecStartPost=/usr/bin/docker start nginx
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=120
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

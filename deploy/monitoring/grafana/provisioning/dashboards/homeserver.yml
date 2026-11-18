@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: homeserver
+    orgId: 1
+    folder: Homeserver
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

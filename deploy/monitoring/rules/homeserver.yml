@@ -1,0 +1,184 @@
+groups:
+  - name: homeserver-recording
+    rules:
+      - record: homeserver:cpu_busy:ratio
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{job="node",mode="idle"}[5m]))
+      - record: homeserver:memory_available:ratio
+        expr: node_memory_MemAvailable_bytes{job="node"} / node_memory_MemTotal_bytes{job="node"}
+      - record: homeserver:container_memory:ratio
+        expr: |
+          container_memory_working_set_bytes{job="containers",image!="",name!=""}
+          / (container_spec_memory_limit_bytes{job="containers",image!="",name!=""} > 0)
+      - record: homeserver:jenkins_cpu:cores
+        expr: sum by (instance) (rate(container_cpu_usage_seconds_total{job="containers",id="/system.slice/jenkins.service"}[5m]))
+      - record: homeserver:jenkins_memory:bytes
+        expr: max by (instance) (container_memory_working_set_bytes{job="containers",id="/system.slice/jenkins.service"})
+      - record: homeserver:jenkins_anon_memory:bytes
+        expr: max by (instance) (container_memory_rss{job="containers",id="/system.slice/jenkins.service"})
+
+  - name: homeserver-alerts
+    rules:
+      - alert: MonitoringTargetDown
+        expr: up{instance="homeserver"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '监控采集目标不可用：{{ $labels.job }}'
+          description: '采集连续失败超过 2 分钟，请检查对应监控容器。'
+      - alert: HostCpuHigh
+        expr: homeserver:cpu_busy:ratio > 0.90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'homeserver CPU 持续高占用'
+          description: '整机 CPU 使用率连续 10 分钟超过 90%。'
+      - alert: HostMemoryLow
+        expr: homeserver:memory_available:ratio < 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'homeserver 可用内存不足'
+          description: '可用内存连续 5 分钟低于总内存的 10%，已计入可回收缓存。'
+      - alert: HostMemoryCritical
+        expr: homeserver:memory_available:ratio < 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'homeserver 可用内存严重不足'
+          description: '可用内存连续 2 分钟低于总内存的 5%。'
+      - alert: CpuTemperatureHigh
+        expr: max by (instance) (node_hwmon_temp_celsius{job="node",chip=~".*coretemp.*"}) > 85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'homeserver CPU 温度偏高'
+          description: 'CPU 温度连续 3 分钟超过 85°C。'
+      - alert: HostDiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{job="node",mountpoint=~"/|/backup",fstype="ext4"}
+          / node_filesystem_size_bytes{job="node",mountpoint=~"/|/backup",fstype="ext4"} < 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: '磁盘剩余空间不足：{{ $labels.mountpoint }}'
+          description: '该分区可用空间连续 15 分钟低于 15%。'
+      - alert: HostSwapPressure
+        expr: |
+          ((node_memory_SwapTotal_bytes{job="node"} - node_memory_SwapFree_bytes{job="node"})
+          / (node_memory_SwapTotal_bytes{job="node"} > 0) > 0.25)
+          and on (instance) (rate(node_vmstat_pswpin{job="node"}[5m]) + rate(node_vmstat_pswpout{job="node"}[5m]) > 100)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'homeserver 出现持续换页压力'
+          description: 'Swap 使用超过 25%，且连续 5 分钟存在明显换入换出。'
+      - alert: ContainerMemoryHigh
+        expr: homeserver:container_memory:ratio{name!~".*nacos.*"} > 0.90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '容器内存接近上限：{{ $labels.name }}'
+          description: '排除可回收文件缓存后的内存连续 5 分钟超过容器限额的 90%。'
+      - alert: NacosMemoryHigh
+        expr: homeserver:container_memory:ratio{name=~".*nacos.*"} > 0.97
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Nacos 内存接近硬上限'
+          description: 'Nacos 内存连续 10 分钟超过限额的 97%；使用独立阈值避免常驻高占用造成误报。'
+      - alert: ContainerCpuHigh
+        expr: sum by (instance, name) (rate(container_cpu_usage_seconds_total{job="containers",image!="",name!=""}[5m])) > 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '容器 CPU 持续高占用：{{ $labels.name }}'
+          description: '该容器连续 10 分钟使用超过 4 个逻辑 CPU。'
+      - alert: ContainerOomKilled
+        expr: increase(container_oom_events_total{job="containers",image!="",name!=""}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: '容器发生 OOM：{{ $labels.name }}'
+          description: '最近 5 分钟内记录到容器内存不足事件。'
+      - alert: JenkinsMemoryHigh
+        expr: homeserver:jenkins_anon_memory:bytes > 3 * 1024 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Jenkins 实际内存持续偏高'
+          description: 'Jenkins 服务及其构建进程的匿名内存连续 5 分钟超过 3GiB；这只是告警阈值，没有改变内存硬上限。'
+      - alert: JenkinsCpuHigh
+        expr: homeserver:jenkins_cpu:cores > 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Jenkins 构建持续占用较多 CPU'
+          description: 'Jenkins 服务及其构建进程连续 10 分钟使用超过 4 个逻辑 CPU。'
+      - alert: HostServiceDown
+        expr: node_systemd_unit_state{job="node",name=~"(jenkins|docker|tailscaled|ssh)\\.service",state="active"} != 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '系统服务未运行：{{ $labels.name }}'
+          description: '该系统服务连续 2 分钟不处于 active 状态。'
+      - alert: BackendContainerMissing
+        expr: (time() - max(container_last_seen{job="containers",name=~"shoe-factory-backend-.*",image!=""}) > 180) or absent_over_time(container_last_seen{job="containers",name=~"shoe-factory-backend-.*",image!=""}[3m])
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Java 后端容器未被发现'
+          description: '连续 3 分钟没有运行中的生产后端容器采样。'
+      - alert: MysqlContainerMissing
+        expr: (time() - max(container_last_seen{job="containers",name="shoe-factory-mysql",image!=""}) > 180) or absent_over_time(container_last_seen{job="containers",name="shoe-factory-mysql",image!=""}[3m])
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'MySQL 容器未被发现'
+          description: '连续 3 分钟没有运行中的 MySQL 容器采样。'
+      - alert: NacosContainerMissing
+        expr: (time() - max(container_last_seen{job="containers",name="shoe-factory-config-nacos-1",image!=""}) > 180) or absent_over_time(container_last_seen{job="containers",name="shoe-factory-config-nacos-1",image!=""}[3m])
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Nacos 容器未被发现'
+          description: '连续 3 分钟没有运行中的 Nacos 容器采样。'
+      - alert: DataServiceContainerMissing
+        expr: (time() - max(container_last_seen{job="containers",name="data-service",image!=""}) > 180) or absent_over_time(container_last_seen{job="containers",name="data-service",image!=""}[3m])
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Python 数据服务容器未被发现'
+          description: '连续 3 分钟没有运行中的 Python 数据服务容器采样。'
+      - alert: NginxContainerMissing
+        expr: (time() - max(container_last_seen{job="containers",name="nginx",image!=""}) > 180) or absent_over_time(container_last_seen{job="containers",name="nginx",image!=""}[3m])
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Nginx 容器未被发现'
+          description: '连续 3 分钟没有运行中的 Nginx 容器采样。'
+      - alert: EmailNotificationFailed
+        expr: increase(alertmanager_notifications_failed_total{integration="email"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: '监控告警邮件发送失败'
+          description: '请在 Grafana 检查 Alertmanager；当前邮件通道可能无法投递其他告警。'

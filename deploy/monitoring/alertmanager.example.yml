@@ -1,0 +1,41 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.qq.com:465'
+  smtp_from: '__SMTP_USERNAME__'
+  smtp_auth_username: '__SMTP_USERNAME__'
+  smtp_auth_password_file: /run/secrets/smtp-password
+  smtp_require_tls: true
+  smtp_force_implicit_tls: true
+
+route:
+  receiver: operator-email
+  group_by: [host, alertname, name]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['alertname="MonitoringPipelineTest"']
+      group_wait: 5s
+      group_interval: 1m
+      repeat_interval: 24h
+
+receivers:
+  - name: operator-email
+    email_configs:
+      - to: '__SMTP_RECIPIENT__'
+        send_resolved: true
+        headers:
+          Subject: '[homeserver][{{ .Status }}] {{ .CommonLabels.alertname }}'
+        html: |
+          <h2>homeserver 监控：{{ .Status }}</h2>
+          {{ range .Alerts }}
+          <h3>{{ .Annotations.summary }}</h3>
+          <p>{{ .Annotations.description }}</p>
+          <p>级别：{{ .Labels.severity }}；服务：{{ .Labels.name }}；开始：{{ .StartsAt }}</p>
+          {{ end }}
+          <p><a href="http://100.107.45.39/grafana/">打开监控面板（需连接 Tailscale）</a></p>
+
+inhibit_rules:
+  - source_matchers: ['alertname="HostMemoryCritical"']
+    target_matchers: ['alertname="HostMemoryLow"']
+    equal: [host, instance]

@@ -1,0 +1,131 @@
+name: shoe-factory-monitoring
+
+x-common: &common
+  platform: linux/amd64
+  restart: unless-stopped
+  network_mode: host
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 5m
+      max-file: '3'
+
+services:
+  prometheus:
+    <<: *common
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06}
+    container_name: monitoring-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+      - --storage.tsdb.retention.size=5GB
+      - --web.listen-address=127.0.0.1:9090
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    mem_limit: 512m
+    cpus: 1
+    cap_drop: [ALL]
+
+  alertmanager:
+    <<: *common
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c}
+    container_name: monitoring-alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=127.0.0.1:9093
+      - --cluster.listen-address=
+    volumes:
+      - ./private/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./private/smtp-password:/run/secrets/smtp-password:ro
+      - alertmanager-data:/alertmanager
+    mem_limit: 128m
+    cpus: 0.5
+    cap_drop: [ALL]
+
+  node-exporter:
+    <<: *common
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0}
+    container_name: monitoring-node-exporter
+    user: '0:0'
+    pid: host
+    read_only: true
+    command:
+      - --web.listen-address=127.0.0.1:9100
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.systemd
+      - --collector.systemd.unit-include=(jenkins|docker|tailscaled|ssh)\.service
+      - --collector.systemd.enable-restarts-metrics
+    volumes:
+      - /:/host:ro,rslave
+      - /run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+    mem_limit: 128m
+    cpus: 0.5
+    cap_drop: [ALL]
+
+  cadvisor:
+    <<: *common
+    image: ${CADVISOR_IMAGE:-ghcr.io/google/cadvisor:0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a}
+    container_name: monitoring-cadvisor
+    privileged: true
+    cgroup: host
+    command:
+      - --listen_ip=127.0.0.1
+      - --port=8085
+      - --docker_only=true
+      - --raw_cgroup_prefix_whitelist=/system.slice/jenkins.service
+      - --housekeeping_interval=30s
+      - --max_housekeeping_interval=30s
+      - --allow_dynamic_housekeeping=false
+      - --store_container_labels=false
+    volumes:
+      - /:/rootfs:ro,rslave
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    mem_limit: 384m
+    cpus: 1
+
+  grafana:
+    <<: *common
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf}
+    container_name: monitoring-grafana
+    environment:
+      GF_SERVER_HTTP_ADDR: ${DOCKER_BRIDGE_IP:-172.17.0.1}
+      GF_SERVER_HTTP_PORT: '3000'
+      GF_SERVER_ROOT_URL: http://100.107.45.39/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: 'false'
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/homeserver.json
+    volumes:
+      - ./private/grafana-admin-password:/run/secrets/grafana-admin-password:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    mem_limit: 768m
+    cpus: 1
+    cap_drop: [ALL]
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:

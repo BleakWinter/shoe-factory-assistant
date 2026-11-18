@@ -1,0 +1,119 @@
+rule_files:
+  - rules/homeserver.yml
+evaluation_interval: 1m
+tests:
+  - name: brief-cpu-spike-does-not-page
+    interval: 1m
+    input_series:
+      - series: 'node_cpu_seconds_total{job="node",instance="homeserver",cpu="0",mode="idle"}'
+        values: '0+1x15'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: HostCpuHigh
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: HostCpuHigh
+        exp_alerts:
+          - exp_labels:
+              instance: homeserver
+              severity: warning
+            exp_annotations:
+              summary: homeserver CPU 持续高占用
+              description: 整机 CPU 使用率连续 10 分钟超过 90%。
+  - name: memory-warning-requires-sustained-low-available-memory
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{job="node",instance="homeserver"}'
+        values: '1073741824+0x10'
+      - series: 'node_memory_MemTotal_bytes{job="node",instance="homeserver"}'
+        values: '17179869184+0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HostMemoryLow
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: HostMemoryLow
+        exp_alerts:
+          - exp_labels:
+              instance: homeserver
+              job: node
+              severity: warning
+            exp_annotations:
+              summary: homeserver 可用内存不足
+              description: 可用内存连续 5 分钟低于总内存的 10%，已计入可回收缓存。
+      - eval_time: 6m
+        alertname: HostMemoryCritical
+        exp_alerts: []
+  - name: nacos-normal-high-baseline-does-not-page
+    interval: 1m
+    input_series:
+      - series: 'container_memory_working_set_bytes{job="containers",instance="homeserver",name="shoe-factory-config-nacos-1",image="nacos"}'
+        values: '95+0x15'
+      - series: 'container_spec_memory_limit_bytes{job="containers",instance="homeserver",name="shoe-factory-config-nacos-1",image="nacos"}'
+        values: '100+0x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ContainerMemoryHigh
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: NacosMemoryHigh
+        exp_alerts: []
+  - name: nacos-near-hard-limit-pages
+    interval: 1m
+    input_series:
+      - series: 'container_memory_working_set_bytes{job="containers",instance="homeserver",name="shoe-factory-config-nacos-1",image="nacos"}'
+        values: '99+0x15'
+      - series: 'container_spec_memory_limit_bytes{job="containers",instance="homeserver",name="shoe-factory-config-nacos-1",image="nacos"}'
+        values: '100+0x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: NacosMemoryHigh
+        exp_alerts:
+          - exp_labels:
+              instance: homeserver
+              job: containers
+              name: shoe-factory-config-nacos-1
+              image: nacos
+              severity: warning
+            exp_annotations:
+              summary: Nacos 内存接近硬上限
+              description: Nacos 内存连续 10 分钟超过限额的 97%；使用独立阈值避免常驻高占用造成误报。
+  - name: unlimited-container-memory-does-not-divide-by-zero
+    interval: 1m
+    input_series:
+      - series: 'container_memory_working_set_bytes{job="containers",instance="homeserver",name="nginx",image="nginx"}'
+        values: '100000000+0x10'
+      - series: 'container_spec_memory_limit_bytes{job="containers",instance="homeserver",name="nginx",image="nginx"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ContainerMemoryHigh
+        exp_alerts: []
+  - name: stopped-backend-with-stale-cadvisor-series-is-detected
+    interval: 1m
+    input_series:
+      - series: 'container_last_seen{job="containers",instance="homeserver",name="shoe-factory-backend-old",image="backend"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BackendContainerMissing
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: BackendContainerMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Java 后端容器未被发现
+              description: 连续 3 分钟没有运行中的生产后端容器采样。
+  - name: live-backend-remains-healthy-next-to-a-stopped-old-release
+    interval: 1m
+    input_series:
+      - series: 'container_last_seen{job="containers",instance="homeserver",name="shoe-factory-backend-old",image="backend"}'
+        values: '0+0x10'
+      - series: 'container_last_seen{job="containers",instance="homeserver",name="shoe-factory-backend-current",image="backend"}'
+        values: '0+60x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: BackendContainerMissing
+        exp_alerts: []
